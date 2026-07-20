@@ -10,6 +10,7 @@ import type { ReactNode } from "react";
 import { useEffect, useState, useRef } from "react";
 import { AuthProvider, useAuth } from "~/auth-context";
 
+import { Analytics } from "@vercel/analytics/react";
 import appCss from "~/styles/app.css?url";
 
 export const Route = createRootRoute({
@@ -282,6 +283,7 @@ function RootDocument({ children }: { children: ReactNode }) {
       <body>
         {children}
         <Scripts />
+        <Analytics />
       </body>
     </html>
   );
