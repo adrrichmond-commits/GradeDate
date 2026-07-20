@@ -6,6 +6,8 @@ import {
   updateUserProfile,
   updateUserGrade,
   updateSubscriptionStatus,
+  updateUserStripeInfo,
+  getUserByStripeCustomerId,
   getUsersByGradeRange,
   recordLike,
   getLike,
@@ -22,6 +24,7 @@ import {
   markMessagesRead,
   type User,
 } from "../src/db.ts";
+import Stripe from "stripe";
 import { mkdirSync, existsSync, writeFileSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { webcrypto } from "node:crypto";
@@ -674,6 +677,144 @@ async function handleSubscriptionActivate(req: Request): Promise<Response> {
   });
 }
 
+// ── Stripe Webhook ─────────────────────────────────────────────
+
+function getStripe(): Stripe | null {
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) {
+    console.warn("STRIPE_SECRET_KEY not configured — Stripe features disabled");
+    return null;
+  }
+  return new Stripe(key);
+}
+
+async function handleStripeWebhook(req: Request): Promise<Response> {
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  const signature = req.headers.get("stripe-signature");
+
+  if (!signature) {
+    return json({ error: "Missing stripe-signature header" }, 400);
+  }
+
+  // Read the raw body for signature verification
+  const rawBody = await req.text();
+
+  let event: Stripe.Event;
+
+  if (webhookSecret) {
+    const stripe = getStripe();
+    if (!stripe) {
+      return json({ error: "Stripe not configured" }, 500);
+    }
+    try {
+      event = stripe.webhooks.constructEvent(
+        rawBody,
+        signature,
+        webhookSecret,
+      );
+    } catch (err) {
+      console.error("Stripe webhook signature verification failed:", err);
+      return json({ error: "Invalid signature" }, 400);
+    }
+  } else {
+    // Fallback: no webhook secret configured — parse without verification
+    console.warn(
+      "STRIPE_WEBHOOK_SECRET not set — accepting webhook without signature verification",
+    );
+    try {
+      event = JSON.parse(rawBody) as Stripe.Event;
+    } catch {
+      return json({ error: "Invalid JSON body" }, 400);
+    }
+  }
+
+  console.log(`Stripe webhook received: ${event.type}`);
+
+  try {
+    switch (event.type) {
+      case "checkout.session.completed": {
+        const session = event.data.object as Stripe.Checkout.Session;
+        const customerEmail = session.customer_details?.email;
+        const customerId =
+          typeof session.customer === "string" ? session.customer : null;
+        const subscriptionId =
+          typeof session.subscription === "string"
+            ? session.subscription
+            : null;
+
+        if (!customerEmail) {
+          console.warn(
+            "checkout.session.completed: no customer email in session",
+          );
+          break;
+        }
+
+        // Find user by email
+        const user = await getUserByEmail(customerEmail.toLowerCase());
+        if (!user) {
+          console.warn(
+            `checkout.session.completed: no user found for email ${customerEmail}`,
+          );
+          break;
+        }
+
+        if (customerId && subscriptionId) {
+          await updateUserStripeInfo(user.id, customerId, subscriptionId);
+          console.log(
+            `Subscription activated for user ${user.id} (${customerEmail}) — sub: ${subscriptionId}`,
+          );
+        } else {
+          // Fallback: just activate without storing Stripe IDs
+          await updateSubscriptionStatus(user.id, "active");
+          console.log(
+            `Subscription activated for user ${user.id} (${customerEmail}) — no Stripe IDs stored`,
+          );
+        }
+        break;
+      }
+
+      case "customer.subscription.deleted": {
+        const subscription = event.data.object as Stripe.Subscription;
+        const customerId =
+          typeof subscription.customer === "string"
+            ? subscription.customer
+            : null;
+
+        if (!customerId) {
+          console.warn(
+            "customer.subscription.deleted: no customer ID in subscription",
+          );
+          break;
+        }
+
+        const user = await getUserByStripeCustomerId(customerId);
+        if (!user) {
+          console.warn(
+            `customer.subscription.deleted: no user found for customer ${customerId}`,
+          );
+          break;
+        }
+
+        await updateSubscriptionStatus(user.id, "inactive");
+        console.log(
+          `Subscription cancelled for user ${user.id} (stripe customer: ${customerId})`,
+        );
+        break;
+      }
+
+      default:
+        // Ignore other event types
+        console.log(`Unhandled Stripe event type: ${event.type}`);
+    }
+  } catch (err) {
+    console.error("Error processing Stripe webhook:", err);
+    return json({ error: "Webhook processing error" }, 500);
+  }
+
+  // Always return 200 quickly
+  return json({ received: true });
+}
+
 // ── Router ────────────────────────────────────────────────────
 
 export async function handleApiRoute(
@@ -746,6 +887,11 @@ export async function handleApiRoute(
   }
   if (pathname === "/api/subscription/activate" && method === "POST") {
     return handleSubscriptionActivate(req);
+  }
+
+  // Stripe webhook (unauthenticated — validated by Stripe signature)
+  if (pathname === "/api/webhooks/stripe" && method === "POST") {
+    return handleStripeWebhook(req);
   }
 
   return null; // Not an API route

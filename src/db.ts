@@ -31,9 +31,19 @@ export async function initTables(): Promise<void> {
       grade INTEGER,
       subscription_status TEXT DEFAULT 'inactive',
       subscription_updated_at TIMESTAMPTZ,
+      stripe_customer_id TEXT,
+      stripe_subscription_id TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `;
+
+  // Add stripe columns if they don't exist (migration for existing DBs)
+  try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT`;
+  } catch { /* ignore */ }
+  try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT`;
+  } catch { /* ignore */ }
 
   await sql()`
     CREATE TABLE IF NOT EXISTS sessions (
@@ -90,6 +100,8 @@ export interface User {
   grade: number | null;
   subscription_status: string;
   subscription_updated_at: string | null;
+  stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
   created_at: string;
 }
 
@@ -234,6 +246,30 @@ export async function updateSubscriptionStatus(
       subscription_updated_at = NOW()
     WHERE id = ${userId}
   `;
+}
+
+export async function updateUserStripeInfo(
+  userId: number,
+  stripeCustomerId: string,
+  stripeSubscriptionId: string,
+): Promise<void> {
+  await sql()`
+    UPDATE users SET
+      stripe_customer_id = ${stripeCustomerId},
+      stripe_subscription_id = ${stripeSubscriptionId},
+      subscription_status = 'active',
+      subscription_updated_at = NOW()
+    WHERE id = ${userId}
+  `;
+}
+
+export async function getUserByStripeCustomerId(
+  stripeCustomerId: string,
+): Promise<User | null> {
+  const rows = await sql()`
+    SELECT * FROM users WHERE stripe_customer_id = ${stripeCustomerId}
+  `;
+  return rows.length > 0 ? (rows[0] as unknown as User) : null;
 }
 
 export async function getUsersByGradeRange(

@@ -45,6 +45,8 @@ if [ -n "${VERCEL_SCOPE:-}" ]; then SCOPE_ARGS=(--scope "$VERCEL_SCOPE"); fi
 ENV_ARGS=()
 if [ -n "${DATABASE_URL:-}" ]; then ENV_ARGS+=(-e "DATABASE_URL=$DATABASE_URL"); fi
 if [ -n "${OPENAI_API_KEY:-}" ]; then ENV_ARGS+=(-e "OPENAI_API_KEY=$OPENAI_API_KEY"); fi
+if [ -n "${STRIPE_WEBHOOK_SECRET:-}" ]; then ENV_ARGS+=(-e "STRIPE_WEBHOOK_SECRET=$STRIPE_WEBHOOK_SECRET"); fi
+if [ -n "${STRIPE_SECRET_KEY:-}" ]; then ENV_ARGS+=(-e "STRIPE_SECRET_KEY=$STRIPE_SECRET_KEY"); fi
 
 echo "==> deploying${VERCEL_SCOPE:+ (scope: $VERCEL_SCOPE)}"
 DEPLOY_OUT="$($VERCEL deploy --prebuilt --yes --token "$VERCEL_TOKEN" \
