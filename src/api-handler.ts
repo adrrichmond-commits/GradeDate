@@ -22,6 +22,11 @@ import {
   getMessages,
   getUnreadMessageCount,
   markMessagesRead,
+  blockUser,
+  isBlocked,
+  getBlockedUserIds,
+  reportUser,
+  deleteUserAccount,
   type User,
 } from "../src/db.ts";
 import Stripe from "stripe";
@@ -477,12 +482,15 @@ async function handleGetMatches(req: Request): Promise<Response> {
     return json({ error: "You must get graded before browsing matches", code: "NO_GRADE" }, 400);
   }
 
+  const blockedIds = await getBlockedUserIds(user.id);
+
   const users = await getUsersByGradeRange(
     user.grade,
     user.grade - 1,
     user.grade + 1,
     user.id,
     user.looking_for || "everyone",
+    blockedIds,
   );
 
   // Strip grades from other users in the response
@@ -657,6 +665,83 @@ async function handleGetConnections(req: Request): Promise<Response> {
 
   const matches = await getMatchesForUser(user.id);
   return json({ connections: matches });
+}
+
+// ── User Safety ──────────────────────────────────────────────
+
+async function handleBlock(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+
+  const subErr = requireSubscription(user);
+  if (subErr) return subErr;
+
+  const body = await req.json().catch(() => null);
+  const targetId = body?.user_id;
+
+  if (!targetId || typeof targetId !== "number") {
+    return json({ error: "user_id is required" }, 400);
+  }
+
+  if (targetId === user.id) {
+    return json({ error: "You cannot block yourself" }, 400);
+  }
+
+  await blockUser(user.id, targetId);
+  return json({ success: true });
+}
+
+const VALID_REPORT_REASONS = [
+  "inappropriate_photo",
+  "harassment",
+  "underage",
+  "fake_profile",
+  "other",
+];
+
+async function handleReport(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+
+  const subErr = requireSubscription(user);
+  if (subErr) return subErr;
+
+  const body = await req.json().catch(() => null);
+  const targetId = body?.user_id;
+  const reason = body?.reason;
+
+  if (!targetId || typeof targetId !== "number") {
+    return json({ error: "user_id is required" }, 400);
+  }
+
+  if (targetId === user.id) {
+    return json({ error: "You cannot report yourself" }, 400);
+  }
+
+  if (!reason || typeof reason !== "string" || !VALID_REPORT_REASONS.includes(reason)) {
+    return json({
+      error: `Invalid reason. Must be one of: ${VALID_REPORT_REASONS.join(", ")}`,
+    }, 400);
+  }
+
+  await reportUser(user.id, targetId, reason);
+  return json({ success: true });
+}
+
+async function handleDeleteAccount(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+
+  const sessionId = getSessionId(req);
+  await deleteUserAccount(user.id);
+
+  return clearSessionCookie(json({ success: true }));
 }
 
 // ── Subscription ──────────────────────────────────────────────
@@ -896,6 +981,17 @@ export async function handleApiRoute(
   // Connections
   if (pathname === "/api/connections" && method === "GET") {
     return handleGetConnections(req);
+  }
+
+  // User Safety
+  if (pathname === "/api/users/block" && method === "POST") {
+    return handleBlock(req);
+  }
+  if (pathname === "/api/users/report" && method === "POST") {
+    return handleReport(req);
+  }
+  if (pathname === "/api/account/delete" && method === "POST") {
+    return handleDeleteAccount(req);
   }
 
   // Subscription

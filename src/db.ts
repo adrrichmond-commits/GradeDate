@@ -87,6 +87,24 @@ export async function initTables(): Promise<void> {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `;
+
+  await sql()`
+    CREATE TABLE IF NOT EXISTS blocks (
+      blocker_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      blocked_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(blocker_id, blocked_id)
+    )
+  `;
+
+  await sql()`
+    CREATE TABLE IF NOT EXISTS reports (
+      reporter_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      reported_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      reason TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `;
 }
 
 // ── Types ──────────────────────────────────────────────────────
@@ -284,6 +302,7 @@ export async function getUsersByGradeRange(
   max: number,
   excludeUserId: number,
   lookingFor?: string,
+  blockedByIds?: number[],
 ): Promise<MatchUser[]> {
   const rows = await sql()`
     SELECT id, display_name, age, gender, bio, photo_path, grade
@@ -297,6 +316,11 @@ export async function getUsersByGradeRange(
       ${
         lookingFor && lookingFor !== "everyone"
           ? sql()`AND gender = ${lookingFor}`
+          : sql()``
+      }
+      ${
+        blockedByIds && blockedByIds.length > 0
+          ? sql()`AND id NOT IN (SELECT UNNEST(${blockedByIds}::int[]))`
           : sql()``
       }
     ORDER BY ABS(grade - ${grade}) ASC, RANDOM()
@@ -437,4 +461,75 @@ export async function markMessagesRead(matchId: number, readerId: number): Promi
     UPDATE messages SET read = 1
     WHERE match_id = ${matchId} AND sender_id != ${readerId} AND read = 0
   `;
+}
+
+// ── Blocking ───────────────────────────────────────────────────
+
+export async function blockUser(blockerId: number, blockedId: number): Promise<void> {
+  await sql()`
+    INSERT INTO blocks (blocker_id, blocked_id)
+    VALUES (${blockerId}, ${blockedId})
+    ON CONFLICT (blocker_id, blocked_id) DO NOTHING
+  `;
+
+  // Remove all likes between the two users in both directions
+  await sql()`
+    DELETE FROM likes
+    WHERE (liker_id = ${blockerId} AND liked_id = ${blockedId})
+       OR (liker_id = ${blockedId} AND liked_id = ${blockerId})
+  `;
+
+  // Dissolve any existing match between the two users
+  const [a, b] = blockerId < blockedId ? [blockerId, blockedId] : [blockedId, blockerId];
+  await sql()`
+    DELETE FROM matches
+    WHERE user1_id = ${a} AND user2_id = ${b}
+  `;
+}
+
+export async function isBlocked(userId: number, otherUserId: number): Promise<boolean> {
+  const rows = await sql()`
+    SELECT id FROM blocks
+    WHERE (blocker_id = ${userId} AND blocked_id = ${otherUserId})
+       OR (blocker_id = ${otherUserId} AND blocked_id = ${userId})
+    LIMIT 1
+  `;
+  return rows.length > 0;
+}
+
+export async function getBlockedUserIds(userId: number): Promise<number[]> {
+  const rows = await sql()`
+    SELECT blocked_id FROM blocks WHERE blocker_id = ${userId}
+    UNION
+    SELECT blocker_id FROM blocks WHERE blocked_id = ${userId}
+  `;
+  return rows.map((r: any) => Number(r.blocked_id));
+}
+
+// ── Reporting ─────────────────────────────────────────────────
+
+export async function reportUser(reporterId: number, reportedId: number, reason: string): Promise<void> {
+  await sql()`
+    INSERT INTO reports (reporter_id, reported_id, reason)
+    VALUES (${reporterId}, ${reportedId}, ${reason})
+  `;
+}
+
+// ── Account Deletion ───────────────────────────────────────────
+
+export async function deleteUserAccount(userId: number): Promise<void> {
+  // Delete from blocks where user is involved
+  await sql()`DELETE FROM blocks WHERE blocker_id = ${userId} OR blocked_id = ${userId}`;
+  // Delete from reports where user is involved
+  await sql()`DELETE FROM reports WHERE reporter_id = ${userId} OR reported_id = ${userId}`;
+  // Delete messages sent by user
+  await sql()`DELETE FROM messages WHERE sender_id = ${userId}`;
+  // Delete matches involving user (cascades to messages in those matches)
+  await sql()`DELETE FROM matches WHERE user1_id = ${userId} OR user2_id = ${userId}`;
+  // Delete likes
+  await sql()`DELETE FROM likes WHERE liker_id = ${userId} OR liked_id = ${userId}`;
+  // Delete sessions
+  await sql()`DELETE FROM sessions WHERE user_id = ${userId}`;
+  // Delete the user record itself
+  await sql()`DELETE FROM users WHERE id = ${userId}`;
 }

@@ -29,6 +29,10 @@ function ProfilePage() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const successTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Delete account
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
   useEffect(() => {
     if (!loading && !user) {
       navigate({ to: "/login" });
@@ -93,6 +97,18 @@ function ProfilePage() {
       setGradeError("Network error. Please try again.");
     } finally {
       setGrading(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    setDeleting(true);
+    try {
+      await fetch("/api/account/delete", { method: "POST" });
+      // Clear auth context and redirect
+      await refetch();
+      navigate({ to: "/" });
+    } catch {
+      setDeleting(false);
     }
   };
 
@@ -582,6 +598,44 @@ function ProfilePage() {
               <button onClick={handleEnterEdit} className="btn-secondary">
                 Edit Profile
               </button>
+            </div>
+
+            {/* ── Delete Account ── */}
+            <div className="mt-12 border-t border-red-500/20 pt-8">
+              <h3 className="text-lg font-semibold text-red-400">Danger Zone</h3>
+              <p className="mt-1 text-sm text-gray-500">
+                Permanently delete your account and all associated data. This action cannot be undone.
+              </p>
+              {!showDeleteConfirm ? (
+                <button
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="mt-4 rounded-full border border-red-500/40 px-6 py-2.5 text-sm font-semibold text-red-400 transition hover:bg-red-500/10 hover:border-red-400"
+                >
+                  Delete Account
+                </button>
+              ) : (
+                <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/5 p-5">
+                  <p className="text-sm font-semibold text-red-400">
+                    Are you sure? This permanently deletes your account and all data.
+                  </p>
+                  <div className="mt-4 flex gap-3">
+                    <button
+                      onClick={() => setShowDeleteConfirm(false)}
+                      disabled={deleting}
+                      className="flex-1 rounded-full border border-gray-600 px-4 py-2 text-sm text-gray-300 transition hover:border-gray-500 disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleDeleteAccount}
+                      disabled={deleting}
+                      className="flex-1 rounded-full bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-500 disabled:opacity-50"
+                    >
+                      {deleting ? "Deleting..." : "Yes, Delete My Account"}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </>
         )}

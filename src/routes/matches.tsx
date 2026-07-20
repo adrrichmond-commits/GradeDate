@@ -12,6 +12,14 @@ interface MatchProfile {
   photo_path: string | null;
 }
 
+const REPORT_REASONS = [
+  { value: "inappropriate_photo", label: "Inappropriate Photo" },
+  { value: "harassment", label: "Harassment" },
+  { value: "underage", label: "Underage User" },
+  { value: "fake_profile", label: "Fake Profile" },
+  { value: "other", label: "Other" },
+];
+
 export const Route = createFileRoute("/matches")({
   component: MatchesPage,
 });
@@ -29,6 +37,12 @@ function MatchesPage() {
     match_id: number;
     other_user: { id: number; display_name: string | null; photo_path: string | null } | null;
   } | null>(null);
+
+  // Report state
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportReason, setReportReason] = useState("");
+  const [reporting, setReporting] = useState(false);
+  const [reportDone, setReportDone] = useState(false);
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -377,10 +391,22 @@ function MatchesPage() {
             </button>
           </div>
 
-          {/* Counter */}
-          <p className="mt-4 text-center text-xs text-gray-600">
-            {currentIdx + 1} of {matches.length} in your range
-          </p>
+          {/* Report & Counter */}
+          <div className="mt-6 space-y-2">
+            <p className="text-center text-xs text-gray-600">
+              {currentIdx + 1} of {matches.length} in your range
+            </p>
+            <button
+              onClick={() => {
+                setReportReason("");
+                setReportDone(false);
+                setShowReportModal(true);
+              }}
+              className="mx-auto block text-xs text-gray-500 underline transition hover:text-red-400"
+            >
+              Report this user
+            </button>
+          </div>
         </div>
       )}
 
@@ -429,6 +455,92 @@ function MatchesPage() {
                 Keep swiping
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Report Modal */}
+      {showReportModal && current && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="mx-4 w-full max-w-sm rounded-2xl bg-gray-900 p-6 shadow-2xl">
+            <h3 className="text-lg font-bold">Report {current.display_name || "User"}</h3>
+            <p className="mt-1 text-sm text-gray-400">
+              {reportDone
+                ? "Thank you. Your report has been submitted."
+                : "Why are you reporting this user?"}
+            </p>
+
+            {!reportDone && (
+              <>
+                <div className="mt-4 space-y-2">
+                  {REPORT_REASONS.map((r) => (
+                    <label
+                      key={r.value}
+                      className={`flex cursor-pointer items-center gap-3 rounded-lg border p-3 text-sm transition ${
+                        reportReason === r.value
+                          ? "border-rose-500/50 bg-rose-500/10 text-white"
+                          : "border-gray-700 text-gray-300 hover:border-gray-600"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="reportReason"
+                        value={r.value}
+                        checked={reportReason === r.value}
+                        onChange={(e) => setReportReason(e.target.value)}
+                        className="accent-rose-500"
+                      />
+                      {r.label}
+                    </label>
+                  ))}
+                </div>
+
+                <div className="mt-5 flex gap-3">
+                  <button
+                    onClick={() => setShowReportModal(false)}
+                    className="flex-1 rounded-full border border-gray-600 px-4 py-2 text-sm text-gray-300 transition hover:border-gray-500"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (!reportReason || !current) return;
+                      setReporting(true);
+                      try {
+                        await fetch("/api/users/report", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ user_id: current.id, reason: reportReason }),
+                        });
+                        setReportDone(true);
+                      } catch {
+                        // ignore
+                      } finally {
+                        setReporting(false);
+                      }
+                    }}
+                    disabled={!reportReason || reporting}
+                    className="flex-1 rounded-full bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-500 disabled:opacity-50"
+                  >
+                    {reporting ? "Submitting..." : "Submit Report"}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {reportDone && (
+              <div className="mt-5">
+                <button
+                  onClick={() => {
+                    setShowReportModal(false);
+                    setReportDone(false);
+                  }}
+                  className="w-full rounded-full border border-gray-600 px-4 py-2 text-sm text-gray-300 transition hover:border-gray-500"
+                >
+                  Close
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

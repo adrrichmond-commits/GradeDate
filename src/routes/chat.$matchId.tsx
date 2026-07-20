@@ -20,6 +20,14 @@ interface OtherUser {
   photo_path: string | null;
 }
 
+const REPORT_REASONS = [
+  { value: "inappropriate_photo", label: "Inappropriate Photo" },
+  { value: "harassment", label: "Harassment" },
+  { value: "underage", label: "Underage User" },
+  { value: "fake_profile", label: "Fake Profile" },
+  { value: "other", label: "Other" },
+];
+
 export const Route = createFileRoute("/chat/$matchId")({
   component: ChatPage,
 });
@@ -37,6 +45,14 @@ function ChatPage() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [initialLoading, setInitialLoading] = useState(true);
+
+  // Safety modals
+  const [showMenu, setShowMenu] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportReason, setReportReason] = useState("");
+  const [reporting, setReporting] = useState(false);
+  const [reportDone, setReportDone] = useState(false);
+  const [blocking, setBlocking] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -73,7 +89,7 @@ function ChatPage() {
         const data = await res.json();
         const conns = data.connections || [];
         const current = conns.find(
-          (c: { match_id: number }) => c.match_id === matchId,
+          (c: any) => c.match_id === matchId,
         );
         if (current) {
           setOtherUser({
@@ -133,6 +149,23 @@ function ChatPage() {
     } finally {
       setSending(false);
     }
+  };
+
+  const handleBlock = async () => {
+    if (!otherUser) return;
+    setBlocking(true);
+    try {
+      await fetch("/api/users/block", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: otherUser.id }),
+      });
+      navigate({ to: "/connections" });
+    } catch {
+      // ignore
+    }
+    setBlocking(false);
+    setShowMenu(false);
   };
 
   function formatTime(ts: string): string {
@@ -195,8 +228,48 @@ function ChatPage() {
             </div>
           )}
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <h2 className="truncate font-semibold">{otherUser?.display_name || "Unknown"}</h2>
+        </div>
+
+        {/* Menu button */}
+        <div className="relative">
+          <button
+            onClick={() => setShowMenu(!showMenu)}
+            className="rounded-full p-1.5 text-gray-400 transition hover:bg-gray-800 hover:text-white"
+          >
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+            </svg>
+          </button>
+          {showMenu && (
+            <div className="absolute right-0 top-10 z-20 w-44 rounded-xl border border-gray-700 bg-gray-900 py-1.5 shadow-2xl">
+              <button
+                onClick={handleBlock}
+                disabled={blocking}
+                className="flex w-full items-center gap-2 px-4 py-2 text-sm text-red-400 transition hover:bg-red-500/10 disabled:opacity-50"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                </svg>
+                {blocking ? "Blocking..." : "Block User"}
+              </button>
+              <button
+                onClick={() => {
+                  setShowMenu(false);
+                  setShowReportModal(true);
+                  setReportReason("");
+                  setReportDone(false);
+                }}
+                className="flex w-full items-center gap-2 px-4 py-2 text-sm text-amber-400 transition hover:bg-amber-500/10"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+                Report User
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -264,6 +337,91 @@ function ChatPage() {
           </button>
         </div>
       </form>
+
+      {/* Report Modal */}
+      {showReportModal && otherUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="mx-4 w-full max-w-sm rounded-2xl bg-gray-900 p-6 shadow-2xl">
+            <h3 className="text-lg font-bold">Report {otherUser.display_name || "User"}</h3>
+            <p className="mt-1 text-sm text-gray-400">
+              {reportDone
+                ? "Thank you. Your report has been submitted."
+                : "Why are you reporting this user?"}
+            </p>
+
+            {!reportDone && (
+              <>
+                <div className="mt-4 space-y-2">
+                  {REPORT_REASONS.map((r) => (
+                    <label
+                      key={r.value}
+                      className={`flex cursor-pointer items-center gap-3 rounded-lg border p-3 text-sm transition ${
+                        reportReason === r.value
+                          ? "border-rose-500/50 bg-rose-500/10 text-white"
+                          : "border-gray-700 text-gray-300 hover:border-gray-600"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="reportReason"
+                        value={r.value}
+                        checked={reportReason === r.value}
+                        onChange={(e) => setReportReason(e.target.value)}
+                        className="accent-rose-500"
+                      />
+                      {r.label}
+                    </label>
+                  ))}
+                </div>
+
+                <div className="mt-5 flex gap-3">
+                  <button
+                    onClick={() => setShowReportModal(false)}
+                    className="flex-1 rounded-full border border-gray-600 px-4 py-2 text-sm text-gray-300 transition hover:border-gray-500"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (!reportReason || !otherUser) return;
+                      setReporting(true);
+                      try {
+                        await fetch("/api/users/report", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ user_id: otherUser.id, reason: reportReason }),
+                        });
+                        setReportDone(true);
+                      } catch {
+                      } finally {
+                        setReporting(false);
+                      }
+                    }}
+                    disabled={!reportReason || reporting}
+                    className="flex-1 rounded-full bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-500 disabled:opacity-50"
+                  >
+                    {reporting ? "Submitting..." : "Submit Report"}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {reportDone && (
+              <div className="mt-5">
+                <button
+                  onClick={() => {
+                    setShowReportModal(false);
+                    setReportDone(false);
+                  }}
+                  className="w-full rounded-full border border-gray-600 px-4 py-2 text-sm text-gray-300 transition hover:border-gray-500"
+                >
+                  Close
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
