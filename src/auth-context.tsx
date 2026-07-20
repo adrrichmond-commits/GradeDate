@@ -6,6 +6,7 @@ export interface SafeUser {
   display_name: string | null;
   age: number | null;
   gender: string | null;
+  looking_for: string;
   bio: string | null;
   photo_path: string | null;
   grade: number | null;

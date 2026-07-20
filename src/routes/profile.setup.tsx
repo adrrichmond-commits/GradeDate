@@ -14,6 +14,7 @@ function ProfileSetup() {
   const [displayName, setDisplayName] = useState("");
   const [age, setAge] = useState("");
   const [gender, setGender] = useState("");
+  const [lookingFor, setLookingFor] = useState("");
   const [bio, setBio] = useState("");
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
@@ -98,6 +99,11 @@ function ProfileSetup() {
       return;
     }
 
+    if (!lookingFor) {
+      setError("Please select who you're looking for");
+      return;
+    }
+
     setSubmitting(true);
 
     // Upload photo first if one was selected
@@ -121,6 +127,7 @@ function ProfileSetup() {
           display_name: displayName.trim(),
           age: ageNum,
           gender,
+          looking_for: lookingFor,
           bio: bio.trim(),
           photo_path: photoPath,
         }),
@@ -275,6 +282,30 @@ function ProfileSetup() {
                 <option value="non-binary">Non-binary</option>
                 <option value="other">Other</option>
                 <option value="prefer-not-to-say">Prefer not to say</option>
+              </select>
+            </div>
+
+            {/* Looking For */}
+            <div>
+              <label
+                htmlFor="lookingFor"
+                className="mb-1.5 block text-sm font-medium text-gray-300"
+              >
+                Looking For
+              </label>
+              <select
+                id="lookingFor"
+                required
+                value={lookingFor}
+                onChange={(e) => setLookingFor(e.target.value)}
+                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-gray-100 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+              >
+                <option value="" disabled>
+                  Select...
+                </option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="everyone">Everyone</option>
               </select>
             </div>
 

@@ -44,6 +44,9 @@ export async function initTables(): Promise<void> {
   try {
     await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT`;
   } catch { /* ignore */ }
+  try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS looking_for TEXT DEFAULT 'everyone'`;
+  } catch { /* ignore */ }
 
   await sql()`
     CREATE TABLE IF NOT EXISTS sessions (
@@ -95,6 +98,7 @@ export interface User {
   display_name: string | null;
   age: number | null;
   gender: string | null;
+  looking_for: string;
   bio: string | null;
   photo_path: string | null;
   grade: number | null;
@@ -196,6 +200,7 @@ export async function updateUserProfile(
     display_name: string;
     age: number;
     gender: string;
+    looking_for: string;
     bio: string;
     photo_path: string;
   },
@@ -205,6 +210,7 @@ export async function updateUserProfile(
       display_name = ${data.display_name},
       age = ${data.age},
       gender = ${data.gender},
+      looking_for = ${data.looking_for},
       bio = ${data.bio},
       photo_path = ${data.photo_path}
     WHERE id = ${id}
@@ -277,6 +283,7 @@ export async function getUsersByGradeRange(
   min: number,
   max: number,
   excludeUserId: number,
+  lookingFor?: string,
 ): Promise<MatchUser[]> {
   const rows = await sql()`
     SELECT id, display_name, age, gender, bio, photo_path, grade
@@ -287,6 +294,11 @@ export async function getUsersByGradeRange(
       AND photo_path IS NOT NULL
       AND photo_path != ''
       AND id != ${excludeUserId}
+      ${
+        lookingFor && lookingFor !== "everyone"
+          ? sql()`AND gender = ${lookingFor}`
+          : sql()``
+      }
     ORDER BY ABS(grade - ${grade}) ASC, RANDOM()
   `;
   return rows as unknown as MatchUser[];

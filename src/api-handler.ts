@@ -266,6 +266,7 @@ async function handleUpload(req: Request): Promise<Response> {
     display_name: user.display_name || "",
     age: user.age || 0,
     gender: user.gender || "",
+    looking_for: user.looking_for || "everyone",
     bio: user.bio || "",
     photo_path: `/uploads/${filename}`,
   });
@@ -284,7 +285,7 @@ async function handleUpdateProfile(req: Request): Promise<Response> {
     return json({ error: "Invalid request body" }, 400);
   }
 
-  const { display_name, age, gender, bio, photo_path } = body;
+  const { display_name, age, gender, looking_for, bio, photo_path } = body;
 
   // Support partial updates: only validate fields that are explicitly provided
   if (display_name !== undefined && (!display_name || String(display_name).trim().length === 0)) {
@@ -299,12 +300,16 @@ async function handleUpdateProfile(req: Request): Promise<Response> {
   if (gender !== undefined && !gender) {
     return json({ error: "Gender is required" }, 400);
   }
+  if (looking_for !== undefined && !looking_for) {
+    return json({ error: "Looking for preference is required" }, 400);
+  }
 
   // Merge with existing values for partial updates
   await updateUserProfile(user.id, {
     display_name: display_name !== undefined ? String(display_name).trim() : (user.display_name || ""),
     age: age !== undefined ? Number(age) : (user.age || 0),
     gender: gender !== undefined ? String(gender) : (user.gender || ""),
+    looking_for: looking_for !== undefined ? String(looking_for) : (user.looking_for || "everyone"),
     bio: bio !== undefined ? String(bio).trim() : (user.bio || ""),
     photo_path: photo_path !== undefined ? String(photo_path) : (user.photo_path || ""),
   });
@@ -477,6 +482,7 @@ async function handleGetMatches(req: Request): Promise<Response> {
     user.grade - 1,
     user.grade + 1,
     user.id,
+    user.looking_for || "everyone",
   );
 
   // Strip grades from other users in the response

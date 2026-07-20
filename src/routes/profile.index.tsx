@@ -19,6 +19,7 @@ function ProfilePage() {
   const [editName, setEditName] = useState("");
   const [editAge, setEditAge] = useState("");
   const [editGender, setEditGender] = useState("");
+  const [editLookingFor, setEditLookingFor] = useState("");
   const [editBio, setEditBio] = useState("");
   const [editPhotoFile, setEditPhotoFile] = useState<File | null>(null);
   const [editPhotoPreview, setEditPhotoPreview] = useState<string | null>(null);
@@ -52,6 +53,7 @@ function ProfilePage() {
     setEditName(user.display_name || "");
     setEditAge(user.age?.toString() || "");
     setEditGender(user.gender || "");
+    setEditLookingFor(user.looking_for || "everyone");
     setEditBio(user.bio || "");
     setEditPhotoFile(null);
     setEditPhotoPreview(null);
@@ -139,6 +141,11 @@ function ProfilePage() {
       return;
     }
 
+    if (!editLookingFor) {
+      setSaveError("Please select who you're looking for");
+      return;
+    }
+
     setSaving(true);
 
     // Upload photo first if a new one was selected
@@ -162,6 +169,7 @@ function ProfilePage() {
           display_name: editName.trim(),
           age: ageNum,
           gender: editGender,
+          looking_for: editLookingFor,
           bio: editBio.trim(),
           photo_path: photoPath,
         }),
@@ -446,6 +454,27 @@ function ProfilePage() {
               </select>
             </div>
 
+            {/* Looking For */}
+            <div>
+              <label htmlFor="editLookingFor" className="mb-1.5 block text-sm font-medium text-gray-300">
+                Looking For
+              </label>
+              <select
+                id="editLookingFor"
+                required
+                value={editLookingFor}
+                onChange={(e) => setEditLookingFor(e.target.value)}
+                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-gray-100 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+              >
+                <option value="" disabled>
+                  Select...
+                </option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="everyone">Everyone</option>
+              </select>
+            </div>
+
             {/* Bio */}
             <div>
               <label htmlFor="editBio" className="mb-1.5 block text-sm font-medium text-gray-300">
@@ -511,6 +540,15 @@ function ProfilePage() {
                     {user.gender || "—"}
                   </p>
                 </div>
+              </div>
+
+              <div className="rounded-lg border border-white/5 bg-gray-800/40 p-4">
+                <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
+                  Looking For
+                </span>
+                <p className="mt-1 text-lg font-semibold capitalize text-gray-100">
+                  {user.looking_for || "everyone"}
+                </p>
               </div>
 
               <div className="rounded-lg border border-white/5 bg-gray-800/40 p-4">
