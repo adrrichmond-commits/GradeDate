@@ -11,6 +11,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import handler from "./dist/server/server.js";
+import { initTables } from "./src/db.ts";
 
 const fetchHandler = handler as {
   fetch: (request: Request) => Response | Promise<Response>;
@@ -36,6 +37,12 @@ const toWebRequest = (req: IncomingMessage): Request => {
       : {}),
   } as RequestInit);
 };
+
+// Ensure database tables exist on cold start
+if (process.env.DATABASE_URL) {
+  await initTables();
+  console.log("Database tables initialized");
+}
 
 export default async function vercelHandler(
   req: IncomingMessage,

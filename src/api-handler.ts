@@ -70,10 +70,10 @@ function getSessionId(req: Request): string | null {
   return match ? match[1] : null;
 }
 
-function getCurrentUser(req: Request): User | null {
+async function getCurrentUser(req: Request): Promise<User | null> {
   const sessionId = getSessionId(req);
   if (!sessionId) return null;
-  const session = getSessionById(sessionId);
+  const session = await getSessionById(sessionId);
   if (!session) return null;
   return getUserById(session.user_id);
 }
@@ -110,14 +110,14 @@ async function handleSignup(req: Request): Promise<Response> {
     return json({ error: "Password must be at least 6 characters" }, 400);
   }
 
-  const existing = getUserByEmail(email);
+  const existing = await getUserByEmail(email);
   if (existing) {
     return json({ error: "An account with this email already exists" }, 409);
   }
 
   const passwordHash = await Bun.password.hash(password);
-  const user = createUser(email, passwordHash);
-  const session = createSession(user.id);
+  const user = await createUser(email, passwordHash);
+  const session = await createSession(user.id);
 
   return setSessionCookie(json({ user: toSafeUser(user) }, 201), session.id);
 }
@@ -131,7 +131,7 @@ async function handleLogin(req: Request): Promise<Response> {
   const email = String(body.email).trim().toLowerCase();
   const password = String(body.password);
 
-  const user = getUserByEmail(email);
+  const user = await getUserByEmail(email);
   if (!user) {
     return json({ error: "Invalid email or password" }, 401);
   }
@@ -141,20 +141,20 @@ async function handleLogin(req: Request): Promise<Response> {
     return json({ error: "Invalid email or password" }, 401);
   }
 
-  const session = createSession(user.id);
+  const session = await createSession(user.id);
   return setSessionCookie(json({ user: toSafeUser(user) }), session.id);
 }
 
 async function handleLogout(req: Request): Promise<Response> {
   const sessionId = getSessionId(req);
   if (sessionId) {
-    deleteSession(sessionId);
+    await deleteSession(sessionId);
   }
   return clearSessionCookie(json({ ok: true }));
 }
 
-function handleMe(req: Request): Response {
-  const user = getCurrentUser(req);
+async function handleMe(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req);
   if (!user) {
     return json({ user: null }, 401);
   }
@@ -162,7 +162,7 @@ function handleMe(req: Request): Response {
 }
 
 async function handleUpload(req: Request): Promise<Response> {
-  const user = getCurrentUser(req);
+  const user = await getCurrentUser(req);
   if (!user) {
     return json({ error: "Unauthorized" }, 401);
   }
@@ -194,7 +194,7 @@ async function handleUpload(req: Request): Promise<Response> {
   Bun.write(filePath, new Uint8Array(buffer));
 
   // Update user's photo_path
-  updateUserProfile(user.id, {
+  await updateUserProfile(user.id, {
     display_name: user.display_name || "",
     age: user.age || 0,
     gender: user.gender || "",
@@ -206,7 +206,7 @@ async function handleUpload(req: Request): Promise<Response> {
 }
 
 async function handleUpdateProfile(req: Request): Promise<Response> {
-  const user = getCurrentUser(req);
+  const user = await getCurrentUser(req);
   if (!user) {
     return json({ error: "Unauthorized" }, 401);
   }
@@ -222,7 +222,7 @@ async function handleUpdateProfile(req: Request): Promise<Response> {
     return json({ error: "Display name, age, and gender are required" }, 400);
   }
 
-  updateUserProfile(user.id, {
+  await updateUserProfile(user.id, {
     display_name: String(display_name),
     age: Number(age),
     gender: String(gender),
@@ -249,7 +249,7 @@ function getWeightedRandomGrade(): number {
 }
 
 async function handleGrade(req: Request): Promise<Response> {
-  const user = getCurrentUser(req);
+  const user = await getCurrentUser(req);
   if (!user) {
     return json({ error: "Unauthorized" }, 401);
   }
@@ -269,15 +269,15 @@ async function handleGrade(req: Request): Promise<Response> {
   await new Promise((resolve) => setTimeout(resolve, 1200 + Math.random() * 800));
 
   const grade = getWeightedRandomGrade();
-  updateUserGrade(user.id, grade);
+  await updateUserGrade(user.id, grade);
 
   return json({ grade });
 }
 
 // ── Matching ─────────────────────────────────────────────────
 
-function handleGetMatches(req: Request): Response {
-  const user = getCurrentUser(req);
+async function handleGetMatches(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req);
   if (!user) {
     return json({ error: "Unauthorized" }, 401);
   }
@@ -289,7 +289,7 @@ function handleGetMatches(req: Request): Response {
     return json({ error: "You must get graded before browsing matches", code: "NO_GRADE" }, 400);
   }
 
-  const users = getUsersByGradeRange(
+  const users = await getUsersByGradeRange(
     user.grade,
     user.grade - 1,
     user.grade + 1,
@@ -310,7 +310,7 @@ function handleGetMatches(req: Request): Response {
 }
 
 async function handleLike(req: Request): Promise<Response> {
-  const user = getCurrentUser(req);
+  const user = await getCurrentUser(req);
   if (!user) {
     return json({ error: "Unauthorized" }, 401);
   }
@@ -326,16 +326,16 @@ async function handleLike(req: Request): Promise<Response> {
     return json({ error: "You cannot like yourself" }, 400);
   }
 
-  recordLike(user.id, likedId, "like");
+  await recordLike(user.id, likedId, "like");
 
   // Check if this creates a mutual match
-  const theirLike = getLike(likedId, user.id);
+  const theirLike = await getLike(likedId, user.id);
   let matched = false;
   let matchId: number | null = null;
 
   if (theirLike && theirLike.action === "like") {
     // Mutual match!
-    const match = createMatch(user.id, likedId);
+    const match = await createMatch(user.id, likedId);
     if (match) {
       matched = true;
       matchId = match.id;
@@ -345,7 +345,7 @@ async function handleLike(req: Request): Promise<Response> {
   // Get the other user's info for the match celebration
   let otherUser = null;
   if (matched) {
-    const other = getUserById(likedId);
+    const other = await getUserById(likedId);
     if (other) {
       otherUser = {
         id: other.id,
@@ -359,7 +359,7 @@ async function handleLike(req: Request): Promise<Response> {
 }
 
 async function handlePass(req: Request): Promise<Response> {
-  const user = getCurrentUser(req);
+  const user = await getCurrentUser(req);
   if (!user) {
     return json({ error: "Unauthorized" }, 401);
   }
@@ -371,14 +371,14 @@ async function handlePass(req: Request): Promise<Response> {
     return json({ error: "passed_id is required" }, 400);
   }
 
-  recordLike(user.id, passedId, "pass");
+  await recordLike(user.id, passedId, "pass");
   return json({ ok: true });
 }
 
 // ── Messages ─────────────────────────────────────────────────
 
 async function handleSendMessage(req: Request): Promise<Response> {
-  const user = getCurrentUser(req);
+  const user = await getCurrentUser(req);
   if (!user) {
     return json({ error: "Unauthorized" }, 401);
   }
@@ -394,7 +394,7 @@ async function handleSendMessage(req: Request): Promise<Response> {
   }
 
   // Verify user is a participant in this match
-  const match = getMatchById(match_id);
+  const match = await getMatchById(match_id);
   if (!match) {
     return json({ error: "Match not found" }, 404);
   }
@@ -402,7 +402,7 @@ async function handleSendMessage(req: Request): Promise<Response> {
     return json({ error: "You are not a participant in this match" }, 403);
   }
 
-  const message = createMessage(match_id, user.id, content.trim());
+  const message = await createMessage(match_id, user.id, content.trim());
 
   return json({
     ok: true,
@@ -420,13 +420,13 @@ async function handleSendMessage(req: Request): Promise<Response> {
 }
 
 async function handleGetMessages(req: Request, matchId: number): Promise<Response> {
-  const user = getCurrentUser(req);
+  const user = await getCurrentUser(req);
   if (!user) {
     return json({ error: "Unauthorized" }, 401);
   }
 
   // Verify user is a participant in this match
-  const match = getMatchById(matchId);
+  const match = await getMatchById(matchId);
   if (!match) {
     return json({ error: "Match not found" }, 404);
   }
@@ -439,10 +439,10 @@ async function handleGetMessages(req: Request, matchId: number): Promise<Respons
   const beforeParam = url.searchParams.get("before");
   const beforeId = beforeParam ? Number(beforeParam) : undefined;
 
-  const messages = getMessages(matchId, 50, beforeId);
+  const messages = await getMessages(matchId, 50, beforeId);
 
   // Mark messages as read when fetching
-  markMessagesRead(matchId, user.id);
+  await markMessagesRead(matchId, user.id);
 
   // Return in chronological order (oldest first) for chat display
   const chronological = [...messages].reverse();
@@ -450,30 +450,30 @@ async function handleGetMessages(req: Request, matchId: number): Promise<Respons
   return json({ messages: chronological });
 }
 
-function handleUnreadCount(req: Request): Response {
-  const user = getCurrentUser(req);
+async function handleUnreadCount(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req);
   if (!user) {
     return json({ error: "Unauthorized" }, 401);
   }
 
-  const count = getUnreadMessageCount(user.id);
+  const count = await getUnreadMessageCount(user.id);
   return json({ count });
 }
 
-function handleGetConnections(req: Request): Response {
-  const user = getCurrentUser(req);
+async function handleGetConnections(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req);
   if (!user) {
     return json({ error: "Unauthorized" }, 401);
   }
 
-  const matches = getMatchesForUser(user.id);
+  const matches = await getMatchesForUser(user.id);
   return json({ connections: matches });
 }
 
 // ── Subscription ──────────────────────────────────────────────
 
-function handleSubscriptionStatus(req: Request): Response {
-  const user = getCurrentUser(req);
+async function handleSubscriptionStatus(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req);
   if (!user) {
     return json({ error: "Unauthorized" }, 401);
   }
@@ -483,8 +483,8 @@ function handleSubscriptionStatus(req: Request): Response {
   });
 }
 
-function handleSubscriptionActivate(req: Request): Response {
-  const user = getCurrentUser(req);
+async function handleSubscriptionActivate(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req);
   if (!user) {
     return json({ error: "Unauthorized" }, 401);
   }
@@ -497,7 +497,7 @@ function handleSubscriptionActivate(req: Request): Response {
     });
   }
 
-  updateSubscriptionStatus(user.id, "active");
+  await updateSubscriptionStatus(user.id, "active");
   return json({
     ok: true,
     message: "Subscription activated",

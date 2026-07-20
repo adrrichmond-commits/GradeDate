@@ -11,6 +11,7 @@
 // the takeover works across user boundaries.
 import handler from "./dist/server/server.js";
 import { handleApiRoute } from "./src/api-handler.ts";
+import { initTables } from "./src/db.ts";
 import { existsSync } from "node:fs";
 import path from "node:path";
 
@@ -38,6 +39,15 @@ const freePort =
 // gap between freeing and binding (last publish wins). Bun.serve throws EADDRINUSE
 // synchronously, so without this a raced publish would die while the shell already
 // reported success.
+
+// Initialize database tables
+if (process.env.DATABASE_URL) {
+  await initTables();
+  console.log("Database tables initialized");
+} else {
+  console.warn("DATABASE_URL not set — database features will not work");
+}
+
 for (let attempt = 1; ; attempt++) {
   await Bun.$`sudo sh -c ${freePort}`.quiet().nothrow();
   try {
