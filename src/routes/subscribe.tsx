@@ -86,7 +86,10 @@ function SubscribePage() {
   if (loading) {
     return (
       <div className="flex min-h-[80vh] items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-rose-500 border-t-transparent" />
+        <div className="flex flex-col items-center gap-4">
+          <div className="loader-pulse" />
+          <p className="text-sm text-gray-400">Loading...</p>
+        </div>
       </div>
     );
   }

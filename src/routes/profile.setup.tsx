@@ -31,10 +31,9 @@ function ProfileSetup() {
   if (loading || checking) {
     return (
       <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center px-4">
-        <div className="flex items-center gap-2">
-          <div className="h-3 w-3 animate-bounce rounded-full bg-rose-500 [animation-delay:0ms]" />
-          <div className="h-3 w-3 animate-bounce rounded-full bg-rose-500 [animation-delay:150ms]" />
-          <div className="h-3 w-3 animate-bounce rounded-full bg-rose-500 [animation-delay:300ms]" />
+        <div className="flex flex-col items-center gap-4">
+          <div className="loader-pulse" />
+          <p className="text-sm text-gray-400">Loading...</p>
         </div>
       </div>
     );
@@ -173,13 +172,13 @@ function ProfileSetup() {
                   <img
                     src={photoPreview}
                     alt="Preview"
-                    className="h-24 w-24 rounded-full object-cover ring-2 ring-rose-500/30"
+                    className="h-24 w-24 rounded-full object-cover ring-3 ring-rose-500/15 ring-offset-2 ring-offset-gray-950"
                   />
                 ) : user.photo_path ? (
                   <img
                     src={user.photo_path}
                     alt="Current"
-                    className="h-24 w-24 rounded-full object-cover ring-2 ring-rose-500/30"
+                    className="h-24 w-24 rounded-full object-cover ring-3 ring-rose-500/15 ring-offset-2 ring-offset-gray-950"
                   />
                 ) : (
                   <div className="flex h-24 w-24 items-center justify-center rounded-full bg-gray-800 text-gray-500">

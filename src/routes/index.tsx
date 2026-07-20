@@ -9,22 +9,16 @@ export const Route = createFileRoute("/")({
 // Demo Grader Component
 // ---------------------------------------------------------------------------
 function DemoGrader() {
-  const [state, setState] = useState<
-    "idle" | "analyzing" | "done"
-  >("idle");
+  const [state, setState] = useState<"idle" | "analyzing" | "done">("idle");
   const [grade, setGrade] = useState<number | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    // Show preview
     const url = URL.createObjectURL(file);
     setPreview(url);
     setState("analyzing");
-
-    // Simulate grading delay, then assign random grade
     setTimeout(() => {
       const g = Math.floor(Math.random() * 10) + 1;
       setGrade(g);
@@ -40,11 +34,9 @@ function DemoGrader() {
 
   return (
     <div className="mx-auto max-w-md">
-      <div className="rounded-2xl border border-rose-500/20 bg-gray-900/60 p-6 backdrop-blur-sm">
+      <div className="card border-rose-500/20 p-6">
         <div className="mb-4 flex items-center gap-2">
-          <span className="rounded-full bg-rose-500/20 px-2.5 py-0.5 text-xs font-semibold text-rose-400">
-            DEMO
-          </span>
+          <span className="badge">DEMO</span>
           <span className="text-sm text-gray-400">Try our grader</span>
         </div>
 
@@ -82,14 +74,10 @@ function DemoGrader() {
               <img
                 src={preview}
                 alt="Preview"
-                className="h-32 w-32 rounded-full object-cover ring-2 ring-rose-500/30"
+                className="h-32 w-32 rounded-full object-cover ring-3 ring-rose-500/15 ring-offset-2 ring-offset-gray-950"
               />
             )}
-            <div className="flex items-center gap-2">
-              <div className="h-2 w-2 animate-bounce rounded-full bg-rose-500 [animation-delay:0ms]" />
-              <div className="h-2 w-2 animate-bounce rounded-full bg-rose-500 [animation-delay:150ms]" />
-              <div className="h-2 w-2 animate-bounce rounded-full bg-rose-500 [animation-delay:300ms]" />
-            </div>
+            <div className="loader-pulse" />
             <p className="text-sm text-gray-400">Analyzing your features...</p>
           </div>
         )}
@@ -100,16 +88,14 @@ function DemoGrader() {
               <img
                 src={preview}
                 alt="Preview"
-                className="h-24 w-24 rounded-full object-cover ring-2 ring-rose-500/30"
+                className="h-24 w-24 rounded-full object-cover ring-3 ring-rose-500/15 ring-offset-2 ring-offset-gray-950"
               />
             )}
             <div className="text-center">
               <div className="animate-[scaleIn_0.5s_ease-out] text-6xl font-black text-rose-400">
                 {grade}
               </div>
-              <div className="mt-1 text-sm font-medium text-gray-300">
-                / 10
-              </div>
+              <div className="mt-1 text-sm font-medium text-gray-300">/ 10</div>
             </div>
             <p className="text-center text-sm text-gray-400">
               {grade >= 9
@@ -124,7 +110,7 @@ function DemoGrader() {
             </p>
             <button
               onClick={reset}
-              className="mt-2 text-xs text-gray-500 underline hover:text-gray-300"
+              className="mt-2 text-xs text-gray-500 underline transition hover:text-gray-300"
             >
               Try again
             </button>
@@ -143,30 +129,42 @@ function Home() {
     <>
       {/* ── Hero ────────────────────────────────────────────────── */}
       <section className="relative flex min-h-screen items-center justify-center overflow-hidden px-4">
-        {/* Background gradient */}
+        {/* Dot grid background pattern */}
+        <div
+          className="pointer-events-none absolute inset-0 opacity-20"
+          style={{
+            backgroundImage:
+              "radial-gradient(circle, rgba(244,63,94,0.3) 1px, transparent 1px)",
+            backgroundSize: "32px 32px",
+          }}
+        />
+        {/* Background gradients */}
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(244,63,94,0.15),transparent_50%)]" />
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,_rgba(168,85,247,0.1),transparent_50%)]" />
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,_rgba(245,158,11,0.08),transparent_50%)]" />
 
         <div className="relative z-10 mx-auto max-w-3xl text-center">
-          <span className="mb-6 inline-block rounded-full border border-rose-500/30 bg-rose-500/10 px-4 py-1.5 text-sm font-medium text-rose-400">
+          <span className="badge mb-6 text-sm">
             🔥 The dating app that keeps it real
           </span>
           <h1 className="mb-6 text-5xl font-extrabold leading-tight tracking-tight sm:text-7xl">
             Find your{" "}
-            <span className="bg-gradient-to-r from-rose-400 to-purple-400 bg-clip-text text-transparent">
+            <span
+              className="bg-gradient-to-r from-rose-400 via-amber-400 to-rose-400 bg-clip-text text-transparent animate-[shimmer_3s_ease-in-out_infinite]"
+              style={{ backgroundSize: "200% auto" }}
+            >
               looks-match
             </span>
             .
           </h1>
           <p className="mx-auto mb-10 max-w-xl text-lg text-gray-400 sm:text-xl">
-            We grade your selfie. You date people at your level. No more
-            shooting out of your league — just real connections with
-            looks-compatible singles.
+            We grade your selfie. You date people at your level. No more shooting
+            out of your league — just real connections with looks-compatible
+            singles.
           </p>
           <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
             <a
               href="https://buy.stripe.com/8x2eVdeZ83P8h0Z4SP7Re00"
-              className="inline-flex items-center gap-2 rounded-full bg-rose-600 px-8 py-3.5 text-lg font-semibold text-white shadow-lg shadow-rose-600/25 transition hover:bg-rose-500 hover:shadow-rose-500/30"
+              className="btn-primary text-lg"
             >
               Subscribe for $5.99/mo
               <svg
@@ -183,16 +181,29 @@ function Home() {
                 />
               </svg>
             </a>
-            <Link
-              to="/grade"
-              className="inline-flex items-center gap-2 rounded-full border border-gray-600 px-8 py-3.5 text-lg font-medium text-gray-300 transition hover:border-gray-400 hover:text-white"
-            >
+            <Link to="/grade" className="btn-secondary text-lg">
               Try demo grader →
             </Link>
           </div>
           <p className="mt-4 text-sm text-gray-500">
             No free tier. Cancel anytime.
           </p>
+
+          {/* Social proof counter */}
+          <div className="mt-8 flex items-center justify-center gap-6 text-sm text-gray-500">
+            <div className="flex items-center gap-1.5">
+              <div className="flex -space-x-2">
+                {["#f43f5e", "#f59e0b", "#8b5cf6", "#0ea5e9"].map((c, i) => (
+                  <div
+                    key={i}
+                    className="h-7 w-7 rounded-full border-2 border-gray-950"
+                    style={{ backgroundColor: c }}
+                  />
+                ))}
+              </div>
+              <span className="ml-1 text-gray-400">2.4k+ graded this week</span>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -291,9 +302,9 @@ function Home() {
             ].map((item) => (
               <div
                 key={item.step}
-                className="group relative rounded-2xl border border-white/5 bg-gray-900/40 p-6 transition hover:border-rose-500/20 hover:bg-gray-900/60"
+                className="card-hover group relative p-6"
               >
-                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-rose-500/10 text-rose-400 group-hover:bg-rose-500/20">
+                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-rose-500/10 text-rose-400 transition-colors group-hover:bg-rose-500/20">
                   {item.icon}
                 </div>
                 <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-rose-400">
@@ -369,7 +380,7 @@ function Home() {
             </ul>
             <a
               href="https://buy.stripe.com/8x2eVdeZ83P8h0Z4SP7Re00"
-              className="block w-full rounded-full bg-rose-600 px-8 py-4 text-center text-lg font-semibold text-white shadow-lg shadow-rose-600/25 transition hover:bg-rose-500 hover:shadow-rose-500/30"
+              className="btn-primary w-full justify-center text-lg"
             >
               Subscribe for $5.99/month
             </a>
@@ -416,13 +427,14 @@ function Home() {
             ].map((t, i) => (
               <div
                 key={i}
-                className="rounded-2xl border border-white/5 bg-gray-900/40 p-6"
+                className="card-hover p-6"
               >
+                {/* Star rating — amber/gold */}
                 <div className="mb-4 flex">
                   {Array.from({ length: 5 }).map((_, j) => (
                     <svg
                       key={j}
-                      className="h-5 w-5 text-rose-400"
+                      className="h-5 w-5 text-amber-400"
                       fill="currentColor"
                       viewBox="0 0 20 20"
                     >
@@ -451,7 +463,7 @@ function Home() {
       {/* ── CTA ─────────────────────────────────────────────────── */}
       <section className="px-4 py-24">
         <div className="mx-auto max-w-2xl text-center">
-          <div className="rounded-2xl border border-purple-500/20 bg-gradient-to-br from-purple-500/5 to-rose-500/5 p-12">
+          <div className="card border-purple-500/20 bg-gradient-to-br from-purple-500/5 to-rose-500/5 p-12">
             <h2 className="mb-4 text-3xl font-bold sm:text-4xl">
               Ready to find your looks-match?
             </h2>
@@ -460,7 +472,7 @@ function Home() {
             </p>
             <a
               href="https://buy.stripe.com/8x2eVdeZ83P8h0Z4SP7Re00"
-              className="inline-flex items-center gap-2 rounded-full bg-rose-600 px-8 py-3.5 text-lg font-semibold text-white shadow-lg shadow-rose-600/25 transition hover:bg-rose-500 hover:shadow-rose-500/30"
+              className="btn-primary text-lg"
             >
               Get Started — $5.99/mo
               <svg
@@ -480,7 +492,6 @@ function Home() {
           </div>
         </div>
       </section>
-
     </>
   );
 }

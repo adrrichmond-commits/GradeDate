@@ -4,6 +4,7 @@ import {
   Scripts,
   createRootRoute,
   Link,
+  useRouterState,
 } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { useEffect, useState, useRef } from "react";
@@ -29,9 +30,21 @@ export const Route = createRootRoute({
           "We grade your selfie. You date people at your level. No more shooting out of your league.",
       },
       { property: "og:type", content: "website" },
+      { property: "og:image", content: "/og-image.png" },
+      { property: "og:image:width", content: "1200" },
+      { property: "og:image:height", content: "630" },
+      { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: "GradeDate — Find Your Looks-Match" },
+      {
+        name: "twitter:description",
+        content:
+          "We grade your selfie. You date people at your level. No more shooting out of your league.",
+      },
+      { name: "twitter:image", content: "/og-image.png" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
+      { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
       {
         rel: "preconnect",
         href: "https://fonts.googleapis.com",
@@ -61,6 +74,75 @@ function RootComponent() {
   );
 }
 
+/* ------------------------------------------------------------------ */
+/* Inline Logo Mark SVG                                               */
+/* ------------------------------------------------------------------ */
+function LogoMark({ size = 28 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 48 48"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
+      <defs>
+        <linearGradient id="lmg" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#f43f5e" />
+          <stop offset="100%" stopColor="#f59e0b" />
+        </linearGradient>
+      </defs>
+      <circle cx="24" cy="24" r="23" fill="none" stroke="url(#lmg)" strokeWidth="1.5" opacity="0.3" />
+      <path
+        d="M24 35C24 35 8 27 8 17.5c0-4.14 3.36-7.5 7.5-7.5 2.48 0 4.66 1.2 6 3.07L24 15l2.5-1.93c1.34-1.87 3.52-3.07 6-3.07 4.14 0 7.5 3.36 7.5 7.5C40 27 24 35 24 35z"
+        fill="url(#lmg)"
+        opacity="0.9"
+      />
+      <text x="24" y="26.5" textAnchor="middle" fill="#030712" fontFamily="Inter, sans-serif" fontSize="10" fontWeight="900">10</text>
+    </svg>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Nav Link Component — highlights active route                       */
+/* ------------------------------------------------------------------ */
+function NavLink({ to, children }: { to: string; children: ReactNode }) {
+  const routerState = useRouterState();
+  const isActive = routerState.location.pathname === to;
+
+  return (
+    <Link
+      to={to}
+      className={`relative text-sm transition-colors ${
+        isActive
+          ? "text-white"
+          : "text-gray-400 hover:text-white"
+      }`}
+    >
+      {children}
+      {isActive && (
+        <span className="absolute -bottom-1 left-1/2 h-0.5 w-4 -translate-x-1/2 rounded-full bg-rose-500" />
+      )}
+    </Link>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Branded Loader                                                      */
+/* ------------------------------------------------------------------ */
+function BrandedLoader({ text }: { text?: string }) {
+  return (
+    <div className="flex flex-col items-center gap-4">
+      <div className="loader-pulse" />
+      {text && <p className="text-sm text-gray-400">{text}</p>}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* App Shell                                                           */
+/* ------------------------------------------------------------------ */
 function AppShell() {
   const { user, loading } = useAuth();
   const [unread, setUnread] = useState(0);
@@ -97,8 +179,10 @@ function AppShell() {
       {/* Navbar */}
       <nav className="fixed inset-x-0 top-0 z-50 border-b border-white/5 bg-gray-950/80 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4">
-          <Link to="/" className="text-xl font-bold tracking-tight">
-            <span className="text-rose-500">Grade</span>Date
+          <Link to="/" className="flex items-center gap-2 text-xl font-bold tracking-tight">
+            <LogoMark size={28} />
+            <span className="text-rose-500">Grade</span>
+            <span>Date</span>
           </Link>
           <div className="flex items-center gap-4">
             {loading ? (
@@ -108,34 +192,23 @@ function AppShell() {
                 {user.subscription_status !== "active" && (
                   <Link
                     to="/subscribe"
-                    className="rounded-full bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-rose-500"
+                    className="rounded-full bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-rose-500 hover:scale-105 active:scale-95"
                   >
                     Subscribe
                   </Link>
                 )}
-                <Link
-                  to="/matches"
-                  className="text-sm text-gray-400 transition hover:text-white"
-                >
-                  Matches
-                </Link>
-                <Link
-                  to="/connections"
-                  className="relative text-sm text-gray-400 transition hover:text-white"
-                >
-                  Connections
-                  {unread > 0 && (
-                    <span className="absolute -right-3 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold text-white">
-                      {unread > 99 ? "99+" : unread}
-                    </span>
-                  )}
-                </Link>
-                <Link
-                  to="/profile"
-                  className="text-sm text-gray-400 transition hover:text-white"
-                >
-                  Profile
-                </Link>
+                <NavLink to="/matches">Matches</NavLink>
+                <NavLink to="/connections">
+                  <span className="relative">
+                    Connections
+                    {unread > 0 && (
+                      <span className="absolute -right-3 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold text-white">
+                        {unread > 99 ? "99+" : unread}
+                      </span>
+                    )}
+                  </span>
+                </NavLink>
+                <NavLink to="/profile">Profile</NavLink>
                 {user.subscription_status === "active" && (
                   <span className="rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-semibold text-green-400">
                     ACTIVE
@@ -160,7 +233,7 @@ function AppShell() {
                 </Link>
                 <Link
                   to="/signup"
-                  className="rounded-full bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-500"
+                  className="rounded-full bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-500 hover:scale-105 active:scale-95"
                 >
                   Sign Up
                 </Link>
@@ -170,8 +243,8 @@ function AppShell() {
         </div>
       </nav>
 
-      {/* Page content */}
-      <div className="pt-16">
+      {/* Page content with fade-in transition */}
+      <div className="page-enter pt-16">
         <Outlet />
       </div>
 

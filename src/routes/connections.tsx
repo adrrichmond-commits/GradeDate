@@ -73,10 +73,9 @@ function ConnectionsPage() {
   if (loading || checking || fetching) {
     return (
       <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center px-4">
-        <div className="flex items-center gap-2">
-          <div className="h-3 w-3 animate-bounce rounded-full bg-rose-500 [animation-delay:0ms]" />
-          <div className="h-3 w-3 animate-bounce rounded-full bg-rose-500 [animation-delay:150ms]" />
-          <div className="h-3 w-3 animate-bounce rounded-full bg-rose-500 [animation-delay:300ms]" />
+        <div className="flex flex-col items-center gap-4">
+          <div className="loader-pulse" />
+          <p className="text-sm text-gray-400">Loading connections...</p>
         </div>
       </div>
     );
@@ -107,10 +106,10 @@ function ConnectionsPage() {
       )}
 
       {!error && connections.length === 0 && (
-        <div className="flex flex-col items-center gap-4 rounded-2xl border border-white/5 bg-gray-900/60 p-12 text-center backdrop-blur-sm">
+        <div className="flex flex-col items-center gap-4 card p-12 text-center">
           <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gray-800">
             <svg
-              className="h-8 w-8 text-gray-500"
+              className="h-8 w-8 text-rose-400"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -127,10 +126,7 @@ function ConnectionsPage() {
           <p className="text-sm text-gray-500 max-w-xs">
             Keep swiping! When someone you like also likes you back, you'll appear here.
           </p>
-          <Link
-            to="/matches"
-            className="mt-2 rounded-full border border-gray-600 px-6 py-2 text-sm text-gray-300 transition hover:border-gray-400 hover:text-white"
-          >
+          <Link to="/matches" className="btn-secondary">
             Keep swiping
           </Link>
         </div>
@@ -143,10 +139,10 @@ function ConnectionsPage() {
               key={conn.match_id}
               to="/chat/$matchId"
               params={{ matchId: String(conn.match_id) }}
-              className="flex items-center gap-4 rounded-xl border border-white/5 bg-gray-900/60 p-4 transition hover:border-rose-500/30 hover:bg-gray-900/80 backdrop-blur-sm"
+              className="card-hover flex items-center gap-4 p-4"
             >
               {/* Avatar */}
-              <div className="h-14 w-14 flex-shrink-0 overflow-hidden rounded-full bg-gray-800">
+              <div className="h-14 w-14 flex-shrink-0 overflow-hidden rounded-full bg-gray-800 ring-2 ring-rose-500/10 ring-offset-2 ring-offset-gray-950">
                 {conn.photo_path ? (
                   <img
                     src={conn.photo_path}

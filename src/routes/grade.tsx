@@ -103,14 +103,10 @@ function GradeDemo() {
                   <img
                     src={preview}
                     alt="Preview"
-                    className="h-40 w-40 rounded-full object-cover ring-4 ring-rose-500/20"
+                    className="h-40 w-40 rounded-full object-cover ring-3 ring-rose-500/15 ring-offset-2 ring-offset-gray-950"
                   />
                 )}
-                <div className="flex items-center gap-2">
-                  <div className="h-3 w-3 animate-bounce rounded-full bg-rose-500 [animation-delay:0ms]" />
-                  <div className="h-3 w-3 animate-bounce rounded-full bg-rose-500 [animation-delay:150ms]" />
-                  <div className="h-3 w-3 animate-bounce rounded-full bg-rose-500 [animation-delay:300ms]" />
-                </div>
+                <div className="loader-pulse" />
                 <p className="text-gray-400">
                   Analyzing facial features...
                 </p>
@@ -126,7 +122,7 @@ function GradeDemo() {
                   <img
                     src={preview}
                     alt="Preview"
-                    className="h-32 w-32 rounded-full object-cover ring-4 ring-rose-500/20"
+                    className="h-32 w-32 rounded-full object-cover ring-3 ring-rose-500/15 ring-offset-2 ring-offset-gray-950"
                   />
                 )}
                 <div className="text-center">

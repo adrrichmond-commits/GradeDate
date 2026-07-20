@@ -24,9 +24,7 @@ function MatchesPage() {
   const [currentIdx, setCurrentIdx] = useState(0);
   const [fetching, setFetching] = useState(true);
   const [error, setError] = useState("");
-  const [animState, setAnimState] = useState<"idle" | "like" | "pass" | null>(
-    null,
-  );
+  const [animState, setAnimState] = useState<"idle" | "like" | "pass" | null>(null);
   const [matchCelebration, setMatchCelebration] = useState<{
     match_id: number;
     other_user: { id: number; display_name: string | null; photo_path: string | null } | null;
@@ -38,21 +36,18 @@ function MatchesPage() {
       navigate({ to: "/login" });
       return;
     }
-    // Redirect if no grade yet
     if (user && user.grade === null) {
       navigate({ to: "/profile" });
       return;
     }
   }, [loading, user]);
 
-  // Wait for subscription check
   if (loading || checking) {
     return (
       <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center px-4">
-        <div className="flex items-center gap-2">
-          <div className="h-3 w-3 animate-bounce rounded-full bg-rose-500 [animation-delay:0ms]" />
-          <div className="h-3 w-3 animate-bounce rounded-full bg-rose-500 [animation-delay:150ms]" />
-          <div className="h-3 w-3 animate-bounce rounded-full bg-rose-500 [animation-delay:300ms]" />
+        <div className="flex flex-col items-center gap-4">
+          <div className="loader-pulse" />
+          <p className="text-sm text-gray-400">Loading your matches...</p>
         </div>
       </div>
     );
@@ -103,12 +98,10 @@ function MatchesPage() {
       const data = await res.json();
 
       if (data.matched) {
-        // Show match celebration
         setMatchCelebration({
           match_id: data.match_id,
           other_user: data.other_user,
         });
-        // Still advance after delay
         setTimeout(() => {
           setMatchCelebration(null);
           setAnimState(null);
@@ -121,7 +114,7 @@ function MatchesPage() {
         return;
       }
     } catch {
-      // Silently fail — user can still swipe
+      // Silently fail
     }
 
     setTimeout(() => {
@@ -162,10 +155,9 @@ function MatchesPage() {
   if (loading || fetching) {
     return (
       <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center px-4">
-        <div className="flex items-center gap-2">
-          <div className="h-3 w-3 animate-bounce rounded-full bg-rose-500 [animation-delay:0ms]" />
-          <div className="h-3 w-3 animate-bounce rounded-full bg-rose-500 [animation-delay:150ms]" />
-          <div className="h-3 w-3 animate-bounce rounded-full bg-rose-500 [animation-delay:300ms]" />
+        <div className="flex flex-col items-center gap-4">
+          <div className="loader-pulse" />
+          <p className="text-sm text-gray-400">Finding your matches...</p>
         </div>
       </div>
     );
@@ -175,7 +167,6 @@ function MatchesPage() {
 
   return (
     <div className="mx-auto max-w-lg px-4 py-8">
-      {/* Subscription banner for inactive users (edge case) */}
       <SubscriptionBanner />
 
       {/* Header */}
@@ -186,8 +177,7 @@ function MatchesPage() {
         </p>
         {user.grade !== null && (
           <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-rose-500/10 px-3 py-1 text-xs text-rose-400">
-            Your grade:{" "}
-            <span className="font-bold">{user.grade}</span>/10
+            Your grade: <span className="font-bold">{user.grade}</span>/10
           </div>
         )}
       </div>
@@ -204,12 +194,12 @@ function MatchesPage() {
         </div>
       )}
 
-      {/* No matches */}
+      {/* No matches empty state */}
       {!current && !error && (
-        <div className="flex flex-col items-center gap-4 rounded-2xl border border-white/5 bg-gray-900/60 p-12 text-center backdrop-blur-sm">
+        <div className="flex flex-col items-center gap-4 card p-12 text-center">
           <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gray-800">
             <svg
-              className="h-8 w-8 text-gray-500"
+              className="h-8 w-8 text-rose-400"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -228,7 +218,7 @@ function MatchesPage() {
           </p>
           <button
             onClick={fetchMatches}
-            className="mt-2 rounded-full border border-gray-600 px-6 py-2 text-sm text-gray-300 transition hover:border-gray-400 hover:text-white"
+            className="btn-secondary"
           >
             Refresh
           </button>
@@ -239,16 +229,22 @@ function MatchesPage() {
       {current && (
         <div className="relative">
           <div
-            className={`rounded-2xl border border-white/5 bg-gray-900/60 overflow-hidden backdrop-blur-sm transition-all duration-300 ${
+            key={current.id}
+            className={`animate-[cardEnter_0.4s_ease-out] rounded-2xl overflow-hidden transition-all duration-300 ${
               animState === "like"
                 ? "translate-x-full opacity-0 rotate-6"
                 : animState === "pass"
                   ? "-translate-x-full opacity-0 -rotate-6"
                   : ""
             }`}
+            style={{
+              animation: animState === null ? "cardEnter 0.4s ease-out" : undefined,
+              boxShadow:
+                "0 0 20px 1px rgba(244,63,94,0.1), 0 0 40px 5px rgba(244,63,94,0.04)",
+            }}
           >
             {/* Photo */}
-            <div className="aspect-[3/4] w-full bg-gray-800 relative">
+            <div className="relative aspect-[3/4] w-full bg-gray-800">
               {current.photo_path ? (
                 <img
                   src={current.photo_path}
@@ -273,27 +269,31 @@ function MatchesPage() {
                 </div>
               )}
 
-              {/* Swipe action indicators */}
+              {/* Photo vignette overlay */}
+              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_40%,rgba(3,7,18,0.6)_100%)]" />
+
+              {/* Dramatic LIKE overlay */}
               {animState === "like" && (
-                <div className="absolute inset-0 flex items-center justify-center bg-green-500/20">
-                  <span className="rounded-lg border-4 border-green-400 px-6 py-2 text-3xl font-black text-green-400 -rotate-12">
+                <div className="absolute inset-0 z-10 flex items-center justify-center bg-green-500/20 backdrop-blur-[2px]">
+                  <span className="animate-[likeStamp_0.3s_ease-out] rounded-xl border-[3px] border-green-400 px-8 py-3 text-4xl font-black text-green-400 -rotate-12 shadow-2xl">
                     LIKE
                   </span>
                 </div>
               )}
+
+              {/* Dramatic PASS overlay */}
               {animState === "pass" && (
-                <div className="absolute inset-0 flex items-center justify-center bg-red-500/20">
-                  <span className="rounded-lg border-4 border-red-400 px-6 py-2 text-3xl font-black text-red-400 rotate-12">
+                <div className="absolute inset-0 z-10 flex items-center justify-center bg-red-500/20 backdrop-blur-[2px]">
+                  <span className="animate-[passStamp_0.3s_ease-out] rounded-xl border-[3px] border-red-400 px-8 py-3 text-4xl font-black text-red-400 rotate-12 shadow-2xl">
                     PASS
                   </span>
                 </div>
               )}
 
-              {/* Gradient overlay at bottom */}
-              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-gray-950/90 via-gray-950/40 to-transparent p-6 pt-20">
+              {/* Player info gradient overlay */}
+              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-gray-950/95 via-gray-950/40 to-transparent p-6 pt-20">
                 <h2 className="text-2xl font-bold">
-                  {current.display_name || "Anonymous"},{" "}
-                  {current.age || "?"}
+                  {current.display_name || "Anonymous"}, {current.age || "?"}
                 </h2>
                 {current.gender && (
                   <p className="mt-1 text-sm capitalize text-gray-400">
@@ -304,7 +304,7 @@ function MatchesPage() {
             </div>
 
             {/* Bio */}
-            <div className="p-5">
+            <div className="border-t border-white/5 bg-gray-900 p-5">
               <p className="text-sm leading-relaxed text-gray-300">
                 {current.bio || "No bio yet."}
               </p>
@@ -316,7 +316,7 @@ function MatchesPage() {
             <button
               onClick={handlePass}
               disabled={animState !== null}
-              className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-red-500/40 bg-gray-900 text-red-400 transition hover:border-red-400 hover:bg-red-500/10 disabled:opacity-50"
+              className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-red-500/40 bg-gray-900 text-red-400 transition-all duration-200 hover:scale-110 hover:border-red-400 hover:bg-red-500/10 hover:shadow-lg hover:shadow-red-500/10 disabled:opacity-50"
               aria-label="Pass"
             >
               <svg
@@ -337,7 +337,7 @@ function MatchesPage() {
             <button
               onClick={handleLike}
               disabled={animState !== null}
-              className="flex h-20 w-20 items-center justify-center rounded-full border-2 border-rose-500/40 bg-gray-900 text-rose-400 transition hover:border-rose-400 hover:bg-rose-500/10 disabled:opacity-50"
+              className="flex h-20 w-20 items-center justify-center rounded-full border-2 border-rose-500/40 bg-gray-900 text-rose-400 transition-all duration-200 hover:scale-110 hover:border-rose-400 hover:bg-rose-500/10 hover:shadow-lg hover:shadow-rose-500/20 disabled:opacity-50"
               aria-label="Like"
             >
               <svg
@@ -358,7 +358,7 @@ function MatchesPage() {
             <button
               onClick={handlePass}
               disabled={animState !== null}
-              className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-red-500/40 bg-gray-900 text-red-400 transition hover:border-red-400 hover:bg-red-500/10 disabled:opacity-50"
+              className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-red-500/40 bg-gray-900 text-red-400 transition-all duration-200 hover:scale-110 hover:border-red-400 hover:bg-red-500/10 hover:shadow-lg hover:shadow-red-500/10 disabled:opacity-50"
               aria-label="Pass"
             >
               <svg
@@ -387,8 +387,8 @@ function MatchesPage() {
       {/* Match Celebration Modal */}
       {matchCelebration && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-          <div className="mx-4 w-full max-w-sm animate-bounce-in rounded-2xl bg-gray-900 p-8 text-center shadow-2xl">
-            <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-rose-500/20">
+          <div className="mx-4 w-full max-w-sm animate-[bounceIn_0.5s_ease-out] rounded-2xl bg-gray-900 p-8 text-center shadow-2xl animate-[celebratePulse_2s_ease-in-out_infinite]">
+            <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-rose-500/20 to-amber-500/20">
               <svg
                 className="h-10 w-10 text-rose-400"
                 fill="none"
@@ -403,7 +403,9 @@ function MatchesPage() {
                 />
               </svg>
             </div>
-            <h2 className="text-3xl font-black text-rose-400">It's a Match!</h2>
+            <h2 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-rose-400 to-amber-400">
+              It's a Match!
+            </h2>
             <p className="mt-2 text-gray-400">
               You and{" "}
               <span className="font-semibold text-white">
@@ -415,14 +417,14 @@ function MatchesPage() {
               <Link
                 to="/chat/$matchId"
                 params={{ matchId: String(matchCelebration.match_id) }}
-                className="rounded-full bg-rose-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-rose-500"
+                className="btn-primary justify-center"
                 onClick={() => setMatchCelebration(null)}
               >
                 Send a message
               </Link>
               <button
                 onClick={() => setMatchCelebration(null)}
-                className="rounded-full border border-gray-600 px-6 py-3 text-sm text-gray-400 transition hover:border-gray-400 hover:text-white"
+                className="btn-secondary justify-center"
               >
                 Keep swiping
               </button>

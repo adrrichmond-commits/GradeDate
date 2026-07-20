@@ -14,14 +14,12 @@ function ProfilePage() {
   const [gradeError, setGradeError] = useState("");
   const { isSubscribed, checking } = useRequireSubscription();
 
-  // Redirect to login if not authenticated
   useEffect(() => {
     if (!loading && !user) {
       navigate({ to: "/login" });
     }
   }, [loading, user]);
 
-  // Redirect to setup if no profile
   useEffect(() => {
     if (user && !user.display_name) {
       navigate({ to: "/profile/setup" });
@@ -49,10 +47,9 @@ function ProfilePage() {
   if (loading || checking) {
     return (
       <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center px-4">
-        <div className="flex items-center gap-2">
-          <div className="h-3 w-3 animate-bounce rounded-full bg-rose-500 [animation-delay:0ms]" />
-          <div className="h-3 w-3 animate-bounce rounded-full bg-rose-500 [animation-delay:150ms]" />
-          <div className="h-3 w-3 animate-bounce rounded-full bg-rose-500 [animation-delay:300ms]" />
+        <div className="flex flex-col items-center gap-4">
+          <div className="loader-pulse" />
+          <p className="text-sm text-gray-400">Loading profile...</p>
         </div>
       </div>
     );
@@ -69,17 +66,17 @@ function ProfilePage() {
         </p>
       </div>
 
-      <div className="rounded-2xl border border-white/5 bg-gray-900/60 p-8 backdrop-blur-sm">
+      <div className="card p-8">
         {/* Photo */}
         <div className="mb-8 flex justify-center">
           {user.photo_path ? (
             <img
               src={user.photo_path}
               alt={user.display_name || "Profile"}
-              className="h-40 w-40 rounded-full object-cover ring-4 ring-rose-500/20"
+              className="h-40 w-40 rounded-full object-cover ring-3 ring-rose-500/15 ring-offset-4 ring-offset-gray-950"
             />
           ) : (
-            <div className="flex h-40 w-40 items-center justify-center rounded-full bg-gray-800 text-gray-500">
+            <div className="flex h-40 w-40 items-center justify-center rounded-full bg-gray-800 ring-3 ring-rose-500/15 ring-offset-4 ring-offset-gray-950 text-gray-500">
               <svg
                 className="h-16 w-16"
                 fill="none"
@@ -97,39 +94,45 @@ function ProfilePage() {
           )}
         </div>
 
-        {/* Grade Display */}
+        {/* Grade Display — hero element */}
         {user.grade !== null && (
           <div className="mb-8 text-center">
-            <div className="inline-flex flex-col items-center rounded-xl border border-rose-500/20 bg-rose-500/5 px-8 py-4">
+            <div className="inline-flex flex-col items-center rounded-2xl border border-rose-500/20 bg-gradient-to-b from-rose-500/5 to-transparent px-10 py-6">
               <span className="text-xs font-semibold uppercase tracking-wider text-rose-400">
                 Your Grade
               </span>
-              <span className="text-5xl font-black text-rose-400">
+              <span className="mt-1 animate-[scaleIn_0.5s_ease-out] text-6xl font-black text-rose-400">
                 {user.grade}
               </span>
               <span className="text-xs text-gray-500">/ 10</span>
+              {/* Grade bar */}
+              <div className="mt-3 flex w-full max-w-[160px] gap-0.5">
+                {Array.from({ length: 10 }).map((_, i) => (
+                  <div
+                    key={i}
+                    className={`h-1.5 flex-1 rounded-full ${
+                      i < user.grade!
+                        ? "bg-gradient-to-r from-rose-500 to-purple-500"
+                        : "bg-gray-800"
+                    }`}
+                  />
+                ))}
+              </div>
             </div>
             <div className="mt-3">
-              <Link
-                to="/matches"
-                className="inline-flex items-center gap-2 rounded-full bg-rose-600 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-rose-500"
-              >
+              <Link to="/matches" className="btn-primary">
                 Browse Matches →
               </Link>
             </div>
           </div>
         )}
 
-        {/* Get Graded CTA — user has photo but no grade */}
+        {/* Get Graded CTA */}
         {user.grade === null && user.photo_path && (
           <div className="mb-8 text-center">
             {grading ? (
               <div className="flex flex-col items-center gap-4 py-4">
-                <div className="flex items-center gap-2">
-                  <div className="h-3 w-3 animate-bounce rounded-full bg-rose-500 [animation-delay:0ms]" />
-                  <div className="h-3 w-3 animate-bounce rounded-full bg-rose-500 [animation-delay:150ms]" />
-                  <div className="h-3 w-3 animate-bounce rounded-full bg-rose-500 [animation-delay:300ms]" />
-                </div>
+                <div className="loader-pulse" />
                 <p className="text-gray-400">Analyzing your photo...</p>
                 <div className="h-1 w-48 overflow-hidden rounded-full bg-gray-800">
                   <div className="h-full animate-[progress_2s_ease-in-out_forwards] rounded-full bg-gradient-to-r from-rose-500 to-purple-500" />
@@ -158,7 +161,7 @@ function ProfilePage() {
                 </p>
                 <button
                   onClick={handleGetGraded}
-                  className="mt-4 inline-flex items-center gap-2 rounded-full bg-amber-500 px-6 py-2.5 text-sm font-semibold text-gray-950 transition hover:bg-amber-400"
+                  className="mt-4 inline-flex items-center gap-2 rounded-full bg-amber-500 px-6 py-2.5 text-sm font-semibold text-gray-950 transition hover:bg-amber-400 hover:scale-105 active:scale-95"
                 >
                   Get Graded
                 </button>
@@ -170,7 +173,7 @@ function ProfilePage() {
           </div>
         )}
 
-        {/* No photo yet — need to upload first */}
+        {/* No photo yet */}
         {user.grade === null && !user.photo_path && (
           <div className="mb-8 text-center">
             <div className="inline-flex flex-col items-center rounded-xl border border-gray-700 bg-gray-800/30 px-8 py-6">
@@ -190,10 +193,7 @@ function ProfilePage() {
               <span className="text-sm font-medium text-gray-400">
                 Upload a photo to get graded
               </span>
-              <Link
-                to="/profile/setup"
-                className="mt-4 rounded-full border border-gray-600 px-6 py-2 text-sm text-gray-300 transition hover:border-gray-400 hover:text-white"
-              >
+              <Link to="/profile/setup" className="btn-secondary mt-4">
                 Edit Profile
               </Link>
             </div>
@@ -258,10 +258,7 @@ function ProfilePage() {
         </div>
 
         <div className="mt-8 text-center">
-          <Link
-            to="/profile/setup"
-            className="rounded-full border border-gray-600 px-6 py-2.5 text-sm font-medium text-gray-300 transition hover:border-gray-400 hover:text-white"
-          >
+          <Link to="/profile/setup" className="btn-secondary">
             Edit Profile
           </Link>
         </div>
