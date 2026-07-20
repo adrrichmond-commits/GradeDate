@@ -12,6 +12,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import handler from "./dist/server/server.js";
 import { initTables } from "./src/db.ts";
+import { handleApiRoute } from "./src/api-handler.ts";
 
 const fetchHandler = handler as {
   fetch: (request: Request) => Response | Promise<Response>;
@@ -44,27 +45,47 @@ if (process.env.DATABASE_URL) {
   console.log("Database tables initialized");
 }
 
+async function streamResponse(
+  webRes: Response,
+  res: ServerResponse,
+): Promise<void> {
+  res.statusCode = webRes.status;
+  webRes.headers.forEach((value, key) => res.setHeader(key, value));
+  if (webRes.body) {
+    const reader = webRes.body.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      res.write(value);
+    }
+  }
+  res.end();
+}
+
 export default async function vercelHandler(
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
   try {
-    const webRes = await fetchHandler.fetch(toWebRequest(req));
-    res.statusCode = webRes.status;
-    webRes.headers.forEach((value, key) => res.setHeader(key, value));
-    if (webRes.body) {
-      const reader = webRes.body.getReader();
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        res.write(value);
+    const webReq = toWebRequest(req);
+    const { pathname } = new URL(webReq.url);
+
+    // 1. Route API requests to the API handler
+    if (pathname.startsWith("/api/")) {
+      const apiRes = await handleApiRoute(webReq);
+      if (apiRes) {
+        return streamResponse(apiRes, res);
       }
+      // If the API handler returns null (unknown route), fall through to SSR
     }
-    res.end();
+
+    // 2. SSR handler for everything else
+    const webRes = await fetchHandler.fetch(webReq);
+    return streamResponse(webRes, res);
   } catch (error) {
     // Log the detail server-side (captured by the host's function logs); never
     // return a stack trace to the public visitor of the site.
-    console.error("[team-site] SSR request failed", error);
+    console.error("[team-site] request failed", error);
     res.statusCode = 500;
     res.setHeader("content-type", "text/plain");
     res.end("Internal Server Error");

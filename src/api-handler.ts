@@ -22,11 +22,76 @@ import {
   markMessagesRead,
   type User,
 } from "../src/db.ts";
-import { mkdirSync, existsSync } from "node:fs";
+import { mkdirSync, existsSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { webcrypto } from "node:crypto";
 
-const UPLOADS_DIR = path.join(import.meta.dir, "..", "uploads");
-mkdirSync(UPLOADS_DIR, { recursive: true });
+// Node-compatible password hashing using Web Crypto API (available in Node 22)
+const encoder = new TextEncoder();
+async function hashPassword(password: string): Promise<string> {
+  // Use PBKDF2 via Web Crypto for Node compatibility
+  const salt = webcrypto.getRandomValues(new Uint8Array(16));
+  const keyMaterial = await webcrypto.subtle.importKey(
+    "raw",
+    encoder.encode(password),
+    "PBKDF2",
+    false,
+    ["deriveBits"],
+  );
+  const derived = await webcrypto.subtle.deriveBits(
+    { name: "PBKDF2", salt, iterations: 100000, hash: "SHA-256" },
+    keyMaterial,
+    256,
+  );
+  const hashHex = Buffer.from(new Uint8Array(derived)).toString("hex");
+  const saltHex = Buffer.from(salt).toString("hex");
+  return `${saltHex}:${hashHex}`;
+}
+
+async function verifyPassword(password: string, stored: string): Promise<boolean> {
+  const [saltHex, hashHex] = stored.split(":");
+  if (!saltHex || !hashHex) return false;
+  const salt = Buffer.from(saltHex, "hex");
+  const keyMaterial = await webcrypto.subtle.importKey(
+    "raw",
+    encoder.encode(password),
+    "PBKDF2",
+    false,
+    ["deriveBits"],
+  );
+  const derived = await webcrypto.subtle.deriveBits(
+    { name: "PBKDF2", salt, iterations: 100000, hash: "SHA-256" },
+    keyMaterial,
+    256,
+  );
+  return Buffer.from(new Uint8Array(derived)).toString("hex") === hashHex;
+}
+
+// Polyfill Bun.password for Node (Bun is not available on Vercel's Node runtime)
+const BunPw = typeof (globalThis as any).Bun?.password?.hash === "function"
+  ? (globalThis as any).Bun.password
+  : { hash: hashPassword, verify: verifyPassword };
+
+function getUploadsDir(): string {
+  // On Node/Vercel, use a temp directory; on Bun, use local uploads/
+  if (typeof (globalThis as any).Bun === "undefined") {
+    return "/tmp/uploads";
+  }
+  return path.join(import.meta.dir, "..", "uploads");
+}
+
+let _uploadsDir: string | null = null;
+function uploadsDir(): string {
+  if (_uploadsDir) return _uploadsDir;
+  _uploadsDir = getUploadsDir();
+  try {
+    mkdirSync(_uploadsDir, { recursive: true });
+  } catch {
+    // Ignore — uploads may not be writable in serverless; the upload handler
+    // will return a proper error when called.
+  }
+  return _uploadsDir;
+}
 
 const SESSION_COOKIE = "session_id";
 
@@ -115,7 +180,7 @@ async function handleSignup(req: Request): Promise<Response> {
     return json({ error: "An account with this email already exists" }, 409);
   }
 
-  const passwordHash = await Bun.password.hash(password);
+  const passwordHash = await BunPw.hash(password);
   const user = await createUser(email, passwordHash);
   const session = await createSession(user.id);
 
@@ -136,7 +201,7 @@ async function handleLogin(req: Request): Promise<Response> {
     return json({ error: "Invalid email or password" }, 401);
   }
 
-  const valid = await Bun.password.verify(password, user.password_hash);
+  const valid = await BunPw.verify(password, user.password_hash);
   if (!valid) {
     return json({ error: "Invalid email or password" }, 401);
   }
@@ -188,10 +253,10 @@ async function handleUpload(req: Request): Promise<Response> {
 
   const ext = file.name.split(".").pop() || "jpg";
   const filename = `${user.id}_${Date.now()}.${ext}`;
-  const filePath = path.join(UPLOADS_DIR, filename);
+  const filePath = path.join(uploadsDir(), filename);
 
   const buffer = await file.arrayBuffer();
-  Bun.write(filePath, new Uint8Array(buffer));
+  writeFileSync(filePath, new Uint8Array(buffer));
 
   // Update user's photo_path
   await updateUserProfile(user.id, {
