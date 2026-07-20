@@ -32,3 +32,6 @@ uploads/*
 
 # Site metadata
 site.json
+
+# Backup files
+*.bak
