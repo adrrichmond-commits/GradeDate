@@ -257,12 +257,12 @@ function AppShell() {
             All rights reserved.
           </span>
           <div className="flex gap-6">
-            <a href="#" className="transition hover:text-gray-300">
+            <Link to="/privacy" className="transition hover:text-gray-300">
               Privacy
-            </a>
-            <a href="#" className="transition hover:text-gray-300">
+            </Link>
+            <Link to="/terms" className="transition hover:text-gray-300">
               Terms
-            </a>
+            </Link>
             <a href="#" className="transition hover:text-gray-300">
               Contact
             </a>
