@@ -286,16 +286,27 @@ async function handleUpdateProfile(req: Request): Promise<Response> {
 
   const { display_name, age, gender, bio, photo_path } = body;
 
-  if (!display_name || !age || !gender) {
-    return json({ error: "Display name, age, and gender are required" }, 400);
+  // Support partial updates: only validate fields that are explicitly provided
+  if (display_name !== undefined && (!display_name || String(display_name).trim().length === 0)) {
+    return json({ error: "Display name cannot be empty" }, 400);
+  }
+  if (age !== undefined) {
+    const ageNum = Number(age);
+    if (isNaN(ageNum) || ageNum < 18 || ageNum > 120) {
+      return json({ error: "Age must be between 18 and 120" }, 400);
+    }
+  }
+  if (gender !== undefined && !gender) {
+    return json({ error: "Gender is required" }, 400);
   }
 
+  // Merge with existing values for partial updates
   await updateUserProfile(user.id, {
-    display_name: String(display_name),
-    age: Number(age),
-    gender: String(gender),
-    bio: String(bio || ""),
-    photo_path: String(photo_path || user.photo_path || ""),
+    display_name: display_name !== undefined ? String(display_name).trim() : (user.display_name || ""),
+    age: age !== undefined ? Number(age) : (user.age || 0),
+    gender: gender !== undefined ? String(gender) : (user.gender || ""),
+    bio: bio !== undefined ? String(bio).trim() : (user.bio || ""),
+    photo_path: photo_path !== undefined ? String(photo_path) : (user.photo_path || ""),
   });
 
   return json({ ok: true });

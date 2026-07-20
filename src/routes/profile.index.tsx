@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useAuth } from "~/auth-context";
 import { useRequireSubscription, SubscriptionBanner } from "~/subscription-guard";
 
@@ -14,6 +14,20 @@ function ProfilePage() {
   const [gradeError, setGradeError] = useState("");
   const { isSubscribed, checking } = useRequireSubscription();
 
+  // Edit mode state
+  const [editing, setEditing] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editAge, setEditAge] = useState("");
+  const [editGender, setEditGender] = useState("");
+  const [editBio, setEditBio] = useState("");
+  const [editPhotoFile, setEditPhotoFile] = useState<File | null>(null);
+  const [editPhotoPreview, setEditPhotoPreview] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const successTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     if (!loading && !user) {
       navigate({ to: "/login" });
@@ -25,6 +39,42 @@ function ProfilePage() {
       navigate({ to: "/profile/setup" });
     }
   }, [user]);
+
+  // Clear success toast after 3s
+  useEffect(() => {
+    return () => {
+      if (successTimeout.current) clearTimeout(successTimeout.current);
+    };
+  }, []);
+
+  const initEditFields = () => {
+    if (!user) return;
+    setEditName(user.display_name || "");
+    setEditAge(user.age?.toString() || "");
+    setEditGender(user.gender || "");
+    setEditBio(user.bio || "");
+    setEditPhotoFile(null);
+    setEditPhotoPreview(null);
+    setSaveError("");
+    setSaveSuccess(false);
+  };
+
+  const handleEnterEdit = () => {
+    initEditFields();
+    setEditing(true);
+  };
+
+  const handleCancelEdit = () => {
+    initEditFields();
+    setEditing(false);
+  };
+
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setEditPhotoFile(file);
+    setEditPhotoPreview(URL.createObjectURL(file));
+  };
 
   const handleGetGraded = async () => {
     setGrading(true);
@@ -44,6 +94,99 @@ function ProfilePage() {
     }
   };
 
+  const handleUploadPhoto = async (): Promise<string | null> => {
+    if (!editPhotoFile) return null;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("photo", editPhotoFile);
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setSaveError(data.error || "Upload failed");
+        return null;
+      }
+      return data.photo_path;
+    } catch {
+      setSaveError("Photo upload failed. Please try again.");
+      return null;
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleSave = async () => {
+    setSaveError("");
+    setSaveSuccess(false);
+
+    // Validate required fields
+    if (!editName.trim()) {
+      setSaveError("Display name is required");
+      return;
+    }
+
+    const ageNum = parseInt(editAge, 10);
+    if (!editAge || isNaN(ageNum) || ageNum < 18 || ageNum > 120) {
+      setSaveError("Please enter a valid age (18-120)");
+      return;
+    }
+
+    if (!editGender) {
+      setSaveError("Please select your gender");
+      return;
+    }
+
+    setSaving(true);
+
+    // Upload photo first if a new one was selected
+    let photoPath = user?.photo_path;
+    if (editPhotoFile) {
+      const uploadedPath = await handleUploadPhoto();
+      if (uploadedPath) {
+        photoPath = uploadedPath;
+      } else {
+        setSaving(false);
+        return;
+      }
+    }
+
+    // Save profile via API
+    try {
+      const res = await fetch("/api/auth/update-profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          display_name: editName.trim(),
+          age: ageNum,
+          gender: editGender,
+          bio: editBio.trim(),
+          photo_path: photoPath,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setSaveError(data.error || "Failed to save profile");
+        return;
+      }
+
+      await refetch();
+      setSaveSuccess(true);
+      setEditing(false);
+
+      // Clear success toast after 3s
+      if (successTimeout.current) clearTimeout(successTimeout.current);
+      successTimeout.current = setTimeout(() => setSaveSuccess(false), 3000);
+    } catch {
+      setSaveError("Network error. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading || checking) {
     return (
       <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center px-4">
@@ -57,8 +200,23 @@ function ProfilePage() {
 
   if (!user || !isSubscribed) return null;
 
+  // Current photo to display
+  const displayPhoto = editPhotoPreview || user.photo_path;
+
   return (
     <div className="mx-auto max-w-2xl px-4 py-12">
+      {/* Success Toast */}
+      {saveSuccess && (
+        <div className="fixed top-6 left-1/2 z-50 -translate-x-1/2 animate-[fadeInUp_0.3s_ease-out]">
+          <div className="flex items-center gap-2.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-5 py-2.5 shadow-lg backdrop-blur-sm">
+            <svg className="h-4 w-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+            <span className="text-sm font-medium text-emerald-400">Profile updated successfully!</span>
+          </div>
+        </div>
+      )}
+
       <div className="mb-8 text-center">
         <h1 className="text-3xl font-bold">Your Profile</h1>
         <p className="mt-2 text-gray-400">
@@ -69,9 +227,9 @@ function ProfilePage() {
       <div className="card p-8">
         {/* Photo */}
         <div className="mb-8 flex justify-center">
-          {user.photo_path ? (
+          {displayPhoto ? (
             <img
-              src={user.photo_path}
+              src={displayPhoto}
               alt={user.display_name || "Profile"}
               className="h-40 w-40 rounded-full object-cover ring-3 ring-rose-500/15 ring-offset-4 ring-offset-gray-950"
             />
@@ -92,10 +250,26 @@ function ProfilePage() {
               </svg>
             </div>
           )}
+
+          {/* Photo upload in edit mode */}
+          {editing && (
+            <div className="ml-6 flex flex-col justify-center">
+              <label className="cursor-pointer rounded-lg border border-gray-600 px-4 py-2.5 text-sm text-gray-300 transition hover:border-rose-500/50 hover:text-white">
+                Change Photo
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handlePhotoChange}
+                  className="hidden"
+                />
+              </label>
+              <p className="mt-1 text-xs text-gray-500">A clear face photo works best.</p>
+            </div>
+          )}
         </div>
 
-        {/* Grade Display — hero element */}
-        {user.grade !== null && (
+        {/* Grade Display — hero element (only in view mode) */}
+        {!editing && user.grade !== null && (
           <div className="mb-8 text-center">
             <div className="inline-flex flex-col items-center rounded-2xl border border-rose-500/20 bg-gradient-to-b from-rose-500/5 to-transparent px-10 py-6">
               <span className="text-xs font-semibold uppercase tracking-wider text-rose-400">
@@ -127,8 +301,8 @@ function ProfilePage() {
           </div>
         )}
 
-        {/* Get Graded CTA */}
-        {user.grade === null && user.photo_path && (
+        {/* Get Graded CTA (only in view mode) */}
+        {!editing && user.grade === null && user.photo_path && (
           <div className="mb-8 text-center">
             {grading ? (
               <div className="flex flex-col items-center gap-4 py-4">
@@ -173,8 +347,8 @@ function ProfilePage() {
           </div>
         )}
 
-        {/* No photo yet */}
-        {user.grade === null && !user.photo_path && (
+        {/* No photo yet (only in view mode) */}
+        {!editing && user.grade === null && !user.photo_path && (
           <div className="mb-8 text-center">
             <div className="inline-flex flex-col items-center rounded-xl border border-gray-700 bg-gray-800/30 px-8 py-6">
               <svg
@@ -193,76 +367,195 @@ function ProfilePage() {
               <span className="text-sm font-medium text-gray-400">
                 Upload a photo to get graded
               </span>
-              <Link to="/profile/setup" className="btn-secondary mt-4">
-                Edit Profile
-              </Link>
+              <button onClick={handleEnterEdit} className="btn-secondary mt-4">
+                Upload Photo
+              </button>
             </div>
           </div>
         )}
 
-        {/* Details */}
-        <div className="space-y-4">
-          <div className="rounded-lg border border-white/5 bg-gray-800/40 p-4">
-            <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
-              Display Name
-            </span>
-            <p className="mt-1 text-lg font-semibold text-gray-100">
-              {user.display_name || "Not set"}
-            </p>
-          </div>
+        {/* ── Edit Mode ── */}
+        {editing ? (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleSave();
+            }}
+            className="space-y-5"
+          >
+            {saveError && (
+              <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">
+                {saveError}
+              </div>
+            )}
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="rounded-lg border border-white/5 bg-gray-800/40 p-4">
-              <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
+            {/* Display Name */}
+            <div>
+              <label htmlFor="editName" className="mb-1.5 block text-sm font-medium text-gray-300">
+                Display Name
+              </label>
+              <input
+                id="editName"
+                type="text"
+                required
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-gray-100 placeholder-gray-500 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                placeholder="How you'll appear on GradeDate"
+              />
+            </div>
+
+            {/* Age */}
+            <div>
+              <label htmlFor="editAge" className="mb-1.5 block text-sm font-medium text-gray-300">
                 Age
-              </span>
-              <p className="mt-1 text-lg font-semibold text-gray-100">
-                {user.age || "—"}
-              </p>
+              </label>
+              <input
+                id="editAge"
+                type="number"
+                required
+                min={18}
+                max={120}
+                value={editAge}
+                onChange={(e) => setEditAge(e.target.value)}
+                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-gray-100 placeholder-gray-500 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                placeholder="18"
+              />
             </div>
 
-            <div className="rounded-lg border border-white/5 bg-gray-800/40 p-4">
-              <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
+            {/* Gender */}
+            <div>
+              <label htmlFor="editGender" className="mb-1.5 block text-sm font-medium text-gray-300">
                 Gender
-              </span>
-              <p className="mt-1 text-lg font-semibold capitalize text-gray-100">
-                {user.gender || "—"}
-              </p>
+              </label>
+              <select
+                id="editGender"
+                required
+                value={editGender}
+                onChange={(e) => setEditGender(e.target.value)}
+                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-gray-100 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+              >
+                <option value="" disabled>
+                  Select...
+                </option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="non-binary">Non-binary</option>
+                <option value="other">Other</option>
+                <option value="prefer-not-to-say">Prefer not to say</option>
+              </select>
             </div>
-          </div>
 
-          <div className="rounded-lg border border-white/5 bg-gray-800/40 p-4">
-            <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
-              Bio
-            </span>
-            <p className="mt-1 text-gray-300">
-              {user.bio || "No bio yet."}
-            </p>
-          </div>
+            {/* Bio */}
+            <div>
+              <label htmlFor="editBio" className="mb-1.5 block text-sm font-medium text-gray-300">
+                Bio
+              </label>
+              <textarea
+                id="editBio"
+                rows={3}
+                value={editBio}
+                onChange={(e) => setEditBio(e.target.value)}
+                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-gray-100 placeholder-gray-500 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                placeholder="A few words about yourself..."
+              />
+            </div>
 
-          <div className="rounded-lg border border-white/5 bg-gray-800/40 p-4">
-            <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
-              Email
-            </span>
-            <p className="mt-1 text-gray-400">{user.email}</p>
-          </div>
+            {/* Action Buttons */}
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={handleCancelEdit}
+                disabled={saving || uploading}
+                className="flex-1 rounded-full border border-gray-600 px-6 py-2.5 text-sm font-semibold text-gray-300 transition hover:border-gray-500 hover:text-white disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={saving || uploading}
+                className="flex-1 rounded-full bg-rose-600 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-rose-500 disabled:opacity-50"
+              >
+                {uploading ? "Uploading photo..." : saving ? "Saving..." : "Save Changes"}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <>
+            {/* ── View Mode Details ── */}
+            <div className="space-y-4">
+              <div className="rounded-lg border border-white/5 bg-gray-800/40 p-4">
+                <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
+                  Display Name
+                </span>
+                <p className="mt-1 text-lg font-semibold text-gray-100">
+                  {user.display_name || "Not set"}
+                </p>
+              </div>
 
-          <div className="rounded-lg border border-white/5 bg-gray-800/40 p-4">
-            <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
-              Subscription
-            </span>
-            <p className="mt-1 capitalize text-gray-400">
-              {user.subscription_status}
-            </p>
-          </div>
-        </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="rounded-lg border border-white/5 bg-gray-800/40 p-4">
+                  <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
+                    Age
+                  </span>
+                  <p className="mt-1 text-lg font-semibold text-gray-100">
+                    {user.age || "—"}
+                  </p>
+                </div>
 
-        <div className="mt-8 text-center">
-          <Link to="/profile/setup" className="btn-secondary">
-            Edit Profile
-          </Link>
-        </div>
+                <div className="rounded-lg border border-white/5 bg-gray-800/40 p-4">
+                  <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
+                    Gender
+                  </span>
+                  <p className="mt-1 text-lg font-semibold capitalize text-gray-100">
+                    {user.gender || "—"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-white/5 bg-gray-800/40 p-4">
+                <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
+                  Bio
+                </span>
+                <p className="mt-1 text-gray-300">
+                  {user.bio || "No bio yet."}
+                </p>
+              </div>
+
+              <div className="rounded-lg border border-white/5 bg-gray-800/40 p-4">
+                <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
+                  Email
+                </span>
+                <p className="mt-1 text-gray-400">{user.email}</p>
+              </div>
+
+              <div className="rounded-lg border border-white/5 bg-gray-800/40 p-4">
+                <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
+                  Subscription
+                </span>
+                <p className="mt-1 capitalize text-gray-400">
+                  {user.subscription_status}
+                </p>
+              </div>
+            </div>
+
+            {/* Edit Profile Button */}
+            <div className="mt-8 text-center">
+              <button onClick={handleEnterEdit} className="btn-secondary">
+                Edit Profile
+              </button>
+            </div>
+          </>
+        )}
       </div>
+
+      {/* Inline keyframe for toast */}
+      <style>{`
+        @keyframes fadeInUp {
+          from { opacity: 0; transform: translate(-50%, 20px); }
+          to { opacity: 1; transform: translate(-50%, 0); }
+        }
+      `}</style>
     </div>
   );
 }
