@@ -1,10 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import { useAuth } from "~/auth-context";
 
-// Stripe payment link — replace with the real link when provided
 const STRIPE_PAYMENT_LINK = "https://buy.stripe.com/8x2eVdeZ83P8h0Z4SP7Re00";
-const STRIPE_CUSTOMER_PORTAL = "https://billing.stripe.com/p/login/placeholder";
 
 export const Route = createFileRoute("/subscribe")({
   component: SubscribePage,
@@ -15,54 +13,6 @@ function SubscribePage() {
   const [activating, setActivating] = useState(false);
   const [activated, setActivated] = useState(false);
   const [error, setError] = useState("");
-  const [processingSession, setProcessingSession] = useState(false);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  // Detect post-checkout redirect: ?session_id=cs_xxx
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const sessionId = params.get("session_id");
-    if (sessionId) {
-      setProcessingSession(true);
-      // Clean the URL
-      window.history.replaceState({}, "", "/subscribe");
-
-      // Poll subscription status until webhook fires
-      let attempts = 0;
-      const maxAttempts = 30; // 30 * 2s = 60 seconds max
-
-      pollRef.current = setInterval(async () => {
-        attempts++;
-        try {
-          const res = await fetch("/api/subscription/status");
-          if (res.ok) {
-            const data = await res.json();
-            if (data.subscription_status === "active") {
-              setProcessingSession(false);
-              setActivated(true);
-              await refetch();
-              if (pollRef.current) clearInterval(pollRef.current);
-              return;
-            }
-          }
-        } catch {
-          // Silently retry
-        }
-
-        if (attempts >= maxAttempts) {
-          setProcessingSession(false);
-          setError(
-            "Subscription processing is taking longer than expected. If you completed payment, use the button below to activate manually.",
-          );
-          if (pollRef.current) clearInterval(pollRef.current);
-        }
-      }, 2000);
-    }
-
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, []);
 
   const handleActivate = async () => {
     setActivating(true);
@@ -89,32 +39,6 @@ function SubscribePage() {
         <div className="flex flex-col items-center gap-4">
           <div className="loader-pulse" />
           <p className="text-sm text-gray-400">Loading...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Show processing state after Stripe redirect
-  if (processingSession) {
-    return (
-      <div className="flex min-h-[80vh] items-center justify-center px-4">
-        <div className="max-w-md text-center">
-          <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center">
-            <div className="h-12 w-12 animate-spin rounded-full border-3 border-rose-500 border-t-transparent" />
-          </div>
-          <h1 className="mb-3 text-2xl font-bold">
-            Processing Your Subscription...
-          </h1>
-          <p className="text-gray-400">
-            We're confirming your payment with Stripe. This usually takes a few
-            seconds. You'll be redirected automatically once your subscription
-            is active.
-          </p>
-          <div className="mt-6 flex items-center justify-center gap-2">
-            <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-rose-500" />
-            <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-rose-500 [animation-delay:0.2s]" />
-            <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-rose-500 [animation-delay:0.4s]" />
-          </div>
         </div>
       </div>
     );
@@ -159,18 +83,6 @@ function SubscribePage() {
               View Profile
             </Link>
           </div>
-          {/* Manage Subscription link */}
-          <p className="mt-6 text-sm text-gray-500">
-            Need to manage your subscription?{" "}
-            <a
-              href={STRIPE_CUSTOMER_PORTAL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline transition hover:text-gray-300"
-            >
-              Stripe Customer Portal
-            </a>
-          </p>
         </div>
       </div>
     );
@@ -194,7 +106,7 @@ function SubscribePage() {
         {/* Pricing Card */}
         <div className="mb-8 rounded-2xl border border-rose-500/30 bg-gradient-to-b from-gray-900 to-gray-950 p-8 shadow-xl shadow-rose-500/5">
           <div className="mb-2 text-sm font-semibold uppercase tracking-wider text-rose-400">
-            Monthly Plan
+            Step 1 — Subscribe
           </div>
           <div className="mb-4 flex items-baseline justify-center gap-1">
             <span className="text-5xl font-extrabold">$5.99</span>
@@ -232,19 +144,18 @@ function SubscribePage() {
             href={STRIPE_PAYMENT_LINK}
             className="mb-4 block w-full rounded-full bg-rose-600 px-8 py-4 text-center text-lg font-semibold text-white shadow-lg shadow-rose-600/25 transition hover:bg-rose-500 hover:shadow-rose-500/30"
           >
-            Subscribe Now — $5.99/month
+            Pay $5.99/month on Stripe →
           </a>
           <p className="text-xs text-gray-500">
-            Secure payment via Stripe. You'll be redirected to Stripe's checkout
-            and automatically returned after payment.
+            After paying on Stripe, come back here and click "I've Subscribed" below to activate your account.
           </p>
         </div>
 
-        {/* "I've Subscribed" Button (fallback) */}
-        <div className="rounded-2xl border border-white/5 bg-gray-900/40 p-6">
+        {/* Activation */}
+        <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-6">
+          <p className="mb-1 text-sm font-semibold text-amber-400">Step 2</p>
           <p className="mb-4 text-sm text-gray-400">
-            Already completed your payment on Stripe? Click below to activate
-            your subscription.
+            After completing payment on Stripe, click below to activate your subscription and unlock the app.
           </p>
           <button
             onClick={handleActivate}
@@ -264,20 +175,6 @@ function SubscribePage() {
             <p className="mt-3 text-sm text-red-400">{error}</p>
           )}
         </div>
-
-        {/* Manage Subscription */}
-        <p className="mt-6 text-sm text-gray-500">
-          Already subscribed?{" "}
-          <a
-            href={STRIPE_CUSTOMER_PORTAL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline transition hover:text-gray-300"
-          >
-            Manage your subscription
-          </a>{" "}
-          via Stripe Customer Portal.
-        </p>
       </div>
     </div>
   );
