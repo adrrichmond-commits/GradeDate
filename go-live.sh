@@ -43,7 +43,8 @@ bash ./build-vercel.sh
 SCOPE_ARGS=()
 if [ -n "${VERCEL_SCOPE:-}" ]; then SCOPE_ARGS=(--scope "$VERCEL_SCOPE"); fi
 ENV_ARGS=()
-if [ -n "${DATABASE_URL:-}" ]; then ENV_ARGS=(-e "DATABASE_URL=$DATABASE_URL"); fi
+if [ -n "${DATABASE_URL:-}" ]; then ENV_ARGS+=(-e "DATABASE_URL=$DATABASE_URL"); fi
+if [ -n "${OPENAI_API_KEY:-}" ]; then ENV_ARGS+=(-e "OPENAI_API_KEY=$OPENAI_API_KEY"); fi
 
 echo "==> deploying${VERCEL_SCOPE:+ (scope: $VERCEL_SCOPE)}"
 DEPLOY_OUT="$($VERCEL deploy --prebuilt --yes --token "$VERCEL_TOKEN" \

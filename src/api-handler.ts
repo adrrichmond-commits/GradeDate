@@ -22,7 +22,7 @@ import {
   markMessagesRead,
   type User,
 } from "../src/db.ts";
-import { mkdirSync, existsSync, writeFileSync } from "node:fs";
+import { mkdirSync, existsSync, writeFileSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { webcrypto } from "node:crypto";
 
@@ -313,6 +313,94 @@ function getWeightedRandomGrade(): number {
   return Math.max(1, Math.min(10, raw));
 }
 
+async function gradeWithAI(photoPath: string): Promise<{ grade: number; analysis: string }> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error("OPENAI_API_KEY not configured");
+  }
+
+  // Read the photo file from disk
+  const dir = uploadsDir();
+  const filename = path.basename(photoPath);
+  const filePath = path.join(dir, filename);
+
+  let buffer: Buffer;
+  try {
+    buffer = readFileSync(filePath);
+  } catch {
+    throw new Error(`Photo file not found: ${filePath}`);
+  }
+
+  const base64Image = buffer.toString("base64");
+  const mimeType =
+    filename.endsWith(".png") ? "image/png" :
+    filename.endsWith(".webp") ? "image/webp" :
+    filename.endsWith(".gif") ? "image/gif" :
+    "image/jpeg";
+
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are an objective facial appearance rater. Analyze the given photo and rate facial appearance on a 1-10 scale (1=lowest, 10=highest). Consider facial symmetry, proportions, skin clarity, and overall attractiveness. Respond ONLY with a JSON object in this exact format: {\"grade\": <number 1-10>, \"analysis\": \"<brief one-line analysis>\"}",
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "Rate this person's facial appearance on a 1-10 scale.",
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:${mimeType};base64,${base64Image}`,
+                detail: "low",
+              },
+            },
+          ],
+        },
+      ],
+      max_tokens: 150,
+      temperature: 0.3,
+    }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text().catch(() => "");
+    throw new Error(`OpenAI API error ${response.status}: ${errText}`);
+  }
+
+  const data = (await response.json()) as {
+    choices: Array<{ message: { content: string } }>;
+  };
+
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) {
+    throw new Error("Empty response from OpenAI");
+  }
+
+  // Parse the JSON from the response (may contain markdown code fences)
+  const jsonMatch = content.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    throw new Error(`Could not parse grade from OpenAI response: ${content}`);
+  }
+
+  const parsed = JSON.parse(jsonMatch[0]);
+  const grade = Math.max(1, Math.min(10, Math.round(Number(parsed.grade) || 5)));
+  const analysis = String(parsed.analysis || "");
+
+  return { grade, analysis };
+}
+
 async function handleGrade(req: Request): Promise<Response> {
   const user = await getCurrentUser(req);
   if (!user) {
@@ -330,13 +418,29 @@ async function handleGrade(req: Request): Promise<Response> {
     return json({ error: "You have already been graded", grade: user.grade }, 400);
   }
 
-  // Simulate AI grading delay
-  await new Promise((resolve) => setTimeout(resolve, 1200 + Math.random() * 800));
+  let grade: number;
+  let analysis: string | null = null;
+  let usedAI = false;
 
-  const grade = getWeightedRandomGrade();
+  try {
+    const result = await gradeWithAI(user.photo_path);
+    grade = result.grade;
+    analysis = result.analysis;
+    usedAI = true;
+  } catch (err) {
+    // Fall back to mock weighted random grade on any failure
+    console.error("AI grading failed, falling back to mock:", err);
+    grade = getWeightedRandomGrade();
+    usedAI = false;
+  }
+
   await updateUserGrade(user.id, grade);
 
-  return json({ grade });
+  return json({
+    grade,
+    ...(analysis ? { analysis } : {}),
+    grading_method: usedAI ? "ai" : "mock",
+  });
 }
 
 // ── Matching ─────────────────────────────────────────────────
