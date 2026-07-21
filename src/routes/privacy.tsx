@@ -119,9 +119,32 @@ function PrivacyPolicy() {
           </ul>
         </section>
 
+        {/* Biometric Data */}
+        <section>
+          <h2 className="mb-3 text-xl font-bold text-white">4. Biometric Data &amp; Facial Analysis</h2>
+          <p className="leading-relaxed">
+            When you upload a photo, GradeDate extracts biometric facial measurements — 
+            including facial geometry, symmetry ratios, and feature proportions — to generate 
+            your appearance grade. This biometric data is:
+          </p>
+          <ul className="list-disc space-y-2 pl-6 leading-relaxed">
+            <li>Used solely to calculate your grade and match you with compatible users</li>
+            <li>Not shared with other users (they see your photo, not your biometric data)</li>
+            <li>Not sold, licensed, or used for any purpose beyond the Service</li>
+            <li>Deleted when your account is deleted</li>
+          </ul>
+          <p className="mt-3 leading-relaxed">
+            By uploading a photo, you provide explicit consent for this biometric processing. 
+            You may withdraw consent at any time by deleting your account, which removes all 
+            biometric data from our systems. Certain jurisdictions (including Illinois under 
+            BIPA and the EU under GDPR) require specific consent for biometric data collection 
+            — this section serves as that consent.
+          </p>
+        </section>
+
         {/* Third-Party Processing */}
         <section>
-          <h2 className="mb-3 text-xl font-bold text-white">4. Third-Party Data Processing</h2>
+          <h2 className="mb-3 text-xl font-bold text-white">5. Third-Party Data Processing</h2>
           <p className="leading-relaxed">
             We use the following third-party services to operate GradeDate:
           </p>
@@ -172,7 +195,7 @@ function PrivacyPolicy() {
 
         {/* Data Retention & Deletion */}
         <section>
-          <h2 className="mb-3 text-xl font-bold text-white">5. Data Retention and Account Deletion</h2>
+          <h2 className="mb-3 text-xl font-bold text-white">6. Data Retention and Account Deletion</h2>
           <p className="leading-relaxed">
             We retain your personal data for as long as your account is active. You may request
             account deletion at any time by contacting us at{" "}
@@ -193,7 +216,7 @@ function PrivacyPolicy() {
 
         {/* Data Selling */}
         <section>
-          <h2 className="mb-3 text-xl font-bold text-white">6. Data Sharing and Selling</h2>
+          <h2 className="mb-3 text-xl font-bold text-white">7. Data Sharing and Selling</h2>
           <p className="leading-relaxed">
             <strong className="text-white">We do not sell your personal data</strong> to third
             parties. We do not share your data with advertisers, data brokers, or any other
@@ -205,7 +228,7 @@ function PrivacyPolicy() {
 
         {/* Cookies */}
         <section>
-          <h2 className="mb-3 text-xl font-bold text-white">7. Cookies</h2>
+          <h2 className="mb-3 text-xl font-bold text-white">8. Cookies</h2>
           <p className="leading-relaxed">
             GradeDate uses <strong className="text-white">session cookies only</strong> for
             authentication purposes. These cookies are essential to keep you logged in as you
@@ -218,7 +241,7 @@ function PrivacyPolicy() {
 
         {/* Security */}
         <section>
-          <h2 className="mb-3 text-xl font-bold text-white">8. Data Security</h2>
+          <h2 className="mb-3 text-xl font-bold text-white">9. Data Security</h2>
           <p className="leading-relaxed">
             We implement reasonable technical and organizational measures to protect your
             personal data, including encryption in transit (HTTPS/TLS), hashed password storage
@@ -229,7 +252,7 @@ function PrivacyPolicy() {
 
         {/* Children */}
         <section>
-          <h2 className="mb-3 text-xl font-bold text-white">9. Children&rsquo;s Privacy</h2>
+          <h2 className="mb-3 text-xl font-bold text-white">10. Children&rsquo;s Privacy</h2>
           <p className="leading-relaxed">
             GradeDate is not intended for anyone under the age of 18. We do not knowingly
             collect personal data from minors. If we learn that we have collected data from
@@ -239,7 +262,7 @@ function PrivacyPolicy() {
 
         {/* Changes */}
         <section>
-          <h2 className="mb-3 text-xl font-bold text-white">10. Changes to This Policy</h2>
+          <h2 className="mb-3 text-xl font-bold text-white">11. Changes to This Policy</h2>
           <p className="leading-relaxed">
             We may update this Privacy Policy from time to time. Material changes will be
             communicated via email or through a notice on the Service. The &ldquo;Last
@@ -249,7 +272,7 @@ function PrivacyPolicy() {
 
         {/* Contact */}
         <section>
-          <h2 className="mb-3 text-xl font-bold text-white">11. Contact</h2>
+          <h2 className="mb-3 text-xl font-bold text-white">12. Contact</h2>
           <p className="leading-relaxed">
             If you have questions about this Privacy Policy or wish to exercise your data
             rights, contact us at{" "}

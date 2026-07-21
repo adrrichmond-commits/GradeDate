@@ -56,6 +56,9 @@ export async function initTables(): Promise<void> {
   try {
     await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS likes_revealed INTEGER DEFAULT 0`;
   } catch { /* ignore */ }
+  try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS date_of_birth TEXT`;
+  } catch { /* ignore */ }
 
   await sql()`
     CREATE TABLE IF NOT EXISTS sessions (
@@ -136,6 +139,7 @@ export interface User {
   regrades_available: number;
   boost_until: string | null;
   likes_revealed: number;
+  date_of_birth: string | null;
   created_at: string;
 }
 
@@ -205,10 +209,11 @@ export interface MessageWithSender {
 export async function createUser(
   email: string,
   passwordHash: string,
+  dateOfBirth?: string,
 ): Promise<User> {
   const rows = await sql()`
-    INSERT INTO users (email, password_hash)
-    VALUES (${email}, ${passwordHash})
+    INSERT INTO users (email, password_hash, date_of_birth)
+    VALUES (${email}, ${passwordHash}, ${dateOfBirth || null})
     RETURNING *
   `;
   return rows[0] as unknown as User;

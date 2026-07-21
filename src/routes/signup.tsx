@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useAuth } from "~/auth-context";
 
 export const Route = createFileRoute("/signup")({
@@ -12,8 +12,64 @@ function Signup() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [dobMonth, setDobMonth] = useState("");
+  const [dobDay, setDobDay] = useState("");
+  const [dobYear, setDobYear] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  // Generate year options (from 18 years ago back to ~100 years ago)
+  const currentYear = new Date().getFullYear();
+  const years = useMemo(() => {
+    const y: number[] = [];
+    for (let i = currentYear - 18; i >= currentYear - 100; i--) y.push(i);
+    return y;
+  }, [currentYear]);
+
+  const months = useMemo(() => {
+    return [
+      { value: "01", label: "January" },
+      { value: "02", label: "February" },
+      { value: "03", label: "March" },
+      { value: "04", label: "April" },
+      { value: "05", label: "May" },
+      { value: "06", label: "June" },
+      { value: "07", label: "July" },
+      { value: "08", label: "August" },
+      { value: "09", label: "September" },
+      { value: "10", label: "October" },
+      { value: "11", label: "November" },
+      { value: "12", label: "December" },
+    ];
+  }, []);
+
+  // Compute days based on selected month/year
+  const days = useMemo(() => {
+    const month = parseInt(dobMonth);
+    const year = parseInt(dobYear);
+    if (!month || !year) return 31;
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const d: number[] = [];
+    for (let i = 1; i <= daysInMonth; i++) d.push(i);
+    return d;
+  }, [dobMonth, dobYear]);
+
+  // Validate age
+  const getAge = (): number | null => {
+    if (!dobMonth || !dobDay || !dobYear) return null;
+    const month = parseInt(dobMonth);
+    const day = parseInt(dobDay);
+    const year = parseInt(dobYear);
+    if (isNaN(month) || isNaN(day) || isNaN(year)) return null;
+    const dob = new Date(year, month - 1, day);
+    const today = new Date();
+    let age = today.getFullYear() - dob.getFullYear();
+    const m = today.getMonth() - dob.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) {
+      age--;
+    }
+    return age;
+  };
 
   // Redirect if already logged in
   if (user) {
@@ -25,6 +81,17 @@ function Signup() {
     e.preventDefault();
     setError("");
 
+    // Validate DOB
+    const age = getAge();
+    if (age === null) {
+      setError("Please enter your full date of birth");
+      return;
+    }
+    if (age < 18) {
+      setError("You must be at least 18 years old to use GradeDate");
+      return;
+    }
+
     if (password !== confirmPassword) {
       setError("Passwords do not match");
       return;
@@ -32,10 +99,12 @@ function Signup() {
 
     setSubmitting(true);
     try {
+      // Format date_of_birth as YYYY-MM-DD
+      const dateOfBirth = `${dobYear}-${dobMonth}-${String(dobDay).padStart(2, "0")}`;
       const res = await fetch("/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, date_of_birth: dateOfBirth }),
       });
 
       const data = await res.json();
@@ -70,6 +139,77 @@ function Signup() {
                 {error}
               </div>
             )}
+
+            <fieldset>
+              <legend className="mb-1.5 block text-sm font-medium text-gray-300">
+                Date of Birth
+              </legend>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label htmlFor="dobMonth" className="sr-only">
+                    Month
+                  </label>
+                  <select
+                    id="dobMonth"
+                    required
+                    value={dobMonth}
+                    onChange={(e) => {
+                      setDobMonth(e.target.value);
+                      setDobDay("");
+                    }}
+                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-gray-100 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                  >
+                    <option value="">Month</option>
+                    {months.map((m) => (
+                      <option key={m.value} value={m.value}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="dobDay" className="sr-only">
+                    Day
+                  </label>
+                  <select
+                    id="dobDay"
+                    required
+                    value={dobDay}
+                    onChange={(e) => setDobDay(e.target.value)}
+                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-gray-100 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                  >
+                    <option value="">Day</option>
+                    {days.map((d) => (
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="dobYear" className="sr-only">
+                    Year
+                  </label>
+                  <select
+                    id="dobYear"
+                    required
+                    value={dobYear}
+                    onChange={(e) => {
+                      setDobYear(e.target.value);
+                      setDobDay("");
+                    }}
+                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-gray-100 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                  >
+                    <option value="">Year</option>
+                    {years.map((y) => (
+                      <option key={y} value={y}>
+                        {y}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </fieldset>
 
             <div>
               <label

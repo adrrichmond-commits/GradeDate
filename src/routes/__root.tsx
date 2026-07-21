@@ -274,6 +274,9 @@ function AppShell() {
             <Link to="/privacy" className="transition hover:text-gray-300">
               Privacy
             </Link>
+            <Link to="/cookies" className="transition hover:text-gray-300">
+              Cookies
+            </Link>
             <Link to="/terms" className="transition hover:text-gray-300">
               Terms
             </Link>

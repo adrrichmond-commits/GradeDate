@@ -181,9 +181,29 @@ async function handleSignup(req: Request): Promise<Response> {
 
   const email = String(body.email).trim().toLowerCase();
   const password = String(body.password);
+  const dateOfBirth = body.date_of_birth ? String(body.date_of_birth) : null;
 
   if (password.length < 6) {
     return json({ error: "Password must be at least 6 characters" }, 400);
+  }
+
+  // Validate age: user must be at least 18
+  if (dateOfBirth) {
+    const dob = new Date(dateOfBirth);
+    if (isNaN(dob.getTime())) {
+      return json({ error: "Invalid date of birth" }, 400);
+    }
+    const today = new Date();
+    let age = today.getFullYear() - dob.getFullYear();
+    const m = today.getMonth() - dob.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) {
+      age--;
+    }
+    if (age < 18) {
+      return json({ error: "You must be at least 18 years old to use GradeDate" }, 400);
+    }
+  } else {
+    return json({ error: "Date of birth is required" }, 400);
   }
 
   const existing = await getUserByEmail(email);
@@ -192,7 +212,7 @@ async function handleSignup(req: Request): Promise<Response> {
   }
 
   const passwordHash = await BunPw.hash(password);
-  const user = await createUser(email, passwordHash);
+  const user = await createUser(email, passwordHash, dateOfBirth ?? undefined);
   const session = await createSession(user.id);
 
   return setSessionCookie(json({ user: toSafeUser(user) }, 201), session.id);
