@@ -10,6 +10,7 @@ interface MatchProfile {
   gender: string | null;
   bio: string | null;
   photo_path: string | null;
+  distance_km?: number;
 }
 
 const REPORT_REASONS = [
@@ -208,8 +209,42 @@ function MatchesPage() {
         </div>
       )}
 
+      {/* No location prompt */}
+      {!current && !error && !user.latitude && !user.longitude && (
+        <div className="flex flex-col items-center gap-4 card p-12 text-center">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gray-800">
+            <svg
+              className="h-8 w-8 text-amber-400"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.5}
+                d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.5}
+                d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z"
+              />
+            </svg>
+          </div>
+          <h3 className="text-lg font-semibold">Set your location to see nearby matches</h3>
+          <p className="text-sm text-gray-500">
+            Add your ZIP code so we can show you singles near you.
+          </p>
+          <Link to="/profile/setup" className="btn-primary">
+            Set Location
+          </Link>
+        </div>
+      )}
+
       {/* No matches empty state */}
-      {!current && !error && (
+      {!current && !error && (user.latitude || user.longitude) && (
         <div className="flex flex-col items-center gap-4 card p-12 text-center">
           <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gray-800">
             <svg
@@ -312,6 +347,11 @@ function MatchesPage() {
                 {current.gender && (
                   <p className="mt-1 text-sm capitalize text-gray-400">
                     {current.gender}
+                  </p>
+                )}
+                {current.distance_km !== undefined && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    📍 {Math.round(current.distance_km * 0.621371)} mi away
                   </p>
                 )}
               </div>

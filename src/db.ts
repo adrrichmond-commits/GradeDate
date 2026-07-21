@@ -187,6 +187,7 @@ export interface MatchUser {
   bio: string | null;
   photo_path: string | null;
   grade: number;
+  distance_miles?: number;
 }
 
 export interface Like {
@@ -360,9 +361,25 @@ export async function getUsersByGradeRange(
   excludeUserId: number,
   lookingFor?: string,
   blockedByIds?: number[],
+  latitude?: number,
+  longitude?: number,
+  maxDistance?: number,
 ): Promise<MatchUser[]> {
+  const hasLocation = latitude !== undefined && longitude !== undefined && maxDistance !== undefined;
+  const maxDistanceKm = maxDistance ? maxDistance * 1.60934 : undefined;
+
   const rows = await sql()`
-    SELECT id, display_name, age, gender, bio, photo_path, grade
+    SELECT
+      id, display_name, age, gender, bio, photo_path, grade
+      ${
+        hasLocation
+          ? sql`, (6371 * acos(
+            cos(radians(${latitude!})) * cos(radians(latitude)) *
+            cos(radians(longitude) - radians(${longitude!})) +
+            sin(radians(${latitude!})) * sin(radians(latitude))
+          )) / 1.60934 AS distance_miles`
+          : sql``
+      }
     FROM users
     WHERE grade IS NOT NULL
       AND grade >= ${min}
@@ -380,7 +397,22 @@ export async function getUsersByGradeRange(
           ? sql()`AND id NOT IN (SELECT UNNEST(${blockedByIds}::int[]))`
           : sql()``
       }
-    ORDER BY ABS(grade - ${grade}) ASC, RANDOM()
+      ${
+        hasLocation
+          ? sql`AND (
+            latitude IS NULL
+            OR longitude IS NULL
+            OR (6371 * acos(
+              cos(radians(${latitude!})) * cos(radians(latitude)) *
+              cos(radians(longitude) - radians(${longitude!})) +
+              sin(radians(${latitude!})) * sin(radians(latitude))
+            )) <= ${maxDistanceKm!}
+          )`
+          : sql``
+      }
+    ORDER BY ABS(grade - ${grade}) ASC${
+      hasLocation ? sql`, distance_miles ASC` : sql``
+    }, RANDOM()
   `;
   return rows as unknown as MatchUser[];
 }
