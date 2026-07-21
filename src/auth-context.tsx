@@ -12,6 +12,9 @@ export interface SafeUser {
   grade: number | null;
   subscription_status: string;
   subscription_updated_at: string | null;
+  regrades_available: number;
+  boost_until: string | null;
+  likes_revealed: number;
   created_at: string;
 }
 

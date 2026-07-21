@@ -42,8 +42,12 @@ const freePort =
 
 // Initialize database tables
 if (process.env.DATABASE_URL) {
-  await initTables();
-  console.log("Database tables initialized");
+  try {
+    await initTables();
+    console.log("Database tables initialized");
+  } catch (err) {
+    console.warn("Database initialization failed — continuing without database:", (err as Error).message);
+  }
 } else {
   console.warn("DATABASE_URL not set — database features will not work");
 }

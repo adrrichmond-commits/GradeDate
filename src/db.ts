@@ -47,6 +47,15 @@ export async function initTables(): Promise<void> {
   try {
     await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS looking_for TEXT DEFAULT 'everyone'`;
   } catch { /* ignore */ }
+  try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS regrades_available INTEGER DEFAULT 0`;
+  } catch { /* ignore */ }
+  try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS boost_until TEXT`;
+  } catch { /* ignore */ }
+  try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS likes_revealed INTEGER DEFAULT 0`;
+  } catch { /* ignore */ }
 
   await sql()`
     CREATE TABLE IF NOT EXISTS sessions (
@@ -124,6 +133,9 @@ export interface User {
   subscription_updated_at: string | null;
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
+  regrades_available: number;
+  boost_until: string | null;
+  likes_revealed: number;
   created_at: string;
 }
 
@@ -532,4 +544,34 @@ export async function deleteUserAccount(userId: number): Promise<void> {
   await sql()`DELETE FROM sessions WHERE user_id = ${userId}`;
   // Delete the user record itself
   await sql()`DELETE FROM users WHERE id = ${userId}`;
+}
+
+// ── Upsells ──────────────────────────────────────────────────────
+
+export async function addReGrade(userId: number): Promise<void> {
+  await sql()`
+    UPDATE users SET regrades_available = regrades_available + 1 WHERE id = ${userId}
+  `;
+}
+
+export async function useReGrade(userId: number): Promise<boolean> {
+  const rows = await sql()`
+    UPDATE users SET regrades_available = regrades_available - 1
+    WHERE id = ${userId} AND regrades_available > 0
+    RETURNING regrades_available
+  `;
+  return rows.length > 0;
+}
+
+export async function activateBoost(userId: number, durationHours = 24): Promise<void> {
+  const until = new Date(Date.now() + durationHours * 60 * 60 * 1000).toISOString();
+  await sql()`
+    UPDATE users SET boost_until = ${until} WHERE id = ${userId}
+  `;
+}
+
+export async function revealLikes(userId: number): Promise<void> {
+  await sql()`
+    UPDATE users SET likes_revealed = 1 WHERE id = ${userId}
+  `;
 }

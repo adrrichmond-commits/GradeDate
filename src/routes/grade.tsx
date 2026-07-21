@@ -281,6 +281,22 @@ function GradeDemo() {
                     Join GradeDate
                   </Link>
                 </div>
+
+                {/* Upsell: Re-grade */}
+                <div className="mt-4 w-full rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-center">
+                  <p className="text-sm font-medium text-amber-400">
+                    Not happy with your grade?
+                  </p>
+                  <p className="mt-1 text-xs text-gray-400">
+                    Get a fresh AI evaluation for just $2.99.
+                  </p>
+                  <Link
+                    to="/store"
+                    className="mt-3 inline-block rounded-full bg-amber-500 px-5 py-2 text-xs font-semibold text-gray-950 transition hover:bg-amber-400"
+                  >
+                    Re-grade — $2.99 →
+                  </Link>
+                </div>
               </div>
             )}
           </div>

@@ -222,6 +222,7 @@ function AppShell() {
                   </span>
                 </NavLink>
                 <NavLink to="/profile">Profile</NavLink>
+                <NavLink to="/store">Store</NavLink>
                 {user.subscription_status === "active" && (
                   <span className="rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-semibold text-green-400">
                     ACTIVE

@@ -107,6 +107,16 @@ function ConnectionsPage() {
         <p className="mt-2 text-gray-400">
           Your mutual matches — start chatting!
         </p>
+        {/* Upsell: See Who Liked You */}
+        <Link
+          to="/store"
+          className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-4 py-1.5 text-xs font-medium text-amber-400 transition hover:bg-amber-500/20"
+        >
+          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+          </svg>
+          See Who Liked You — $0.99
+        </Link>
       </div>
 
       {error && (

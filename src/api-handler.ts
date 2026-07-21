@@ -27,6 +27,9 @@ import {
   getBlockedUserIds,
   reportUser,
   deleteUserAccount,
+  addReGrade,
+  activateBoost,
+  revealLikes,
   type User,
 } from "../src/db.ts";
 import Stripe from "stripe";
@@ -880,6 +883,51 @@ async function handleSubscriptionActivate(req: Request): Promise<Response> {
   });
 }
 
+// ── Upsell Activation ──────────────────────────────────────────
+
+async function handleActivateReGrade(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+
+  if (user.subscription_status !== "active") {
+    return json({ error: "An active subscription is required to purchase upsells", code: "NO_SUBSCRIPTION" }, 402);
+  }
+
+  await addReGrade(user.id);
+  return json({ ok: true, message: "Re-grade activated! You can now re-grade your photo.", regrades_available: user.regrades_available + 1 });
+}
+
+async function handleActivateBoost(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+
+  if (user.subscription_status !== "active") {
+    return json({ error: "An active subscription is required to purchase upsells", code: "NO_SUBSCRIPTION" }, 402);
+  }
+
+  await activateBoost(user.id);
+  const until = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  return json({ ok: true, message: "Profile boosted for 24 hours!", boost_until: until });
+}
+
+async function handleActivateRevealLikes(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+
+  if (user.subscription_status !== "active") {
+    return json({ error: "An active subscription is required to purchase upsells", code: "NO_SUBSCRIPTION" }, 402);
+  }
+
+  await revealLikes(user.id);
+  return json({ ok: true, message: "You can now see who liked you!", likes_revealed: 1 });
+}
+
 // ── Stripe Webhook ─────────────────────────────────────────────
 
 function getStripe(): Stripe | null {
@@ -1101,6 +1149,17 @@ export async function handleApiRoute(
   }
   if (pathname === "/api/subscription/activate" && method === "POST") {
     return handleSubscriptionActivate(req);
+  }
+
+  // Upsell activations
+  if (pathname === "/api/store/activate-re-grade" && method === "POST") {
+    return handleActivateReGrade(req);
+  }
+  if (pathname === "/api/store/activate-boost" && method === "POST") {
+    return handleActivateBoost(req);
+  }
+  if (pathname === "/api/store/activate-reveal-likes" && method === "POST") {
+    return handleActivateRevealLikes(req);
   }
 
   // Stripe webhook (unauthenticated — validated by Stripe signature)

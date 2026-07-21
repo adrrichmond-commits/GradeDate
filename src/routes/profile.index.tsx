@@ -322,6 +322,18 @@ function ProfilePage() {
                 Browse Matches →
               </Link>
             </div>
+            {/* Upsell: Boost Profile */}
+            <div className="mt-4">
+              <Link
+                to="/store"
+                className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-4 py-1.5 text-xs font-medium text-amber-400 transition hover:bg-amber-500/20"
+              >
+                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
+                </svg>
+                Boost Profile — $3.99
+              </Link>
+            </div>
           </div>
         )}
 
