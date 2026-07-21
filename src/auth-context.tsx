@@ -16,6 +16,12 @@ export interface SafeUser {
   boost_until: string | null;
   likes_revealed: number;
   created_at: string;
+  latitude?: number;
+  longitude?: number;
+  max_distance?: number;
+  location_city?: string;
+  location_state?: string;
+  distance_km?: number;
 }
 
 interface AuthState {

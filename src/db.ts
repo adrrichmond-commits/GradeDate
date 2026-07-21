@@ -59,6 +59,21 @@ export async function initTables(): Promise<void> {
   try {
     await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS date_of_birth TEXT`;
   } catch { /* ignore */ }
+  try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS latitude REAL`;
+  } catch { /* ignore */ }
+  try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS longitude REAL`;
+  } catch { /* ignore */ }
+  try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS max_distance INTEGER DEFAULT 50`;
+  } catch { /* ignore */ }
+  try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS location_city TEXT`;
+  } catch { /* ignore */ }
+  try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS location_state TEXT`;
+  } catch { /* ignore */ }
 
   await sql()`
     CREATE TABLE IF NOT EXISTS sessions (
@@ -150,6 +165,11 @@ export interface User {
   boost_until: string | null;
   likes_revealed: number;
   date_of_birth: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  max_distance: number;
+  location_city: string | null;
+  location_state: string | null;
   created_at: string;
 }
 
@@ -248,6 +268,11 @@ export async function updateUserProfile(
     looking_for: string;
     bio: string;
     photo_path: string;
+    latitude?: number | null;
+    longitude?: number | null;
+    max_distance?: number;
+    location_city?: string | null;
+    location_state?: string | null;
   },
 ): Promise<void> {
   await sql()`
@@ -258,6 +283,11 @@ export async function updateUserProfile(
       looking_for = ${data.looking_for},
       bio = ${data.bio},
       photo_path = ${data.photo_path}
+      ${data.latitude !== undefined ? sql()`, latitude = ${data.latitude}` : sql()``}
+      ${data.longitude !== undefined ? sql()`, longitude = ${data.longitude}` : sql()``}
+      ${data.max_distance !== undefined ? sql()`, max_distance = ${data.max_distance}` : sql()``}
+      ${data.location_city !== undefined ? sql()`, location_city = ${data.location_city}` : sql()``}
+      ${data.location_state !== undefined ? sql()`, location_state = ${data.location_state}` : sql()``}
     WHERE id = ${id}
   `;
 }

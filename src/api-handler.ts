@@ -37,6 +37,7 @@ import {
   type User,
 } from "../src/db.ts";
 import { sendPasswordResetEmail } from "../src/email.ts";
+import { lookupZip } from "../src/zipcode.ts";
 import Stripe from "stripe";
 import { mkdirSync, existsSync, writeFileSync, readFileSync, unlinkSync } from "node:fs";
 import path from "node:path";
@@ -327,7 +328,7 @@ async function handleUpdateProfile(req: Request): Promise<Response> {
     return json({ error: "Invalid request body" }, 400);
   }
 
-  const { display_name, age, gender, looking_for, bio, photo_path } = body;
+  const { display_name, age, gender, looking_for, bio, photo_path, latitude, longitude, max_distance, location_city, location_state } = body;
 
   // Support partial updates: only validate fields that are explicitly provided
   if (display_name !== undefined && (!display_name || String(display_name).trim().length === 0)) {
@@ -346,6 +347,20 @@ async function handleUpdateProfile(req: Request): Promise<Response> {
     return json({ error: "Looking for preference is required" }, 400);
   }
 
+  // Validate location fields if provided
+  if (latitude !== undefined && (isNaN(Number(latitude)) || Number(latitude) < -90 || Number(latitude) > 90)) {
+    return json({ error: "Latitude must be between -90 and 90" }, 400);
+  }
+  if (longitude !== undefined && (isNaN(Number(longitude)) || Number(longitude) < -180 || Number(longitude) > 180)) {
+    return json({ error: "Longitude must be between -180 and 180" }, 400);
+  }
+  if (max_distance !== undefined) {
+    const dist = Number(max_distance);
+    if (isNaN(dist) || dist < 1 || dist > 500) {
+      return json({ error: "Max distance must be between 1 and 500 miles" }, 400);
+    }
+  }
+
   // Merge with existing values for partial updates
   await updateUserProfile(user.id, {
     display_name: display_name !== undefined ? String(display_name).trim() : (user.display_name || ""),
@@ -354,6 +369,11 @@ async function handleUpdateProfile(req: Request): Promise<Response> {
     looking_for: looking_for !== undefined ? String(looking_for) : (user.looking_for || "everyone"),
     bio: bio !== undefined ? String(bio).trim() : (user.bio || ""),
     photo_path: photo_path !== undefined ? String(photo_path) : (user.photo_path || ""),
+    ...(latitude !== undefined ? { latitude: Number(latitude) } : {}),
+    ...(longitude !== undefined ? { longitude: Number(longitude) } : {}),
+    ...(max_distance !== undefined ? { max_distance: Number(max_distance) } : {}),
+    ...(location_city !== undefined ? { location_city: String(location_city) } : {}),
+    ...(location_state !== undefined ? { location_state: String(location_state) } : {}),
   });
 
   return json({ ok: true });
@@ -1191,6 +1211,29 @@ async function handleResetPassword(req: Request): Promise<Response> {
   return json({ message: "Password has been reset successfully. You can now log in." });
 }
 
+// ── Location ─────────────────────────────────────────────────
+
+async function handleLocationLookup(req: Request): Promise<Response> {
+  const body = await req.json().catch(() => null);
+  if (!body?.zip || typeof body.zip !== "string") {
+    return json({ error: "zip is required" }, 400);
+  }
+
+  const zip = String(body.zip).trim();
+  const result = lookupZip(zip);
+
+  if (!result) {
+    return json({ error: "Invalid zip code" }, 400);
+  }
+
+  return json({
+    lat: result.lat,
+    lng: result.lng,
+    city: result.city,
+    state: result.state,
+  });
+}
+
 // ── Router ────────────────────────────────────────────────────
 
 export async function handleApiRoute(
@@ -1227,6 +1270,11 @@ export async function handleApiRoute(
   // Upload
   if (pathname === "/api/upload" && method === "POST") {
     return handleUpload(req);
+  }
+
+  // Location
+  if (pathname === "/api/location/lookup" && method === "POST") {
+    return handleLocationLookup(req);
   }
 
   // Grade
