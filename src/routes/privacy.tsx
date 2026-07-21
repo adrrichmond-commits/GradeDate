@@ -130,7 +130,9 @@ function PrivacyPolicy() {
               <strong className="text-white">OpenAI (GPT-4 Vision):</strong> When you upload a
               selfie, your photo is transmitted to OpenAI&rsquo;s API for facial analysis and
               grading. OpenAI processes the image solely to return a grade to us and does not
-              use your photo to train their models. See{" "}
+              use your photo to train their models. OpenAI does not use data submitted via the
+              API for training or improving their models, as stated in OpenAI&rsquo;s API data
+              usage policy. See{" "}
               <a
                 href="https://openai.com/policies/privacy-policy"
                 target="_blank"

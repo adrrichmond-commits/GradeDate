@@ -264,7 +264,16 @@ function AppShell() {
             <Link to="/terms" className="transition hover:text-gray-300">
               Terms
             </Link>
-            <a href="#" className="transition hover:text-gray-300">
+            <Link to="/refund" className="transition hover:text-gray-300">
+              Refund
+            </Link>
+            <Link to="/rules" className="transition hover:text-gray-300">
+              Rules
+            </Link>
+            <Link to="/safety" className="transition hover:text-gray-300">
+              Safety
+            </Link>
+            <a href="mailto:support@gradedate.app" className="transition hover:text-gray-300">
               Contact
             </a>
           </div>
