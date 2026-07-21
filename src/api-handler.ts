@@ -239,9 +239,6 @@ async function handleMe(req: Request): Promise<Response> {
 
 async function handleUpload(req: Request): Promise<Response> {
   const user = await getCurrentUser(req);
-  if (!user) {
-    return json({ error: "Unauthorized" }, 401);
-  }
 
   const contentType = req.headers.get("content-type") || "";
   if (!contentType.includes("multipart/form-data")) {
@@ -264,21 +261,32 @@ async function handleUpload(req: Request): Promise<Response> {
   }
 
   const ext = file.name.split(".").pop() || "jpg";
-  const filename = `${user.id}_${Date.now()}.${ext}`;
-  const filePath = path.join(uploadsDir(), filename);
 
   const buffer = await file.arrayBuffer();
-  writeFileSync(filePath, new Uint8Array(buffer));
 
-  // Update user's photo_path
-  await updateUserProfile(user.id, {
-    display_name: user.display_name || "",
-    age: user.age || 0,
-    gender: user.gender || "",
-    looking_for: user.looking_for || "everyone",
-    bio: user.bio || "",
-    photo_path: `/uploads/${filename}`,
-  });
+  if (user) {
+    // Authenticated user — save to their profile
+    const filename = `${user.id}_${Date.now()}.${ext}`;
+    const filePath = path.join(uploadsDir(), filename);
+    writeFileSync(filePath, new Uint8Array(buffer));
+
+    await updateUserProfile(user.id, {
+      display_name: user.display_name || "",
+      age: user.age || 0,
+      gender: user.gender || "",
+      looking_for: user.looking_for || "everyone",
+      bio: user.bio || "",
+      photo_path: `/uploads/${filename}`,
+    });
+
+    return json({ photo_path: `/uploads/${filename}` });
+  }
+
+  // Anonymous free preview — save to temp file with random UUID
+  const anonId = crypto.randomUUID();
+  const filename = `anon_${anonId}.${ext}`;
+  const anonPath = path.join(uploadsDir(), filename);
+  writeFileSync(anonPath, new Uint8Array(buffer));
 
   return json({ photo_path: `/uploads/${filename}` });
 }
@@ -507,39 +515,66 @@ async function gradeWithAI(photoPath: string): Promise<{ grade: number; analysis
 
 async function handleGrade(req: Request): Promise<Response> {
   const user = await getCurrentUser(req);
-  if (!user) {
-    return json({ error: "Unauthorized" }, 401);
+
+  // For anonymous free preview, accept photo_path in the request body
+  let photoPath: string | null = null;
+
+  if (user) {
+    // Authenticated user
+    if (user.subscription_status === "active") {
+      // Subscriber: full flow — require photo, process, save grade
+      if (!user.photo_path) {
+        return json({ error: "You must upload a photo before getting graded" }, 400);
+      }
+
+      if (user.grade !== null) {
+        return json({ error: "You have already been graded", grade: user.grade }, 400);
+      }
+
+      photoPath = user.photo_path;
+    } else {
+      // Logged-in non-subscriber: free preview — grade gets saved to profile
+      if (!user.photo_path) {
+        return json({ error: "You must upload a photo before getting graded" }, 400);
+      }
+      photoPath = user.photo_path;
+    }
+  } else {
+    // Anonymous: read photo_path from request body
+    const body = await req.json().catch(() => null);
+    if (!body?.photo_path || typeof body.photo_path !== "string") {
+      return json({ error: "photo_path is required for anonymous grading" }, 400);
+    }
+    photoPath = body.photo_path;
   }
 
-  const subErr = requireSubscription(user);
-  if (subErr) return subErr;
-
-  if (!user.photo_path) {
-    return json({ error: "You must upload a photo before getting graded" }, 400);
-  }
-
-  if (user.grade !== null) {
-    return json({ error: "You have already been graded", grade: user.grade }, 400);
+  if (!photoPath) {
+    return json({ error: "No photo available for grading" }, 400);
   }
 
   // NSFW screening before grading
-  const nsfwResult = await nsfwCheck(user.photo_path);
+  const nsfwResult = await nsfwCheck(photoPath);
   if (nsfwResult === "NSFW") {
+    // Clean up the file
     try {
       const dir = uploadsDir();
-      const filename = path.basename(user.photo_path);
+      const filename = path.basename(photoPath);
       unlinkSync(path.join(dir, filename));
     } catch {
       // Best effort cleanup
     }
-    await updateUserProfile(user.id, {
-      display_name: user.display_name || "",
-      age: user.age || 0,
-      gender: user.gender || "",
-      looking_for: user.looking_for || "everyone",
-      bio: user.bio || "",
-      photo_path: "",
-    });
+
+    if (user) {
+      await updateUserProfile(user.id, {
+        display_name: user.display_name || "",
+        age: user.age || 0,
+        gender: user.gender || "",
+        looking_for: user.looking_for || "everyone",
+        bio: user.bio || "",
+        photo_path: "",
+      });
+    }
+
     return json({
       error: "This photo appears to contain inappropriate content. Please upload a different photo that follows our content rules.",
       code: "NSFW",
@@ -551,7 +586,7 @@ async function handleGrade(req: Request): Promise<Response> {
   let usedAI = false;
 
   try {
-    const result = await gradeWithAI(user.photo_path);
+    const result = await gradeWithAI(photoPath);
     grade = result.grade;
     analysis = result.analysis;
     usedAI = true;
@@ -562,7 +597,10 @@ async function handleGrade(req: Request): Promise<Response> {
     usedAI = false;
   }
 
-  await updateUserGrade(user.id, grade);
+  // Save grade to profile for authenticated users only
+  if (user) {
+    await updateUserGrade(user.id, grade);
+  }
 
   return json({
     grade,

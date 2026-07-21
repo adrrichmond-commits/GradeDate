@@ -1,18 +1,26 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { useAuth } from "~/auth-context";
 
 export const Route = createFileRoute("/grade")({
-  component: GradeDemo,
+  component: GradePage,
 });
 
-type UIState = "idle" | "analyzing" | "done" | "nsfw" | "error";
+type UIState = "idle" | "uploading" | "analyzing" | "done" | "nsfw" | "error";
 
-function GradeDemo() {
+function GradePage() {
+  const { user, loading: authLoading } = useAuth();
+
   const [state, setState] = useState<UIState>("idle");
   const [grade, setGrade] = useState<number | null>(null);
+  const [analysis, setAnalysis] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>("");
   const [gradingMethod, setGradingMethod] = useState<string | null>(null);
+  // Store the photo_path returned by upload for anonymous grading
+  const [uploadedPhotoPath, setUploadedPhotoPath] = useState<string | null>(null);
+
+  const isSubscribed = user?.subscription_status === "active";
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -27,56 +35,78 @@ function GradeDemo() {
 
     const url = URL.createObjectURL(file);
     setPreview(url);
-    setState("analyzing");
+    setState("uploading");
     setErrorMessage("");
 
     try {
       const formData = new FormData();
       formData.append("photo", file);
 
+      // Step 1: Upload
       const uploadRes = await fetch("/api/upload", {
         method: "POST",
         body: formData,
       });
 
-      if (uploadRes.ok) {
-        const gradeRes = await fetch("/api/grade", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-        });
+      if (!uploadRes.ok) {
+        const errData = await uploadRes.json().catch(() => null);
+        setErrorMessage(errData?.error || "Upload failed. Please try again.");
+        setState("error");
+        return;
+      }
 
-        const gradeData = await gradeRes.json();
+      const uploadData = await uploadRes.json();
+      const photoPath = uploadData.photo_path as string;
 
-        if (!gradeRes.ok) {
-          if (gradeData.code === "NSFW") {
-            setState("nsfw");
-            return;
-          }
-        } else {
-          setGrade(gradeData.grade);
-          setGradingMethod(gradeData.grading_method || null);
-          setState("done");
+      setUploadedPhotoPath(photoPath);
+      setState("analyzing");
+
+      // Step 2: Grade
+      const gradeBody: Record<string, string> = {};
+      if (user) {
+        // Authenticated — grade endpoint reads from profile photo_path
+        gradeBody._ = ""; // empty body, just trigger grading
+      } else {
+        // Anonymous — pass photo_path explicitly
+        gradeBody.photo_path = photoPath;
+      }
+
+      const gradeRes = await fetch("/api/grade", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(gradeBody),
+      });
+
+      const gradeData = await gradeRes.json();
+
+      if (!gradeRes.ok) {
+        if (gradeData.code === "NSFW") {
+          setState("nsfw");
           return;
         }
+        setErrorMessage(gradeData.error || "Grading failed. Please try again.");
+        setState("error");
+        return;
       }
-    } catch {
-      // Network error — fall back to mock
-    }
 
-    // Mock fallback
-    setTimeout(() => {
-      setGrade(Math.floor(Math.random() * 10) + 1);
-      setGradingMethod("mock");
+      setGrade(gradeData.grade);
+      setAnalysis(gradeData.analysis || null);
+      setGradingMethod(gradeData.grading_method || null);
       setState("done");
-    }, 2000 + Math.random() * 1500);
+    } catch {
+      setErrorMessage("Network error. Please check your connection and try again.");
+      setState("error");
+    }
   };
 
   const reset = () => {
     setState("idle");
     setGrade(null);
+    setAnalysis(null);
     setPreview(null);
     setErrorMessage("");
     setGradingMethod(null);
+    setUploadedPhotoPath(null);
   };
 
   const getMessage = (g: number) => {
@@ -95,18 +125,20 @@ function GradeDemo() {
     <>
       <main className="flex flex-1 flex-col items-center justify-center px-4 py-16">
         <div className="w-full max-w-lg">
+          {/* Header */}
           <div className="mb-8 text-center">
             <span className="mb-4 inline-block rounded-full bg-rose-500/10 px-3 py-1 text-xs font-semibold text-rose-400">
-              DEMO
+              FREE PREVIEW
             </span>
             <h1 className="text-3xl font-bold sm:text-4xl">Grade Your Selfie</h1>
             <p className="mt-2 text-gray-400">
-              Upload any photo to try our AI-powered grading. Photos are
-              screened for inappropriate content.
+              Upload your photo and our AI will analyze your facial appearance
+              on a 1–10 scale. Screened for appropriate content.
             </p>
           </div>
 
           <div className="rounded-2xl border border-rose-500/20 bg-gray-900/60 p-8 backdrop-blur-sm">
+            {/* ── Idle: Upload prompt ─────────────────────────── */}
             {state === "idle" && (
               <label className="flex cursor-pointer flex-col items-center gap-4 rounded-xl border-2 border-dashed border-gray-600 p-10 transition hover:border-rose-500/50">
                 <div className="flex h-16 w-16 items-center justify-center rounded-full bg-rose-500/10">
@@ -145,6 +177,22 @@ function GradeDemo() {
               </label>
             )}
 
+            {/* ── Uploading ───────────────────────────────────── */}
+            {state === "uploading" && (
+              <div className="flex flex-col items-center gap-6 py-8">
+                {preview && (
+                  <img
+                    src={preview}
+                    alt="Preview"
+                    className="h-40 w-40 rounded-full object-cover ring-3 ring-rose-500/15 ring-offset-2 ring-offset-gray-950"
+                  />
+                )}
+                <div className="loader-pulse" />
+                <p className="text-gray-400">Uploading your photo...</p>
+              </div>
+            )}
+
+            {/* ── Analyzing ───────────────────────────────────── */}
             {state === "analyzing" && (
               <div className="flex flex-col items-center gap-6 py-8">
                 {preview && (
@@ -164,6 +212,7 @@ function GradeDemo() {
               </div>
             )}
 
+            {/* ── NSFW ────────────────────────────────────────── */}
             {state === "nsfw" && (
               <div className="flex flex-col items-center gap-6 py-4">
                 <div className="flex h-20 w-20 items-center justify-center rounded-full bg-red-500/10">
@@ -197,6 +246,7 @@ function GradeDemo() {
               </div>
             )}
 
+            {/* ── Error ───────────────────────────────────────── */}
             {state === "error" && (
               <div className="flex flex-col items-center gap-6 py-4">
                 <div className="flex h-20 w-20 items-center justify-center rounded-full bg-amber-500/10">
@@ -229,6 +279,7 @@ function GradeDemo() {
               </div>
             )}
 
+            {/* ── Done: Grade Reveal ──────────────────────────── */}
             {state === "done" && grade !== null && (
               <div className="flex flex-col items-center gap-6 py-4">
                 {preview && (
@@ -248,6 +299,11 @@ function GradeDemo() {
                       <span className="ml-1 text-xs text-gray-600">(mock)</span>
                     )}
                   </div>
+                  {analysis && (
+                    <p className="mt-2 text-sm italic text-gray-400">
+                      "{analysis}"
+                    </p>
+                  )}
                 </div>
 
                 <div className="flex w-full max-w-xs gap-0.5">
@@ -267,40 +323,75 @@ function GradeDemo() {
                   {getMessage(grade)}
                 </p>
 
-                <div className="flex gap-3">
-                  <button
-                    onClick={reset}
-                    className="rounded-full border border-gray-600 px-6 py-2.5 text-sm font-medium text-gray-300 transition hover:border-gray-400 hover:text-white"
-                  >
-                    Try Again
-                  </button>
-                  <Link
-                    to="/"
-                    className="rounded-full bg-rose-600 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-rose-500"
-                  >
-                    Join GradeDate
-                  </Link>
-                </div>
+                {/* ── Subscriber flow: link to matches ────────── */}
+                {isSubscribed && (
+                  <div className="flex gap-3">
+                    <button
+                      onClick={reset}
+                      className="rounded-full border border-gray-600 px-6 py-2.5 text-sm font-medium text-gray-300 transition hover:border-gray-400 hover:text-white"
+                    >
+                      Try Again
+                    </button>
+                    <Link
+                      to="/matches"
+                      className="rounded-full bg-rose-600 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-rose-500"
+                    >
+                      Browse Your Matches
+                    </Link>
+                  </div>
+                )}
 
-                {/* Upsell: Re-grade */}
-                <div className="mt-4 w-full rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-center">
-                  <p className="text-sm font-medium text-amber-400">
-                    Not happy with your grade?
-                  </p>
-                  <p className="mt-1 text-xs text-gray-400">
-                    Get a fresh AI evaluation for just $2.99.
-                  </p>
-                  <Link
-                    to="/store"
-                    className="mt-3 inline-block rounded-full bg-amber-500 px-5 py-2 text-xs font-semibold text-gray-950 transition hover:bg-amber-400"
-                  >
-                    Re-grade — $2.99 →
-                  </Link>
-                </div>
+                {/* ── Non-subscriber (anon or logged-in): paywall ── */}
+                {!isSubscribed && (
+                  <div className="w-full rounded-xl border border-rose-500/30 bg-gradient-to-b from-gray-900 to-gray-950 p-6 text-center shadow-lg shadow-rose-500/5">
+                    <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-rose-400">
+                      See Who's in Your League
+                    </div>
+                    <p className="mb-1 text-2xl font-extrabold">
+                      <span className="text-rose-400">$5.99</span>
+                      <span className="text-gray-500 text-lg">/month</span>
+                    </p>
+                    <p className="mb-5 text-sm text-gray-400">
+                      Subscribe to browse matches at your grade level, chat,
+                      and connect with real people.
+                    </p>
+                    <Link
+                      to="/subscribe"
+                      className="inline-block w-full rounded-full bg-rose-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-rose-600/25 transition hover:bg-rose-500 hover:shadow-rose-500/30"
+                    >
+                      Subscribe to See Your Matches — $5.99/mo
+                    </Link>
+                    <button
+                      onClick={reset}
+                      className="mt-3 text-xs text-gray-500 underline transition hover:text-gray-300"
+                    >
+                      Try a Different Photo
+                    </button>
+                  </div>
+                )}
+
+                {/* ── Re-grade upsell (subscribers only) ────────── */}
+                {isSubscribed && (
+                  <div className="mt-4 w-full rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-center">
+                    <p className="text-sm font-medium text-amber-400">
+                      Not happy with your grade?
+                    </p>
+                    <p className="mt-1 text-xs text-gray-400">
+                      Get a fresh AI evaluation for just $2.99.
+                    </p>
+                    <Link
+                      to="/store"
+                      className="mt-3 inline-block rounded-full bg-amber-500 px-5 py-2 text-xs font-semibold text-gray-950 transition hover:bg-amber-400"
+                    >
+                      Re-grade — $2.99 →
+                    </Link>
+                  </div>
+                )}
               </div>
             )}
           </div>
 
+          {/* Footer note */}
           <p className="mt-6 text-center text-xs text-gray-600">
             Photos are screened for inappropriate content before grading.
             Your grade is kept private — only you see it.
