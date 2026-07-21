@@ -147,7 +147,19 @@ function BrandedLoader({ text }: { text?: string }) {
 function AppShell() {
   const { user, loading } = useAuth();
   const [unread, setUnread] = useState(0);
+  const [cookieConsent, setCookieConsent] = useState(true);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && !localStorage.getItem("gd-cookie-consent")) {
+      setCookieConsent(false);
+    }
+  }, []);
+
+  const acceptCookies = () => {
+    localStorage.setItem("gd-cookie-consent", "1");
+    setCookieConsent(true);
+  };
 
   const fetchUnread = async () => {
     if (!user) return;
@@ -288,6 +300,25 @@ function AppShell() {
           </div>
         </div>
       </footer>
+
+      {/* Cookie Consent Banner */}
+      {!cookieConsent && (
+        <div className="fixed bottom-0 inset-x-0 z-50 border-t border-white/10 bg-gray-900/95 backdrop-blur-md px-4 py-4">
+          <div className="mx-auto max-w-6xl flex flex-col sm:flex-row items-center justify-between gap-3">
+            <p className="text-sm text-gray-300">
+              GradeDate uses session cookies for authentication only. No tracking, no ads.
+              By continuing, you agree to our{" "}
+              <Link to="/privacy" className="text-rose-400 underline hover:text-rose-300">Privacy Policy</Link>.
+            </p>
+            <button
+              onClick={acceptCookies}
+              className="rounded-full bg-rose-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-rose-500 shrink-0"
+            >
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
