@@ -257,7 +257,7 @@ function AppShell() {
             <span className="font-semibold text-gray-400">GradeDate</span>.
             All rights reserved.
           </span>
-          <div className="flex gap-6">
+          <div className="flex flex-wrap gap-x-6 gap-y-2">
             <Link to="/privacy" className="transition hover:text-gray-300">
               Privacy
             </Link>
@@ -272,6 +272,15 @@ function AppShell() {
             </Link>
             <Link to="/safety" className="transition hover:text-gray-300">
               Safety
+            </Link>
+            <Link to="/dmca" className="transition hover:text-gray-300">
+              DMCA
+            </Link>
+            <Link to="/data" className="transition hover:text-gray-300">
+              Data
+            </Link>
+            <Link to="/accessibility" className="transition hover:text-gray-300">
+              Accessibility
             </Link>
             <a href="mailto:support@gradedate.app" className="transition hover:text-gray-300">
               Contact
