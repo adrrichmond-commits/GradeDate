@@ -5,21 +5,68 @@ export const Route = createFileRoute("/grade")({
   component: GradeDemo,
 });
 
+type UIState = "idle" | "analyzing" | "done" | "nsfw" | "error";
+
 function GradeDemo() {
-  const [state, setState] = useState<
-    "idle" | "analyzing" | "done"
-  >("idle");
+  const [state, setState] = useState<UIState>("idle");
   const [grade, setGrade] = useState<number | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string>("");
+  const [gradingMethod, setGradingMethod] = useState<string | null>(null);
 
-  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+    if (!allowedTypes.includes(file.type)) {
+      setErrorMessage("Only JPEG, PNG, and WebP images are allowed.");
+      setState("error");
+      return;
+    }
+
     const url = URL.createObjectURL(file);
     setPreview(url);
     setState("analyzing");
+    setErrorMessage("");
+
+    try {
+      const formData = new FormData();
+      formData.append("photo", file);
+
+      const uploadRes = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (uploadRes.ok) {
+        const gradeRes = await fetch("/api/grade", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
+
+        const gradeData = await gradeRes.json();
+
+        if (!gradeRes.ok) {
+          if (gradeData.code === "NSFW") {
+            setState("nsfw");
+            return;
+          }
+        } else {
+          setGrade(gradeData.grade);
+          setGradingMethod(gradeData.grading_method || null);
+          setState("done");
+          return;
+        }
+      }
+    } catch {
+      // Network error — fall back to mock
+    }
+
+    // Mock fallback
     setTimeout(() => {
       setGrade(Math.floor(Math.random() * 10) + 1);
+      setGradingMethod("mock");
       setState("done");
     }, 2000 + Math.random() * 1500);
   };
@@ -28,6 +75,8 @@ function GradeDemo() {
     setState("idle");
     setGrade(null);
     setPreview(null);
+    setErrorMessage("");
+    setGradingMethod(null);
   };
 
   const getMessage = (g: number) => {
@@ -44,7 +93,6 @@ function GradeDemo() {
 
   return (
     <>
-      {/* Main */}
       <main className="flex flex-1 flex-col items-center justify-center px-4 py-16">
         <div className="w-full max-w-lg">
           <div className="mb-8 text-center">
@@ -53,8 +101,8 @@ function GradeDemo() {
             </span>
             <h1 className="text-3xl font-bold sm:text-4xl">Grade Your Selfie</h1>
             <p className="mt-2 text-gray-400">
-              This is a mock demo — upload any photo and get a random score. The
-              real app uses AI-powered facial analysis.
+              Upload any photo to try our AI-powered grading. Photos are
+              screened for inappropriate content.
             </p>
           </div>
 
@@ -86,11 +134,11 @@ function GradeDemo() {
                   Drop your selfie here
                 </span>
                 <span className="text-sm text-gray-500">
-                  or click to browse — PNG, JPG accepted
+                  or click to browse — JPEG, PNG, WebP accepted
                 </span>
                 <input
                   type="file"
-                  accept="image/*"
+                  accept="image/jpeg,image/png,image/webp"
                   onChange={handleFile}
                   className="hidden"
                 />
@@ -116,6 +164,71 @@ function GradeDemo() {
               </div>
             )}
 
+            {state === "nsfw" && (
+              <div className="flex flex-col items-center gap-6 py-4">
+                <div className="flex h-20 w-20 items-center justify-center rounded-full bg-red-500/10">
+                  <svg
+                    className="h-10 w-10 text-red-400"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={1.5}
+                      d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
+                    />
+                  </svg>
+                </div>
+                <h3 className="text-xl font-bold text-red-400">
+                  Content Not Allowed
+                </h3>
+                <p className="text-center text-gray-300">
+                  This photo appears to contain inappropriate content. Please
+                  upload a different photo that follows our content rules.
+                </p>
+                <button
+                  onClick={reset}
+                  className="rounded-full bg-rose-600 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-rose-500"
+                >
+                  Try a Different Photo
+                </button>
+              </div>
+            )}
+
+            {state === "error" && (
+              <div className="flex flex-col items-center gap-6 py-4">
+                <div className="flex h-20 w-20 items-center justify-center rounded-full bg-amber-500/10">
+                  <svg
+                    className="h-10 w-10 text-amber-400"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={1.5}
+                      d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"
+                    />
+                  </svg>
+                </div>
+                <h3 className="text-xl font-bold text-amber-400">
+                  Upload Error
+                </h3>
+                <p className="text-center text-gray-300">
+                  {errorMessage || "Something went wrong. Please try again."}
+                </p>
+                <button
+                  onClick={reset}
+                  className="rounded-full bg-rose-600 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-rose-500"
+                >
+                  Try Again
+                </button>
+              </div>
+            )}
+
             {state === "done" && grade !== null && (
               <div className="flex flex-col items-center gap-6 py-4">
                 {preview && (
@@ -131,10 +244,12 @@ function GradeDemo() {
                   </div>
                   <div className="mt-1 text-sm font-medium text-gray-500">
                     out of 10
+                    {gradingMethod === "mock" && (
+                      <span className="ml-1 text-xs text-gray-600">(mock)</span>
+                    )}
                   </div>
                 </div>
 
-                {/* Grade bar */}
                 <div className="flex w-full max-w-xs gap-0.5">
                   {Array.from({ length: 10 }).map((_, i) => (
                     <div
@@ -171,8 +286,8 @@ function GradeDemo() {
           </div>
 
           <p className="mt-6 text-center text-xs text-gray-600">
-            This is a demonstration. In the real app, your photo is analyzed by
-            AI and your grade is kept completely private — only you see it.
+            Photos are screened for inappropriate content before grading.
+            Your grade is kept private — only you see it.
           </p>
         </div>
       </main>

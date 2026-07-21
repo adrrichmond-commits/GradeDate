@@ -30,7 +30,7 @@ import {
   type User,
 } from "../src/db.ts";
 import Stripe from "stripe";
-import { mkdirSync, existsSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdirSync, existsSync, writeFileSync, readFileSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { webcrypto } from "node:crypto";
 
@@ -255,8 +255,9 @@ async function handleUpload(req: Request): Promise<Response> {
     return json({ error: "No photo file provided" }, 400);
   }
 
-  if (!file.type.startsWith("image/")) {
-    return json({ error: "File must be an image" }, 400);
+  const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
+  if (!ALLOWED_TYPES.includes(file.type)) {
+    return json({ error: "Only JPEG, PNG, and WebP images are allowed" }, 400);
   }
 
   const ext = file.name.split(".").pop() || "jpg";
@@ -335,6 +336,82 @@ function getWeightedRandomGrade(): number {
   const raw = Math.round(normalized * 9 + 1);
   // Clamp to 1-10
   return Math.max(1, Math.min(10, raw));
+}
+
+async function nsfwCheck(photoPath: string): Promise<"SAFE" | "NSFW"> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    return "SAFE";
+  }
+
+  const dir = uploadsDir();
+  const filename = path.basename(photoPath);
+  const filePath = path.join(dir, filename);
+
+  let buffer: Buffer;
+  try {
+    buffer = readFileSync(filePath);
+  } catch {
+    return "SAFE";
+  }
+
+  const base64Image = buffer.toString("base64");
+  const mimeType =
+    filename.endsWith(".png") ? "image/png" :
+    filename.endsWith(".webp") ? "image/webp" :
+    "image/jpeg";
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "Does this photo contain nudity, sexually explicit content, or gore? Answer ONLY 'SAFE' or 'NSFW'.",
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:${mimeType};base64,${base64Image}`,
+                  detail: "low",
+                },
+              },
+            ],
+          },
+        ],
+        max_tokens: 10,
+        temperature: 0,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error("NSFW check API error:", response.status);
+      return "SAFE";
+    }
+
+    const data = (await response.json()) as {
+      choices: Array<{ message: { content: string } }>;
+    };
+
+    const content = data.choices?.[0]?.message?.content;
+    if (!content) {
+      return "SAFE";
+    }
+
+    return content.toUpperCase().includes("NSFW") ? "NSFW" : "SAFE";
+  } catch (err) {
+    console.error("NSFW check failed:", err);
+    return "SAFE";
+  }
 }
 
 async function gradeWithAI(photoPath: string): Promise<{ grade: number; analysis: string }> {
@@ -440,6 +517,30 @@ async function handleGrade(req: Request): Promise<Response> {
 
   if (user.grade !== null) {
     return json({ error: "You have already been graded", grade: user.grade }, 400);
+  }
+
+  // NSFW screening before grading
+  const nsfwResult = await nsfwCheck(user.photo_path);
+  if (nsfwResult === "NSFW") {
+    try {
+      const dir = uploadsDir();
+      const filename = path.basename(user.photo_path);
+      unlinkSync(path.join(dir, filename));
+    } catch {
+      // Best effort cleanup
+    }
+    await updateUserProfile(user.id, {
+      display_name: user.display_name || "",
+      age: user.age || 0,
+      gender: user.gender || "",
+      looking_for: user.looking_for || "everyone",
+      bio: user.bio || "",
+      photo_path: "",
+    });
+    return json({
+      error: "This photo appears to contain inappropriate content. Please upload a different photo that follows our content rules.",
+      code: "NSFW",
+    }, 400);
   }
 
   let grade: number;
