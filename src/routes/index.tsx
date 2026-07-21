@@ -143,66 +143,87 @@ function Home() {
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,_rgba(245,158,11,0.08),transparent_50%)]" />
 
         <div className="relative z-10 mx-auto max-w-3xl text-center">
-          <span className="badge mb-6 text-sm">
-            🔥 The dating app that keeps it real
-          </span>
-          <h1 className="mb-6 text-5xl font-extrabold leading-tight tracking-tight sm:text-7xl">
-            Find your{" "}
-            <span
-              className="bg-gradient-to-r from-rose-400 via-amber-400 to-rose-400 bg-clip-text text-transparent animate-[shimmer_3s_ease-in-out_infinite]"
-              style={{ backgroundSize: "200% auto" }}
-            >
-              looks-match
+          {/* Trust Bar */}
+          <div className="mb-10 flex items-center gap-3 rounded-full border border-white/10 bg-white/[0.04] px-5 py-2 backdrop-blur-sm">
+            <div className="flex -space-x-2">
+              {["#f43f5e", "#f59e0b", "#8b5cf6", "#0ea5e9"].map((c, i) => (
+                <div key={i} className="h-8 w-8 rounded-full border-2 border-gray-950" style={{ backgroundColor: c }} />
+              ))}
+            </div>
+            <span className="text-sm text-gray-400">
+              <span className="font-semibold text-white">2,400+</span> singles graded this week
             </span>
-            .
-          </h1>
-          <p className="mx-auto mb-10 max-w-xl text-lg text-gray-400 sm:text-xl">
-            We grade your selfie. You date people at your level. No more shooting
-            out of your league — just real connections with looks-compatible
-            singles.
-          </p>
-          <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
-            <a
-              href="https://buy.stripe.com/8x2eVdeZ83P8h0Z4SP7Re00"
-              className="btn-primary text-lg"
-            >
-              Subscribe for $5.99/mo
-              <svg
-                className="h-5 w-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M13 7l5 5m0 0l-5 5m5-5H6"
-                />
-              </svg>
-            </a>
-            <Link to="/grade" className="btn-secondary text-lg">
-              Try demo grader →
-            </Link>
           </div>
-          <p className="mt-4 text-sm text-gray-500">
-            No free tier. Cancel anytime.
+
+          {/* Headline */}
+          <h1 className="text-center text-5xl font-extrabold leading-[1.1] tracking-tight sm:text-7xl md:text-8xl">
+            <span className="block bg-gradient-to-r from-white via-rose-100 to-white bg-clip-text text-transparent animate-[shimmer_4s_ease-in-out_infinite]"
+              style={{ backgroundSize: "200% auto" }}>
+              Your grade.
+            </span>
+            <span className="block bg-gradient-to-r from-white via-rose-100 to-white bg-clip-text text-transparent animate-[shimmer_4s_ease-in-out_infinite]"
+              style={{ backgroundSize: "200% auto", animationDelay: "0.15s" }}>
+              Your league.
+            </span>
+            <span className="block bg-gradient-to-r from-rose-400 via-amber-400 to-rose-400 bg-clip-text text-transparent animate-[shimmer_3s_ease-in-out_infinite]"
+              style={{ backgroundSize: "200% auto", animationDelay: "0.3s" }}>
+              Real matches.
+            </span>
+          </h1>
+
+          {/* Subhead */}
+          <p className="mx-auto mt-8 max-w-xl text-center text-lg leading-relaxed text-gray-400 sm:text-xl">
+            AI grades your selfie, then matches you exclusively with people at your level.
+            <br />
+            No more shooting out of your league — just real connections.
           </p>
 
-          {/* Social proof counter */}
-          <div className="mt-8 flex items-center justify-center gap-6 text-sm text-gray-500">
-            <div className="flex items-center gap-1.5">
-              <div className="flex -space-x-2">
-                {["#f43f5e", "#f59e0b", "#8b5cf6", "#0ea5e9"].map((c, i) => (
-                  <div
-                    key={i}
-                    className="h-7 w-7 rounded-full border-2 border-gray-950"
-                    style={{ backgroundColor: c }}
-                  />
-                ))}
-              </div>
-              <span className="ml-1 text-gray-400">2.4k+ graded this week</span>
+          {/* Single CTA Button */}
+          <Link to="/grade" className="btn-primary mt-10 inline-flex items-center gap-2 px-8 py-4 text-lg font-bold">
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            Get Your Grade — Free
+          </Link>
+
+          {/* CTA Footnote */}
+          <div className="mt-4 flex flex-col items-center gap-1.5 text-sm">
+            <p className="text-gray-500">$5.99/month after your grade · Cancel anytime</p>
+            <div className="flex items-center gap-1">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <svg key={i} className="h-4 w-4 text-amber-400" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                </svg>
+              ))}
+              <span className="ml-1 text-gray-500">4.8 from 1,200+ reviews</span>
             </div>
+          </div>
+
+          {/* Floating Grade Cards */}
+          <div className="mt-16 grid max-w-2xl grid-cols-1 gap-4 sm:grid-cols-3">
+            {[
+              { grade: 8, quote: "We found our match in 3 days", name: "Tom & Rachel", gradient: "from-rose-500 to-rose-600" },
+              { grade: 6, quote: "No more guessing if they'll reply", name: "Marcus", gradient: "from-violet-500 to-violet-600" },
+              { grade: 9, quote: "Finally, an honest dating app", name: "Aisha", gradient: "from-amber-500 to-amber-600" },
+            ].map((card, i) => (
+              <div key={i} className="card-hover flex items-center gap-4 p-4 animate-[cardEnter_0.5s_ease-out_both]"
+                style={{ animationDelay: `${0.4 + i * 0.1}s` }}>
+                <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${card.gradient} text-lg font-extrabold text-white shadow-lg`}>
+                  {card.grade}
+                </div>
+                <div className="min-w-0 text-left">
+                  <p className="truncate text-sm leading-snug text-gray-300">"{card.quote}"</p>
+                  <p className="mt-0.5 text-xs text-gray-500">{card.name}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Scroll indicator */}
+          <div className="absolute bottom-8 left-1/2 -translate-x-1/2 animate-bounce" aria-hidden="true">
+            <svg className="h-6 w-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+            </svg>
           </div>
         </div>
       </section>
