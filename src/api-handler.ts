@@ -30,6 +30,10 @@ import {
   addReGrade,
   activateBoost,
   revealLikes,
+  createPasswordResetToken,
+  getPasswordResetToken,
+  markTokenUsed,
+  updateUserPassword,
   type User,
 } from "../src/db.ts";
 import Stripe from "stripe";
@@ -1124,6 +1128,64 @@ async function handleStripeWebhook(req: Request): Promise<Response> {
   return json({ received: true });
 }
 
+// ── Password Reset ─────────────────────────────────────────────
+
+async function handleForgotPassword(req: Request): Promise<Response> {
+  const body = await req.json().catch(() => null);
+  if (!body?.email) {
+    return json({ error: "Email is required" }, 400);
+  }
+
+  const email = String(body.email).trim().toLowerCase();
+  const user = await getUserByEmail(email);
+
+  // Always return success to avoid email enumeration — even if user doesn't exist
+  if (!user) {
+    return json({ message: "If an account with that email exists, a reset link will be displayed." });
+  }
+
+  const token = crypto.randomUUID();
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString(); // 1 hour
+
+  await createPasswordResetToken(user.id, token, expiresAt);
+
+  return json({
+    message: "Password reset link generated. Click below to reset your password.",
+    reset_url: `/reset-password?token=${token}`,
+  });
+}
+
+async function handleResetPassword(req: Request): Promise<Response> {
+  const body = await req.json().catch(() => null);
+  if (!body?.token || !body?.password) {
+    return json({ error: "Token and password are required" }, 400);
+  }
+
+  const token = String(body.token).trim();
+  const password = String(body.password);
+
+  if (password.length < 6) {
+    return json({ error: "Password must be at least 6 characters" }, 400);
+  }
+
+  const resetToken = await getPasswordResetToken(token);
+  if (!resetToken) {
+    return json({ error: "Invalid or expired reset token" }, 400);
+  }
+
+  // Check expiration
+  if (new Date(resetToken.expires_at) < new Date()) {
+    await markTokenUsed(token);
+    return json({ error: "This reset link has expired. Please request a new one." }, 400);
+  }
+
+  const passwordHash = await BunPw.hash(password);
+  await updateUserPassword(resetToken.user_id, passwordHash);
+  await markTokenUsed(token);
+
+  return json({ message: "Password has been reset successfully. You can now log in." });
+}
+
 // ── Router ────────────────────────────────────────────────────
 
 export async function handleApiRoute(
@@ -1144,6 +1206,12 @@ export async function handleApiRoute(
   }
   if (pathname === "/api/auth/me" && method === "GET") {
     return handleMe(req);
+  }
+  if (pathname === "/api/auth/forgot-password" && method === "POST") {
+    return handleForgotPassword(req);
+  }
+  if (pathname === "/api/auth/reset-password" && method === "POST") {
+    return handleResetPassword(req);
   }
 
   // Profile

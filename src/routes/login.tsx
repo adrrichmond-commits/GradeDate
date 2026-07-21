@@ -108,6 +108,15 @@ function Login() {
             >
               {submitting ? "Logging in..." : "Log In"}
             </button>
+
+            <p className="text-center text-sm">
+              <Link
+                to="/forgot-password"
+                className="text-gray-500 hover:text-rose-400 transition"
+              >
+                Forgot password?
+              </Link>
+            </p>
           </form>
 
           <p className="mt-6 text-center text-sm text-gray-400">

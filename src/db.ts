@@ -117,6 +117,16 @@ export async function initTables(): Promise<void> {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `;
+
+  await sql()`
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token TEXT UNIQUE NOT NULL,
+      expires_at TEXT NOT NULL,
+      used INTEGER DEFAULT 0
+    )
+  `;
 }
 
 // ── Types ──────────────────────────────────────────────────────
@@ -549,6 +559,54 @@ export async function deleteUserAccount(userId: number): Promise<void> {
   await sql()`DELETE FROM sessions WHERE user_id = ${userId}`;
   // Delete the user record itself
   await sql()`DELETE FROM users WHERE id = ${userId}`;
+}
+
+// ── Password Reset ────────────────────────────────────────────────
+
+export interface PasswordResetToken {
+  id: string;
+  user_id: number;
+  token: string;
+  expires_at: string;
+  used: number;
+}
+
+export async function createPasswordResetToken(
+  userId: number,
+  token: string,
+  expiresAt: string,
+): Promise<PasswordResetToken> {
+  const id = crypto.randomUUID();
+  const rows = await sql()`
+    INSERT INTO password_reset_tokens (id, user_id, token, expires_at)
+    VALUES (${id}, ${userId}, ${token}, ${expiresAt})
+    RETURNING *
+  `;
+  return rows[0] as unknown as PasswordResetToken;
+}
+
+export async function getPasswordResetToken(
+  token: string,
+): Promise<PasswordResetToken | null> {
+  const rows = await sql()`
+    SELECT * FROM password_reset_tokens WHERE token = ${token} AND used = 0
+  `;
+  return rows.length > 0 ? (rows[0] as unknown as PasswordResetToken) : null;
+}
+
+export async function markTokenUsed(token: string): Promise<void> {
+  await sql()`
+    UPDATE password_reset_tokens SET used = 1 WHERE token = ${token}
+  `;
+}
+
+export async function updateUserPassword(
+  userId: number,
+  passwordHash: string,
+): Promise<void> {
+  await sql()`
+    UPDATE users SET password_hash = ${passwordHash} WHERE id = ${userId}
+  `;
 }
 
 // ── Upsells ──────────────────────────────────────────────────────
