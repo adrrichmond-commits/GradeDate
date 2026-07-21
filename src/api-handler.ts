@@ -678,9 +678,12 @@ async function handleGetMatches(req: Request): Promise<Response> {
     user.id,
     user.looking_for || "everyone",
     blockedIds,
+    user.latitude ?? undefined,
+    user.longitude ?? undefined,
+    user.max_distance ?? undefined,
   );
 
-  // Strip grades from other users in the response
+  // Strip grades from other users in the response, map distance_miles -> distance_km
   const safeUsers = users.map((u) => ({
     id: u.id,
     display_name: u.display_name,
@@ -688,6 +691,9 @@ async function handleGetMatches(req: Request): Promise<Response> {
     gender: u.gender,
     bio: u.bio,
     photo_path: u.photo_path,
+    ...(u.distance_miles !== undefined && u.distance_miles !== null
+      ? { distance_km: Math.round(u.distance_miles * 1.60934 * 10) / 10 }
+      : {}),
   }));
 
   return json({ matches: safeUsers });

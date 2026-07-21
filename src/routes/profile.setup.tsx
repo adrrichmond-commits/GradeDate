@@ -7,6 +7,15 @@ export const Route = createFileRoute("/profile/setup")({
   component: ProfileSetup,
 });
 
+const DISTANCE_OPTIONS = [
+  { value: 5, label: "5 miles" },
+  { value: 10, label: "10 miles" },
+  { value: 25, label: "25 miles" },
+  { value: 50, label: "50 miles" },
+  { value: 100, label: "100 miles" },
+  { value: 250, label: "250 miles" },
+];
+
 function ProfileSetup() {
   const navigate = useNavigate();
   const { user, loading, refetch } = useAuth();
@@ -22,12 +31,43 @@ function ProfileSetup() {
   const [submitting, setSubmitting] = useState(false);
   const [uploading, setUploading] = useState(false);
 
+  // Location fields
+  const [zipCode, setZipCode] = useState("");
+  const [maxDistance, setMaxDistance] = useState(50);
+  const [lookingUp, setLookingUp] = useState(false);
+  const [locationResult, setLocationResult] = useState<{
+    lat: number;
+    lng: number;
+    city: string;
+    state: string;
+  } | null>(null);
+  const [locationError, setLocationError] = useState("");
+
   // Redirect to login if not authenticated
   useEffect(() => {
     if (!loading && !user) {
       navigate({ to: "/login" });
     }
   }, [loading, user]);
+
+  // Pre-fill location if user already has it set
+  useEffect(() => {
+    if (user) {
+      if (user.location_city && user.location_state) {
+        setLocationResult({
+          lat: user.latitude || 0,
+          lng: user.longitude || 0,
+          city: user.location_city,
+          state: user.location_state,
+        });
+        // Try to reconstruct ZIP from existing data if available
+        setZipCode(user.location_city ? "" : "");
+      }
+      if (user.max_distance) {
+        setMaxDistance(user.max_distance);
+      }
+    }
+  }, [user]);
 
   if (loading || checking) {
     return (
@@ -79,6 +119,36 @@ function ProfileSetup() {
     }
   };
 
+  const handleZipLookup = async () => {
+    const trimmed = zipCode.trim();
+    if (!trimmed || trimmed.length < 5) {
+      setLocationError("Enter a valid 5-digit ZIP code");
+      return;
+    }
+
+    setLookingUp(true);
+    setLocationError("");
+    try {
+      const res = await fetch("/api/location/lookup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ zip: trimmed }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setLocationError(data.error || "Invalid ZIP code");
+        setLocationResult(null);
+        return;
+      }
+      setLocationResult({ lat: data.lat, lng: data.lng, city: data.city, state: data.state });
+      setLocationError("");
+    } catch {
+      setLocationError("Network error. Please try again.");
+    } finally {
+      setLookingUp(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -120,17 +190,27 @@ function ProfileSetup() {
 
     // Save profile via API
     try {
+      const payload: Record<string, unknown> = {
+        display_name: displayName.trim(),
+        age: ageNum,
+        gender,
+        looking_for: lookingFor,
+        bio: bio.trim(),
+        photo_path: photoPath,
+        max_distance: maxDistance,
+      };
+
+      if (locationResult) {
+        payload.latitude = locationResult.lat;
+        payload.longitude = locationResult.lng;
+        payload.location_city = locationResult.city;
+        payload.location_state = locationResult.state;
+      }
+
       const res = await fetch("/api/auth/update-profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          display_name: displayName.trim(),
-          age: ageNum,
-          gender,
-          looking_for: lookingFor,
-          bio: bio.trim(),
-          photo_path: photoPath,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json();
@@ -325,6 +405,83 @@ function ProfileSetup() {
                 className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-gray-100 placeholder-gray-500 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
                 placeholder="A few words about yourself..."
               />
+            </div>
+
+            {/* Location Section */}
+            <div className="rounded-lg border border-white/5 bg-gray-800/30 p-4">
+              <h3 className="mb-3 text-sm font-semibold text-gray-300">📍 Location</h3>
+
+              {/* ZIP Code + Lookup */}
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <label
+                    htmlFor="zipCode"
+                    className="mb-1 block text-xs text-gray-500"
+                  >
+                    ZIP Code
+                  </label>
+                  <input
+                    id="zipCode"
+                    type="text"
+                    maxLength={5}
+                    value={zipCode}
+                    onChange={(e) => {
+                      setZipCode(e.target.value.replace(/[^0-9]/g, ""));
+                      setLocationResult(null);
+                      setLocationError("");
+                    }}
+                    onBlur={() => {
+                      if (zipCode.length === 5 && !locationResult) {
+                        handleZipLookup();
+                      }
+                    }}
+                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-gray-100 placeholder-gray-500 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                    placeholder="e.g. 90210"
+                  />
+                </div>
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    onClick={handleZipLookup}
+                    disabled={lookingUp || zipCode.length < 5}
+                    className="rounded-lg border border-gray-600 px-4 py-2.5 text-sm text-gray-300 transition hover:border-rose-500/50 hover:text-white disabled:opacity-50"
+                  >
+                    {lookingUp ? "..." : "Lookup"}
+                  </button>
+                </div>
+              </div>
+
+              {locationError && (
+                <p className="mt-1.5 text-xs text-red-400">{locationError}</p>
+              )}
+
+              {locationResult && (
+                <p className="mt-2 text-sm text-emerald-400">
+                  📍 {locationResult.city}, {locationResult.state}
+                </p>
+              )}
+
+              {/* Max Distance */}
+              <div className="mt-4">
+                <label
+                  htmlFor="maxDistance"
+                  className="mb-1 block text-xs text-gray-500"
+                >
+                  Maximum Distance
+                </label>
+                <select
+                  id="maxDistance"
+                  value={maxDistance}
+                  onChange={(e) => setMaxDistance(Number(e.target.value))}
+                  className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-gray-100 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                >
+                  {DISTANCE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             <button

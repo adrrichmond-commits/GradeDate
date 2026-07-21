@@ -7,6 +7,15 @@ export const Route = createFileRoute("/profile/")({
   component: ProfilePage,
 });
 
+const DISTANCE_OPTIONS = [
+  { value: 5, label: "5 miles" },
+  { value: 10, label: "10 miles" },
+  { value: 25, label: "25 miles" },
+  { value: 50, label: "50 miles" },
+  { value: 100, label: "100 miles" },
+  { value: 250, label: "250 miles" },
+];
+
 function ProfilePage() {
   const navigate = useNavigate();
   const { user, loading, refetch } = useAuth();
@@ -28,6 +37,18 @@ function ProfilePage() {
   const [saveError, setSaveError] = useState("");
   const [saveSuccess, setSaveSuccess] = useState(false);
   const successTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Location edit state
+  const [editZipCode, setEditZipCode] = useState("");
+  const [editMaxDistance, setEditMaxDistance] = useState(50);
+  const [lookingUp, setLookingUp] = useState(false);
+  const [editLocationResult, setEditLocationResult] = useState<{
+    lat: number;
+    lng: number;
+    city: string;
+    state: string;
+  } | null>(null);
+  const [locationError, setLocationError] = useState("");
 
   // Delete account
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -61,6 +82,14 @@ function ProfilePage() {
     setEditBio(user.bio || "");
     setEditPhotoFile(null);
     setEditPhotoPreview(null);
+    setEditZipCode("");
+    setEditMaxDistance(user.max_distance || 50);
+    setEditLocationResult(
+      user.location_city && user.location_state
+        ? { lat: user.latitude || 0, lng: user.longitude || 0, city: user.location_city, state: user.location_state }
+        : null,
+    );
+    setLocationError("");
     setSaveError("");
     setSaveSuccess(false);
   };
@@ -80,6 +109,36 @@ function ProfilePage() {
     if (!file) return;
     setEditPhotoFile(file);
     setEditPhotoPreview(URL.createObjectURL(file));
+  };
+
+  const handleZipLookup = async () => {
+    const trimmed = editZipCode.trim();
+    if (!trimmed || trimmed.length < 5) {
+      setLocationError("Enter a valid 5-digit ZIP code");
+      return;
+    }
+
+    setLookingUp(true);
+    setLocationError("");
+    try {
+      const res = await fetch("/api/location/lookup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ zip: trimmed }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setLocationError(data.error || "Invalid ZIP code");
+        setEditLocationResult(null);
+        return;
+      }
+      setEditLocationResult({ lat: data.lat, lng: data.lng, city: data.city, state: data.state });
+      setLocationError("");
+    } catch {
+      setLocationError("Network error. Please try again.");
+    } finally {
+      setLookingUp(false);
+    }
   };
 
   const handleGetGraded = async () => {
@@ -178,17 +237,27 @@ function ProfilePage() {
 
     // Save profile via API
     try {
+      const payload: Record<string, unknown> = {
+        display_name: editName.trim(),
+        age: ageNum,
+        gender: editGender,
+        looking_for: editLookingFor,
+        bio: editBio.trim(),
+        photo_path: photoPath,
+        max_distance: editMaxDistance,
+      };
+
+      if (editLocationResult) {
+        payload.latitude = editLocationResult.lat;
+        payload.longitude = editLocationResult.lng;
+        payload.location_city = editLocationResult.city;
+        payload.location_state = editLocationResult.state;
+      }
+
       const res = await fetch("/api/auth/update-profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          display_name: editName.trim(),
-          age: ageNum,
-          gender: editGender,
-          looking_for: editLookingFor,
-          bio: editBio.trim(),
-          photo_path: photoPath,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json();
@@ -518,6 +587,89 @@ function ProfilePage() {
               />
             </div>
 
+            {/* Location Section (Edit Mode) */}
+            <div className="rounded-lg border border-white/5 bg-gray-800/30 p-4">
+              <h3 className="mb-3 text-sm font-semibold text-gray-300">📍 Location</h3>
+
+              {/* Current location display */}
+              {editLocationResult && (
+                <p className="mb-3 text-sm text-emerald-400">
+                  📍 {editLocationResult.city}, {editLocationResult.state}
+                  {" "}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditLocationResult(null);
+                      setEditZipCode("");
+                    }}
+                    className="text-xs text-gray-500 underline hover:text-gray-300"
+                  >
+                    (change)
+                  </button>
+                </p>
+              )}
+
+              {/* ZIP Code + Lookup */}
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <label htmlFor="editZipCode" className="mb-1 block text-xs text-gray-500">
+                    ZIP Code
+                  </label>
+                  <input
+                    id="editZipCode"
+                    type="text"
+                    maxLength={5}
+                    value={editZipCode}
+                    onChange={(e) => {
+                      setEditZipCode(e.target.value.replace(/[^0-9]/g, ""));
+                      setEditLocationResult(null);
+                      setLocationError("");
+                    }}
+                    onBlur={() => {
+                      if (editZipCode.length === 5 && !editLocationResult) {
+                        handleZipLookup();
+                      }
+                    }}
+                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-gray-100 placeholder-gray-500 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                    placeholder="e.g. 90210"
+                  />
+                </div>
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    onClick={handleZipLookup}
+                    disabled={lookingUp || editZipCode.length < 5}
+                    className="rounded-lg border border-gray-600 px-4 py-2.5 text-sm text-gray-300 transition hover:border-rose-500/50 hover:text-white disabled:opacity-50"
+                  >
+                    {lookingUp ? "..." : "Lookup"}
+                  </button>
+                </div>
+              </div>
+
+              {locationError && (
+                <p className="mt-1.5 text-xs text-red-400">{locationError}</p>
+              )}
+
+              {/* Max Distance */}
+              <div className="mt-4">
+                <label htmlFor="editMaxDistance" className="mb-1 block text-xs text-gray-500">
+                  Maximum Distance
+                </label>
+                <select
+                  id="editMaxDistance"
+                  value={editMaxDistance}
+                  onChange={(e) => setEditMaxDistance(Number(e.target.value))}
+                  className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-gray-100 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                >
+                  {DISTANCE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
             {/* Action Buttons */}
             <div className="flex gap-3 pt-2">
               <button
@@ -586,6 +738,31 @@ function ProfilePage() {
                 <p className="mt-1 text-gray-300">
                   {user.bio || "No bio yet."}
                 </p>
+              </div>
+
+              <div className="rounded-lg border border-white/5 bg-gray-800/40 p-4">
+                <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
+                  Location
+                </span>
+                {user.location_city && user.location_state ? (
+                  <p className="mt-1 text-gray-300">
+                    📍 {user.location_city}, {user.location_state}
+                    <span className="ml-2 text-xs text-gray-500">
+                      (within {user.max_distance || 50} miles)
+                    </span>
+                  </p>
+                ) : (
+                  <p className="mt-1 text-gray-500">
+                    Not set —{" "}
+                    <button
+                      onClick={handleEnterEdit}
+                      className="underline transition hover:text-rose-400"
+                    >
+                      add your location
+                    </button>{" "}
+                    to see nearby matches
+                  </p>
+                )}
               </div>
 
               <div className="rounded-lg border border-white/5 bg-gray-800/40 p-4">
