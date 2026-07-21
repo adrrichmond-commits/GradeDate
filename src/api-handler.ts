@@ -36,6 +36,7 @@ import {
   updateUserPassword,
   type User,
 } from "../src/db.ts";
+import { sendPasswordResetEmail } from "../src/email.ts";
 import Stripe from "stripe";
 import { mkdirSync, existsSync, writeFileSync, readFileSync, unlinkSync } from "node:fs";
 import path from "node:path";
@@ -1141,7 +1142,7 @@ async function handleForgotPassword(req: Request): Promise<Response> {
 
   // Always return success to avoid email enumeration — even if user doesn't exist
   if (!user) {
-    return json({ message: "If an account with that email exists, a reset link will be displayed." });
+    return json({ message: "If an account with that email exists, a reset link has been sent." });
   }
 
   const token = crypto.randomUUID();
@@ -1149,10 +1150,14 @@ async function handleForgotPassword(req: Request): Promise<Response> {
 
   await createPasswordResetToken(user.id, token, expiresAt);
 
-  return json({
-    message: "Password reset link generated. Click below to reset your password.",
-    reset_url: `/reset-password?token=${token}`,
-  });
+  // Build the full reset URL from the request origin
+  const url = new URL(req.url);
+  const resetUrl = `${url.origin}/reset-password?token=${token}`;
+
+  // Send email via Resend (gracefully handles missing API key)
+  await sendPasswordResetEmail(email, resetUrl);
+
+  return json({ message: "If an account with that email exists, a reset link has been sent." });
 }
 
 async function handleResetPassword(req: Request): Promise<Response> {

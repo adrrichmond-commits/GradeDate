@@ -7,14 +7,14 @@ export const Route = createFileRoute("/forgot-password")({
 
 function ForgotPassword() {
   const [email, setEmail] = useState("");
-  const [resetUrl, setResetUrl] = useState<string | null>(null);
+  const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    setResetUrl(null);
+    setSent(false);
     setSubmitting(true);
 
     try {
@@ -30,11 +30,7 @@ function ForgotPassword() {
         return;
       }
 
-      if (data.reset_url) {
-        setResetUrl(data.reset_url);
-      } else {
-        setError(data.message || "No reset link generated");
-      }
+      setSent(true);
     } catch {
       setError("Network error. Please try again.");
     } finally {
@@ -48,12 +44,12 @@ function ForgotPassword() {
         <div className="mb-8 text-center">
           <h1 className="text-3xl font-bold">Forgot Password?</h1>
           <p className="mt-2 text-gray-400">
-            Enter your email and we'll generate a password reset link.
+            Enter your email and we'll send you a reset link.
           </p>
         </div>
 
         <div className="rounded-2xl border border-white/5 bg-gray-900/60 p-8 backdrop-blur-sm">
-          {!resetUrl ? (
+          {!sent ? (
             <form onSubmit={handleSubmit} className="space-y-5">
               {error && (
                 <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">
@@ -84,21 +80,17 @@ function ForgotPassword() {
                 disabled={submitting}
                 className="w-full rounded-full bg-rose-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-rose-500 disabled:opacity-50"
               >
-                {submitting ? "Generating link..." : "Send Reset Link"}
+                {submitting ? "Sending..." : "Send Reset Link"}
               </button>
             </form>
           ) : (
             <div className="space-y-4">
               <div className="rounded-lg border border-green-500/30 bg-green-500/10 p-4 text-sm text-green-400">
-                <p className="font-medium mb-2">Your password reset link is ready:</p>
-                <Link
-                  to={resetUrl}
-                  className="block break-all rounded-lg bg-gray-800 px-4 py-3 font-mono text-sm text-rose-400 hover:text-rose-300 transition"
-                >
-                  {resetUrl}
-                </Link>
+                <p className="font-medium">
+                  If an account with that email exists, we've sent a reset link. Check your inbox.
+                </p>
                 <p className="mt-3 text-gray-500">
-                  This link expires in 1 hour. Click it to set a new password.
+                  The link expires in 1 hour. If you don't see the email, check your spam folder.
                 </p>
               </div>
             </div>
