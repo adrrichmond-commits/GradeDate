@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useAuth } from "~/auth-context";
 
-const STRIPE_PAYMENT_LINK = "https://buy.stripe.com/8x2eVdeZ83P8h0Z4SP7Re00";
+const STRIPE_PAYMENT_LINK = "https://buy.stripe.com/5kQ6oHbMWadwh0Z5WT7Re01";
 
 export const Route = createFileRoute("/subscribe")({
   component: SubscribePage,
