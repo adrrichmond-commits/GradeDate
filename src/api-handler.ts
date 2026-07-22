@@ -1762,6 +1762,11 @@ export async function handleApiRoute(
   const url = new URL(req.url);
   const { method, pathname } = { method: req.method, pathname: url.pathname };
 
+  // CSRF token endpoint — allows anonymous users to get a token before POST requests
+  if (pathname === "/api/csrf" && method === "GET") {
+    return setCsrfCookie(json({ ok: true }), generateCsrfToken());
+  }
+
   // Auth routes — CSRF not required (pre-auth or token-based)
   if (pathname === "/api/auth/signup" && method === "POST") {
     return handleSignup(req);
