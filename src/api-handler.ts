@@ -44,6 +44,13 @@ import {
   savePushSubscription,
   getPushSubscriptions,
   deletePushSubscription,
+  generateReferralCode,
+  getReferralCode,
+  getReferralCodeByCode,
+  applyReferralCode,
+  getReferralStats,
+  getReferralRewardForReferee,
+  applyReferralReward,
   type User,
   type UserPhoto,
 } from "../src/db.ts";
@@ -204,6 +211,7 @@ async function handleSignup(req: Request): Promise<Response> {
   const email = String(body.email).trim().toLowerCase();
   const password = String(body.password);
   const dateOfBirth = body.date_of_birth ? String(body.date_of_birth) : null;
+  const referralCode = body.referral_code ? String(body.referral_code).trim().toUpperCase() : null;
 
   if (password.length < 6) {
     return json({ error: "Password must be at least 6 characters" }, 400);
@@ -236,6 +244,15 @@ async function handleSignup(req: Request): Promise<Response> {
   const passwordHash = await BunPw.hash(password);
   const user = await createUser(email, passwordHash, dateOfBirth ?? undefined);
   const session = await createSession(user.id);
+
+  // Process referral code if provided
+  if (referralCode) {
+    const referralResult = await applyReferralCode(referralCode, user.id);
+    if (!referralResult.success) {
+      // Don't fail signup — just log it; the frontend can also display a notice
+      console.log(`Referral code "${referralCode}" failed for user ${user.id}: ${referralResult.error}`);
+    }
+  }
 
   return setSessionCookie(json({ user: toSafeUser(user) }, 201), session.id);
 }
@@ -1044,6 +1061,13 @@ async function handleSubscriptionActivate(req: Request): Promise<Response> {
     await updateSubscriptionStatus(user.id, "active");
   }
 
+  // Check and apply referral reward — if this user was referred, give both the free month
+  const pendingReward = await getReferralRewardForReferee(user.id);
+  if (pendingReward && !pendingReward.applied) {
+    await applyReferralReward(pendingReward.id);
+    console.log(`Referral reward applied: referrer=${pendingReward.referrer_user_id}, referee=${user.id}`);
+  }
+
   return json({
     ok: true,
     message: plan === "annual" ? "Annual subscription activated" : "Subscription activated",
@@ -1188,6 +1212,13 @@ async function handleStripeWebhook(req: Request): Promise<Response> {
           console.log(
             `Subscription activated for user ${user.id} (${customerEmail}) — no Stripe IDs stored`,
           );
+        }
+
+        // Check and apply referral reward
+        const pendingReward = await getReferralRewardForReferee(user.id);
+        if (pendingReward && !pendingReward.applied) {
+          await applyReferralReward(pendingReward.id);
+          console.log(`Referral reward applied via Stripe: referrer=${pendingReward.referrer_user_id}, referee=${user.id}`);
         }
         break;
       }
@@ -1437,6 +1468,51 @@ async function handlePushUnsubscribe(req: Request): Promise<Response> {
   return json({ ok: true });
 }
 
+// ── Referral ────────────────────────────────────────────────────
+
+async function handleGetReferralCode(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+
+  // Generate code if user doesn't have one yet
+  let code = await getReferralCode(user.id);
+  if (!code) {
+    code = await generateReferralCode(user.id);
+  }
+
+  const stats = await getReferralStats(user.id);
+
+  return json({
+    code: code.code,
+    usage_count: stats?.usage_count ?? 0,
+    rewards_earned: stats?.rewards_earned ?? 0,
+    share_url: `https://gradedate.app/signup?ref=${code.code}`,
+  });
+}
+
+async function handleApplyReferralCode(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+
+  const body = await req.json().catch(() => null);
+  if (!body?.code || typeof body.code !== "string") {
+    return json({ error: "Referral code is required" }, 400);
+  }
+
+  const code = String(body.code).trim().toUpperCase();
+  const result = await applyReferralCode(code, user.id);
+
+  if (!result.success) {
+    return json({ error: result.error }, 400);
+  }
+
+  return json({ success: true, message: "Referral code applied! You'll both get a free month when you subscribe." });
+}
+
 // ── Router ────────────────────────────────────────────────────
 
 export async function handleApiRoute(
@@ -1571,6 +1647,14 @@ export async function handleApiRoute(
   }
   if (pathname === "/api/push/unsubscribe" && method === "POST") {
     return handlePushUnsubscribe(req);
+  }
+
+  // Referral
+  if (pathname === "/api/referral/code" && method === "GET") {
+    return handleGetReferralCode(req);
+  }
+  if (pathname === "/api/referral/apply" && method === "POST") {
+    return handleApplyReferralCode(req);
   }
 
   return null; // Not an API route

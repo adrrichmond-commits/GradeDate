@@ -4,17 +4,22 @@ import { useAuth } from "~/auth-context";
 
 export const Route = createFileRoute("/signup")({
   component: Signup,
+  validateSearch: (search: Record<string, string>) => ({
+    ref: search.ref || "",
+  }),
 });
 
 function Signup() {
   const navigate = useNavigate();
   const { user, refetch } = useAuth();
+  const search = Route.useSearch();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [dobMonth, setDobMonth] = useState("");
   const [dobDay, setDobDay] = useState("");
   const [dobYear, setDobYear] = useState("");
+  const [referralCode, setReferralCode] = useState(search.ref || "");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -104,7 +109,7 @@ function Signup() {
       const res = await fetch("/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, date_of_birth: dateOfBirth }),
+        body: JSON.stringify({ email, password, date_of_birth: dateOfBirth, referral_code: referralCode || undefined }),
       });
 
       const data = await res.json();
@@ -265,6 +270,29 @@ function Signup() {
                 className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-gray-100 placeholder-gray-500 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
                 placeholder="Re-enter your password"
               />
+            </div>
+
+            <div>
+              <label
+                htmlFor="referralCode"
+                className="mb-1.5 block text-sm font-medium text-gray-300"
+              >
+                Referral Code{" "}
+                <span className="text-xs font-normal text-gray-500">(optional)</span>
+              </label>
+              <input
+                id="referralCode"
+                type="text"
+                value={referralCode}
+                onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
+                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-gray-100 placeholder-gray-500 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                placeholder="e.g. SARAH-X7K2MP"
+              />
+              {referralCode && (
+                <p className="mt-1 text-xs text-amber-400">
+                  🎁 You and your friend will both get a free month when you subscribe!
+                </p>
+              )}
             </div>
 
             <button

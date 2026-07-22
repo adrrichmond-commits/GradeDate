@@ -23,6 +23,130 @@ interface PhotoItem {
   is_primary: boolean;
 }
 
+interface ReferralData {
+  code: string;
+  usage_count: number;
+  rewards_earned: number;
+  share_url: string;
+}
+
+function ReferralSection() {
+  const [referralData, setReferralData] = useState<ReferralData | null>(null);
+  const [loadingReferral, setLoadingReferral] = useState(true);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/referral/code")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.code) {
+          setReferralData(data);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoadingReferral(false));
+  }, []);
+
+  const handleCopy = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Fallback: select the text
+      const input = document.createElement("input");
+      input.value = text;
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand("copy");
+      document.body.removeChild(input);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  if (loadingReferral) {
+    return (
+      <div className="flex items-center justify-center py-4">
+        <div className="loader-pulse" />
+      </div>
+    );
+  }
+
+  if (!referralData) {
+    return (
+      <div className="text-center">
+        <p className="text-sm text-gray-500">Unable to load referral code.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-4">
+        <svg className="h-5 w-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8.25v-1.5m0 1.5c-1.355 0-2.697.056-4.024.166C6.845 8.51 6 9.473 6 10.608v2.513m6-4.871c1.355 0 2.697.056 4.024.166C17.155 8.51 18 9.473 18 10.608v2.513m-3-4.871v-1.5c0-.346-.077-.675-.22-.98M15 8.25H9m6 0a41.29 41.29 0 00-6 0m-6 0v7.5c0 .69.56 1.25 1.25 1.25h.5v2.25l2.25-2.25h3.75c.69 0 1.25-.56 1.25-1.25V13.5" />
+        </svg>
+        <h3 className="text-lg font-semibold text-amber-400">Refer a Friend</h3>
+      </div>
+
+      <p className="mb-4 text-sm text-gray-400">
+        Share GradeDate with your friends. You and your friend both get{" "}
+        <span className="font-semibold text-amber-400">a free month</span> when
+        they subscribe!
+      </p>
+
+      {/* Stats */}
+      <div className="mb-5 grid grid-cols-2 gap-3">
+        <div className="rounded-lg border border-amber-500/15 bg-amber-500/5 px-4 py-3 text-center">
+          <span className="text-2xl font-bold text-amber-400">{referralData.usage_count}</span>
+          <p className="text-xs text-gray-500">friends joined</p>
+        </div>
+        <div className="rounded-lg border border-amber-500/15 bg-amber-500/5 px-4 py-3 text-center">
+          <span className="text-2xl font-bold text-amber-400">{referralData.rewards_earned}</span>
+          <p className="text-xs text-gray-500">rewards earned</p>
+        </div>
+      </div>
+
+      {/* Copyable code */}
+      <div>
+        <label className="mb-1.5 block text-xs font-medium text-gray-500">
+          Your Referral Code
+        </label>
+        <div className="flex gap-2">
+          <div className="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 font-mono text-sm text-amber-400">
+            {referralData.code}
+          </div>
+          <button
+            onClick={() => handleCopy(referralData.code)}
+            className="rounded-lg border border-gray-600 px-4 py-2.5 text-sm text-gray-300 transition hover:border-amber-500/50 hover:text-amber-400"
+          >
+            {copied ? "Copied!" : "Copy"}
+          </button>
+        </div>
+      </div>
+
+      {/* Share link */}
+      <div className="mt-3">
+        <label className="mb-1.5 block text-xs font-medium text-gray-500">
+          Share Link
+        </label>
+        <div className="flex gap-2">
+          <div className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-xs text-gray-400">
+            {referralData.share_url}
+          </div>
+          <button
+            onClick={() => handleCopy(referralData.share_url)}
+            className="rounded-lg border border-gray-600 px-4 py-2.5 text-sm text-gray-300 transition hover:border-amber-500/50 hover:text-amber-400"
+          >
+            {copied ? "Copied!" : "Copy"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ProfilePage() {
   const navigate = useNavigate();
   const { user, loading, refetch } = useAuth();
@@ -925,6 +1049,11 @@ function ProfilePage() {
               <button onClick={handleEnterEdit} className="btn-secondary">
                 Edit Profile
               </button>
+            </div>
+
+            {/* ── Refer a Friend ── */}
+            <div className="mt-8 rounded-2xl border border-amber-500/20 bg-gradient-to-b from-amber-500/5 to-transparent p-6">
+              <ReferralSection />
             </div>
 
             {/* ── Delete Account ── */}
