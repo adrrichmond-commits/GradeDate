@@ -34,7 +34,14 @@ import {
   getPasswordResetToken,
   markTokenUsed,
   updateUserPassword,
+  addUserPhoto,
+  deleteUserPhoto,
+  reorderUserPhotos,
+  setPrimaryPhoto,
+  getUserPhotos,
+  getUserPhotoCount,
   type User,
+  type UserPhoto,
 } from "../src/db.ts";
 import { sendPasswordResetEmail } from "../src/email.ts";
 import { lookupZip } from "../src/zipcode.ts";
@@ -260,7 +267,9 @@ async function handleMe(req: Request): Promise<Response> {
   if (!user) {
     return json({ user: null }, 401);
   }
-  return json({ user: toSafeUser(user) });
+  const safe = toSafeUser(user);
+  const photos = await getUserPhotos(user.id);
+  return json({ user: { ...safe, photos } });
 }
 
 async function handleUpload(req: Request): Promise<Response> {
@@ -291,21 +300,40 @@ async function handleUpload(req: Request): Promise<Response> {
   const buffer = await file.arrayBuffer();
 
   if (user) {
-    // Authenticated user — save to their profile
+    // Authenticated user — check photo count
+    const photoCount = await getUserPhotoCount(user.id);
+    if (photoCount >= 6) {
+      return json({ error: "Maximum 6 photos allowed. Please delete one first." }, 400);
+    }
+
     const filename = `${user.id}_${Date.now()}.${ext}`;
     const filePath = path.join(uploadsDir(), filename);
     writeFileSync(filePath, new Uint8Array(buffer));
 
-    await updateUserProfile(user.id, {
-      display_name: user.display_name || "",
-      age: user.age || 0,
-      gender: user.gender || "",
-      looking_for: user.looking_for || "everyone",
-      bio: user.bio || "",
-      photo_path: `/uploads/${filename}`,
-    });
+    // Determine sort order (after existing photos)
+    const sortOrder = photoCount;
 
-    return json({ photo_path: `/uploads/${filename}` });
+    // Insert into user_photos
+    const photo = await addUserPhoto(user.id, `/uploads/${filename}`, sortOrder);
+
+    // If this is the first photo, set it as primary
+    if (photoCount === 0) {
+      await setPrimaryPhoto(user.id, photo.id);
+    }
+
+    // Ensure users.photo_path is set for backwards compatibility
+    if (!user.photo_path) {
+      await updateUserProfile(user.id, {
+        display_name: user.display_name || "",
+        age: user.age || 0,
+        gender: user.gender || "",
+        looking_for: user.looking_for || "everyone",
+        bio: user.bio || "",
+        photo_path: `/uploads/${filename}`,
+      });
+    }
+
+    return json({ photo: { id: photo.id, photo_path: photo.photo_path, sort_order: photo.sort_order, is_primary: photo.is_primary } });
   }
 
   // Anonymous free preview — save to temp file with random UUID
@@ -691,6 +719,7 @@ async function handleGetMatches(req: Request): Promise<Response> {
     gender: u.gender,
     bio: u.bio,
     photo_path: u.photo_path,
+    photos: u.photos || [],
     ...(u.distance_miles !== undefined && u.distance_miles !== null
       ? { distance_km: Math.round(u.distance_miles * 1.60934 * 10) / 10 }
       : {}),
@@ -1217,6 +1246,76 @@ async function handleResetPassword(req: Request): Promise<Response> {
   return json({ message: "Password has been reset successfully. You can now log in." });
 }
 
+async function handleDeletePhoto(req: Request, photoId: number): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+
+  const photo = await deleteUserPhoto(photoId, user.id);
+  if (!photo) {
+    return json({ error: "Photo not found" }, 404);
+  }
+
+  // If this was the primary photo, set another photo as primary
+  if (photo.is_primary) {
+    const remaining = await getUserPhotos(user.id);
+    if (remaining.length > 0) {
+      await setPrimaryPhoto(user.id, remaining[0].id);
+    } else {
+      // No photos left — clear users.photo_path
+      await updateUserProfile(user.id, {
+        display_name: user.display_name || "",
+        age: user.age || 0,
+        gender: user.gender || "",
+        looking_for: user.looking_for || "everyone",
+        bio: user.bio || "",
+        photo_path: "",
+      });
+    }
+  }
+
+  // Clean up file from disk
+  try {
+    const dir = uploadsDir();
+    const filename = path.basename(photo.photo_path);
+    unlinkSync(path.join(dir, filename));
+  } catch {
+    // Best effort cleanup
+  }
+
+  return json({ ok: true });
+}
+
+async function handleReorderPhotos(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+
+  const body = await req.json().catch(() => null);
+  if (!body?.photoIds || !Array.isArray(body.photoIds)) {
+    return json({ error: "photoIds array is required" }, 400);
+  }
+
+  await reorderUserPhotos(user.id, body.photoIds);
+  return json({ ok: true });
+}
+
+async function handleSetPrimary(req: Request, photoId: number): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+
+  const photo = await setPrimaryPhoto(user.id, photoId);
+  if (!photo) {
+    return json({ error: "Photo not found" }, 404);
+  }
+
+  return json({ ok: true, photo });
+}
+
 // ── Location ─────────────────────────────────────────────────
 
 async function handleLocationLookup(req: Request): Promise<Response> {
@@ -1276,6 +1375,19 @@ export async function handleApiRoute(
   // Upload
   if (pathname === "/api/upload" && method === "POST") {
     return handleUpload(req);
+  }
+
+  // Photos management
+  const photosDeleteMatch = pathname.match(/^\/api\/photos\/(\d+)$/);
+  if (photosDeleteMatch && method === "DELETE") {
+    return handleDeletePhoto(req, Number(photosDeleteMatch[1]));
+  }
+  if (pathname === "/api/photos/reorder" && method === "PUT") {
+    return handleReorderPhotos(req);
+  }
+  const photosPrimaryMatch = pathname.match(/^\/api\/photos\/(\d+)\/primary$/);
+  if (photosPrimaryMatch && method === "PUT") {
+    return handleSetPrimary(req, Number(photosPrimaryMatch[1]));
   }
 
   // Location

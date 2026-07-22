@@ -142,6 +142,17 @@ export async function initTables(): Promise<void> {
       used INTEGER DEFAULT 0
     )
   `;
+
+  await sql()`
+    CREATE TABLE IF NOT EXISTS user_photos (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      photo_path TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      is_primary BOOLEAN NOT NULL DEFAULT false,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `;
 }
 
 // ── Types ──────────────────────────────────────────────────────
@@ -179,6 +190,15 @@ export interface Session {
   created_at: string;
 }
 
+export interface UserPhoto {
+  id: number;
+  user_id: number;
+  photo_path: string;
+  sort_order: number;
+  is_primary: boolean;
+  created_at: string;
+}
+
 export interface MatchUser {
   id: number;
   display_name: string | null;
@@ -188,6 +208,7 @@ export interface MatchUser {
   photo_path: string | null;
   grade: number;
   distance_miles?: number;
+  photos?: UserPhoto[];
 }
 
 export interface Like {
@@ -293,6 +314,89 @@ export async function updateUserProfile(
   `;
 }
 
+// ── User Photos ──────────────────────────────────────────────
+
+export async function addUserPhoto(
+  userId: number,
+  photoPath: string,
+  sortOrder: number,
+): Promise<UserPhoto> {
+  const rows = await sql()`
+    INSERT INTO user_photos (user_id, photo_path, sort_order, is_primary)
+    VALUES (${userId}, ${photoPath}, ${sortOrder}, false)
+    RETURNING *
+  `;
+  return rows[0] as unknown as UserPhoto;
+}
+
+export async function deleteUserPhoto(
+  photoId: number,
+  userId: number,
+): Promise<UserPhoto | null> {
+  const rows = await sql()`
+    DELETE FROM user_photos
+    WHERE id = ${photoId} AND user_id = ${userId}
+    RETURNING *
+  `;
+  return rows.length > 0 ? (rows[0] as unknown as UserPhoto) : null;
+}
+
+export async function reorderUserPhotos(
+  userId: number,
+  photoIds: number[],
+): Promise<void> {
+  for (let i = 0; i < photoIds.length; i++) {
+    await sql()`
+      UPDATE user_photos
+      SET sort_order = ${i}
+      WHERE id = ${photoIds[i]} AND user_id = ${userId}
+    `;
+  }
+}
+
+export async function setPrimaryPhoto(
+  userId: number,
+  photoId: number,
+): Promise<UserPhoto | null> {
+  // Remove primary flag from all user photos
+  await sql()`
+    UPDATE user_photos SET is_primary = false WHERE user_id = ${userId}
+  `;
+  // Set the requested photo as primary
+  const rows = await sql()`
+    UPDATE user_photos
+    SET is_primary = true
+    WHERE id = ${photoId} AND user_id = ${userId}
+    RETURNING *
+  `;
+  const photo = rows.length > 0 ? (rows[0] as unknown as UserPhoto) : null;
+
+  if (photo) {
+    // Sync users.photo_path to the primary photo
+    await sql()`
+      UPDATE users SET photo_path = ${photo.photo_path} WHERE id = ${userId}
+    `;
+  }
+
+  return photo;
+}
+
+export async function getUserPhotos(userId: number): Promise<UserPhoto[]> {
+  const rows = await sql()`
+    SELECT * FROM user_photos
+    WHERE user_id = ${userId}
+    ORDER BY sort_order ASC
+  `;
+  return rows as unknown as UserPhoto[];
+}
+
+export async function getUserPhotoCount(userId: number): Promise<number> {
+  const rows = await sql()`
+    SELECT COUNT(*)::int AS cnt FROM user_photos WHERE user_id = ${userId}
+  `;
+  return rows.length > 0 ? Number((rows[0] as { cnt: number }).cnt) : 0;
+}
+
 // ── Session queries ───────────────────────────────────────────
 
 export async function createSession(userId: number): Promise<Session> {
@@ -379,7 +483,19 @@ export async function getUsersByGradeRange(
             sin(radians(${latitude!})) * sin(radians(latitude))
           )) / 1.60934 AS distance_miles`
           : sql``
-      }
+      },
+      COALESCE(
+        (SELECT json_agg(json_build_object(
+          'id', up.id,
+          'user_id', up.user_id,
+          'photo_path', up.photo_path,
+          'sort_order', up.sort_order,
+          'is_primary', up.is_primary,
+          'created_at', up.created_at
+        ) ORDER BY up.sort_order ASC)
+        FROM user_photos up WHERE up.user_id = users.id),
+        '[]'::json
+      ) AS photos_json
     FROM users
     WHERE grade IS NOT NULL
       AND grade >= ${min}
@@ -414,7 +530,16 @@ export async function getUsersByGradeRange(
       hasLocation ? sql`, distance_miles ASC` : sql``
     }, RANDOM()
   `;
-  return rows as unknown as MatchUser[];
+  return (rows as any[]).map((r: any) => {
+    const { photos_json, ...rest } = r;
+    let photos: UserPhoto[] = [];
+    if (photos_json) {
+      try {
+        photos = typeof photos_json === 'string' ? JSON.parse(photos_json) : photos_json;
+      } catch { /* ignore */ }
+    }
+    return { ...rest, photos } as unknown as MatchUser;
+  });
 }
 
 // ── Likes ────────────────────────────────────────────────────
@@ -607,6 +732,8 @@ export async function reportUser(reporterId: number, reportedId: number, reason:
 // ── Account Deletion ───────────────────────────────────────────
 
 export async function deleteUserAccount(userId: number): Promise<void> {
+  // Delete from user_photos
+  await sql()`DELETE FROM user_photos WHERE user_id = ${userId}`;
   // Delete from blocks where user is involved
   await sql()`DELETE FROM blocks WHERE blocker_id = ${userId} OR blocked_id = ${userId}`;
   // Delete from reports where user is involved
