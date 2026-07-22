@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
+import { getCsrfToken } from "~/csrf-client";
 
 export interface SafeUser {
   id: number;
@@ -109,7 +110,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const subObj = subscription.toJSON();
       await fetch("/api/push/subscribe", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": getCsrfToken() || "",
+        },
         body: JSON.stringify({
           endpoint: subObj.endpoint,
           keys: subObj.keys,
@@ -132,7 +136,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const subObj = subscription.toJSON();
         await fetch("/api/push/unsubscribe", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRF-Token": getCsrfToken() || "",
+          },
           body: JSON.stringify({ endpoint: subObj.endpoint }),
         });
         await subscription.unsubscribe();

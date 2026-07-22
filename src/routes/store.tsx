@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, type ReactNode } from "react";
 import { useAuth } from "~/auth-context";
+import { getCsrfToken } from "~/csrf-client";
 
 const RE_GRADE_LINK = "https://buy.stripe.com/5kQ7sL3gq0CW4edfxt7Re02";
 const BOOST_LINK = "https://buy.stripe.com/14A9AT2cm3P8265etp7Re03";
@@ -90,7 +91,7 @@ function StorePage() {
     setActivating(product.id);
     setError("");
     try {
-      const res = await fetch(product.endpoint, { method: "POST" });
+      const res = await fetch(product.endpoint, { method: "POST", headers: { "X-CSRF-Token": getCsrfToken() || "" } });
       const data = await res.json();
       if (res.ok && data.ok) {
         setActivated(product.id);

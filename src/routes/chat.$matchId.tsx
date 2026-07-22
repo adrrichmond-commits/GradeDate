@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useAuth } from "~/auth-context";
+import { getCsrfToken } from "~/csrf-client";
 import { useRequireSubscription } from "~/subscription-guard";
 
 interface ChatMessage {
@@ -130,7 +131,7 @@ function ChatPage() {
     try {
       const res = await fetch("/api/messages/send", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": getCsrfToken() || "" },
         body: JSON.stringify({ match_id: matchId, content }),
       });
       if (!res.ok) {
@@ -157,7 +158,7 @@ function ChatPage() {
     try {
       await fetch("/api/users/block", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": getCsrfToken() || "" },
         body: JSON.stringify({ user_id: otherUser.id }),
       });
       navigate({ to: "/connections" });
@@ -388,7 +389,7 @@ function ChatPage() {
                       try {
                         await fetch("/api/users/report", {
                           method: "POST",
-                          headers: { "Content-Type": "application/json" },
+                          headers: { "Content-Type": "application/json", "X-CSRF-Token": getCsrfToken() || "" },
                           body: JSON.stringify({ user_id: otherUser.id, reason: reportReason }),
                         });
                         setReportDone(true);

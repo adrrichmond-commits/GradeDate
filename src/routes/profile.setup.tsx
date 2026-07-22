@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "~/auth-context";
+import { getCsrfToken } from "~/csrf-client";
 import { useRequireSubscription } from "~/subscription-guard";
 
 export const Route = createFileRoute("/profile/setup")({
@@ -116,6 +117,7 @@ function ProfileSetup() {
       formData.append("photo", file);
       const res = await fetch("/api/upload", {
         method: "POST",
+        headers: { "X-CSRF-Token": getCsrfToken() || "" },
         body: formData,
       });
       const data = await res.json();
@@ -139,6 +141,7 @@ function ProfileSetup() {
     try {
       const res = await fetch(`/api/photos/${photoId}`, {
         method: "DELETE",
+      headers: { "X-CSRF-Token": getCsrfToken() || "" },
       });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
@@ -158,6 +161,7 @@ function ProfileSetup() {
     try {
       const res = await fetch(`/api/photos/${photoId}/primary`, {
         method: "PUT",
+      headers: { "X-CSRF-Token": getCsrfToken() || "" },
       });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
@@ -190,7 +194,7 @@ function ProfileSetup() {
     try {
       const res = await fetch("/api/location/lookup", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": getCsrfToken() || "" },
         body: JSON.stringify({ zip: trimmed }),
       });
       const data = await res.json();
@@ -257,7 +261,7 @@ function ProfileSetup() {
 
       const res = await fetch("/api/auth/update-profile", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": getCsrfToken() || "" },
         body: JSON.stringify(payload),
       });
 

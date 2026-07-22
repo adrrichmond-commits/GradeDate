@@ -9,6 +9,7 @@ import {
 import type { ReactNode } from "react";
 import { useEffect, useState, useRef } from "react";
 import { AuthProvider, useAuth } from "~/auth-context";
+import { getCsrfToken } from "~/csrf-client";
 
 import { Analytics } from "@vercel/analytics/react";
 import appCss from "~/styles/app.css?url";
@@ -255,7 +256,19 @@ function AppShell() {
                     ACTIVE
                   </span>
                 )}
-                <form action="/api/auth/logout" method="POST">
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    await fetch("/api/auth/logout", {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                        "X-CSRF-Token": getCsrfToken() || "",
+                      },
+                    });
+                    window.location.href = "/";
+                  }}
+                >
                   <button
                     type="submit"
                     className="text-sm text-gray-400 transition hover:text-white"

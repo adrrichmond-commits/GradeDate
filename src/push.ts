@@ -1,10 +1,19 @@
 import webPush from "web-push";
 import { getPushSubscriptions, deletePushSubscription } from "./db";
 
-// VAPID keys for Web Push — generated via `bunx web-push generate-vapid-keys`
-export const VAPID_PUBLIC_KEY =
-  "BLnxfkHAG71afJZJeHtA48LX5zElxnY93ivcGiP8303QBem2qL-2EnH5EtTX10siVSkYLkiXXmTugmLOEsd_eyo";
-export const VAPID_PRIVATE_KEY = "2aBck9MRH1UUPJHmPfBfko6rKdpYYqkXRi0LMHWXjbc";
+// VAPID keys for Web Push — stored in environment variables
+// Generate new keys with: npx web-push generate-vapid-keys
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY;
+const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY;
+
+if (!VAPID_PRIVATE_KEY || !VAPID_PUBLIC_KEY) {
+  throw new Error(
+    "VAPID_PRIVATE_KEY and VAPID_PUBLIC_KEY environment variables are required for push notifications. " +
+    "Generate new keys with: npx web-push generate-vapid-keys"
+  );
+}
+
+export { VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY };
 
 // Set VAPID details once
 webPush.setVapidDetails(
