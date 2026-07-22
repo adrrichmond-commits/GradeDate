@@ -122,6 +122,149 @@ function DemoGrader() {
 }
 
 // ---------------------------------------------------------------------------
+// Pricing Section Component
+// ---------------------------------------------------------------------------
+type PricingPlan = "monthly" | "annual";
+
+interface PriceInfo {
+  label: string;
+  price: number;
+  period: string;
+  savingsBadge: string | null;
+  equivalent: string | null;
+}
+
+const PRICE_PLANS: Record<PricingPlan, PriceInfo> = {
+  monthly: {
+    label: "Monthly",
+    price: 5.99,
+    period: "/month",
+    savingsBadge: null,
+    equivalent: null,
+  },
+  annual: {
+    label: "Annual",
+    price: 49.99,
+    period: "/year",
+    savingsBadge: "Save 30%",
+    equivalent: "$4.17/mo equivalent",
+  },
+};
+
+function PricingSection() {
+  const [plan, setPlan] = useState<PricingPlan>("monthly");
+  const currentPlan = PRICE_PLANS[plan];
+
+  return (
+    <div className="mx-auto max-w-2xl text-center">
+      <h2 className="mb-4 text-3xl font-bold sm:text-4xl">
+        Simple Pricing
+      </h2>
+      <p className="mb-8 text-gray-400">
+        Choose the plan that works for you. Save 30% with annual billing.
+      </p>
+
+      {/* Plan Toggle */}
+      <div className="mb-6 inline-flex rounded-full bg-gray-800 p-1 shadow-inner">
+        {(Object.keys(PRICE_PLANS) as PricingPlan[]).map((key) => (
+          <button
+            key={key}
+            onClick={() => setPlan(key)}
+            className={`relative rounded-full px-6 py-2 text-sm font-semibold transition-all ${
+              plan === key
+                ? "bg-rose-600 text-white shadow-lg shadow-rose-600/25"
+                : "text-gray-400 hover:text-gray-200"
+            }`}
+          >
+            {PRICE_PLANS[key].label}
+            {PRICE_PLANS[key].savingsBadge && plan === key && (
+              <span className="ml-2 inline-block rounded-full bg-rose-400/20 px-2 py-0.5 text-xs text-rose-300">
+                {PRICE_PLANS[key].savingsBadge}
+              </span>
+            )}
+            {PRICE_PLANS[key].savingsBadge && plan !== key && (
+              <span className="ml-2 inline-block rounded-full bg-gray-700 px-2 py-0.5 text-xs text-gray-300">
+                {PRICE_PLANS[key].savingsBadge}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Pricing Card */}
+      <div
+        className={`rounded-2xl border bg-gradient-to-b p-8 shadow-xl transition-all ${
+          plan === "annual"
+            ? "border-rose-400/50 from-gray-900 to-gray-950 shadow-rose-500/10 ring-2 ring-rose-500/20"
+            : "border-rose-500/30 from-gray-900 to-gray-950 shadow-rose-500/5"
+        }`}
+      >
+        <div className="mb-2 text-sm font-semibold uppercase tracking-wider text-rose-400">
+          {currentPlan.label} Plan
+        </div>
+
+        {/* Price display */}
+        <div className="mb-1 flex items-baseline justify-center gap-1">
+          <span className="text-5xl font-extrabold">
+            ${currentPlan.price.toFixed(2)}
+          </span>
+          <span className="text-gray-400">{currentPlan.period}</span>
+        </div>
+
+        {currentPlan.equivalent && (
+          <p className="mb-4 text-sm text-rose-400">{currentPlan.equivalent}</p>
+        )}
+        {!currentPlan.equivalent && <div className="mb-4" />}
+
+        {/* Savings badge for annual plan */}
+        {currentPlan.savingsBadge && (
+          <div className="mx-auto mb-4 inline-block rounded-full border border-rose-400/30 bg-rose-500/10 px-4 py-1 text-sm font-medium text-rose-400">
+            🎉 {currentPlan.savingsBadge} vs monthly
+          </div>
+        )}
+
+        <ul className="mb-8 space-y-3 text-left">
+          {[
+            "Unlimited grade-matched profiles",
+            "Chat with your matches",
+            "Re-grade once per month",
+            "No ads, ever",
+            "Cancel anytime",
+          ].map((item) => (
+            <li key={item} className="flex items-center gap-3 text-sm">
+              <svg
+                className="h-5 w-5 shrink-0 text-rose-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M5 13l4 4L19 7"
+                />
+              </svg>
+              {item}
+            </li>
+          ))}
+        </ul>
+
+        <Link
+          to="/subscribe"
+          className="btn-primary w-full justify-center text-lg inline-flex"
+        >
+          Subscribe — ${currentPlan.price.toFixed(2)}{currentPlan.period}
+        </Link>
+        <p className="mt-4 text-xs text-gray-500">
+          Secure payment via Stripe. Cancel anytime.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Home Page
 // ---------------------------------------------------------------------------
 function Home() {
@@ -357,60 +500,7 @@ function Home() {
 
       {/* ── Pricing ─────────────────────────────────────────────── */}
       <section id="pricing" className="px-4 py-24">
-        <div className="mx-auto max-w-2xl text-center">
-          <h2 className="mb-4 text-3xl font-bold sm:text-4xl">
-            Simple Pricing
-          </h2>
-          <p className="mb-12 text-gray-400">
-            One plan. Full access. No games.
-          </p>
-
-          <div className="rounded-2xl border border-rose-500/30 bg-gradient-to-b from-gray-900 to-gray-950 p-8 shadow-xl shadow-rose-500/5">
-            <div className="mb-2 text-sm font-semibold uppercase tracking-wider text-rose-400">
-              Monthly Plan
-            </div>
-            <div className="mb-6 flex items-baseline justify-center gap-1">
-              <span className="text-5xl font-extrabold">$5.99</span>
-              <span className="text-gray-400">/month</span>
-            </div>
-            <ul className="mb-8 space-y-3 text-left">
-              {[
-                "Unlimited grade-matched profiles",
-                "Chat with your matches",
-                "Re-grade once per month",
-                "No ads, ever",
-                "Cancel anytime",
-              ].map((item) => (
-                <li key={item} className="flex items-center gap-3 text-sm">
-                  <svg
-                    className="h-5 w-5 shrink-0 text-rose-400"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M5 13l4 4L19 7"
-                    />
-                  </svg>
-                  {item}
-                </li>
-              ))}
-            </ul>
-            <a
-              href="https://buy.stripe.com/8x2eVdeZ83P8h0Z4SP7Re00"
-              className="btn-primary w-full justify-center text-lg"
-            >
-              Subscribe for $5.99/month
-            </a>
-            <p className="mt-4 text-xs text-gray-500">
-              Secure payment via Stripe. Your card won't be charged until the
-              payment link is live.
-            </p>
-          </div>
-        </div>
+        <PricingSection />
       </section>
 
       {/* ── Testimonials ────────────────────────────────────────── */}
@@ -491,11 +581,11 @@ function Home() {
             <p className="mb-8 text-gray-400">
               Stop wasting swipes. Join GradeDate and date people at your level.
             </p>
-            <a
-              href="https://buy.stripe.com/8x2eVdeZ83P8h0Z4SP7Re00"
-              className="btn-primary text-lg"
+            <Link
+              to="/subscribe"
+              className="btn-primary text-lg inline-flex items-center gap-2"
             >
-              Get Started — $5.99/mo
+              Get Started
               <svg
                 className="h-5 w-5"
                 fill="none"
@@ -509,7 +599,7 @@ function Home() {
                   d="M13 7l5 5m0 0l-5 5m5-5H6"
                 />
               </svg>
-            </a>
+            </Link>
           </div>
         </div>
       </section>
