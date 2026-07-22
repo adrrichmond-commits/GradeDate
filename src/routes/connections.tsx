@@ -61,12 +61,30 @@ function ConnectionsPage() {
   const [reporting, setReporting] = useState(false);
   const [reportDone, setReportDone] = useState(false);
   const [blocking, setBlocking] = useState(false);
+  const [unmatching, setUnmatching] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) {
       navigate({ to: "/login" });
     }
   }, [loading, user]);
+
+  const handleUnmatch = async (userId: number) => {
+    setUnmatching(true);
+    try {
+      await fetch("/api/matches/unmatch", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": getCsrfToken() || "",
+        },
+        body: JSON.stringify({ matchUserId: userId }),
+      });
+      setConnections((prev) => prev.filter((c) => c.user_id !== userId));
+    } catch { /* ignore */ }
+    setUnmatching(false);
+    setMenuConn(null);
+  };
 
   const fetchConnections = useCallback(async () => {
     setFetching(true);
@@ -294,6 +312,19 @@ function ConnectionsPage() {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
                         </svg>
                         {blocking ? "Blocking..." : "Block User"}
+                      </button>
+                      <button
+                        onClick={() => {
+                          const conn = menuConn as Connection;
+                          if (conn) handleUnmatch(conn.user_id);
+                        }}
+                        disabled={unmatching}
+                        className="flex w-full items-center gap-2 px-4 py-2 text-sm text-gray-300 transition hover:bg-gray-700 disabled:opacity-50"
+                      >
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                        {unmatching ? "Unmatching..." : "Unmatch"}
                       </button>
                       <button
                         onClick={() => {

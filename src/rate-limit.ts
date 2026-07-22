@@ -99,3 +99,25 @@ export function checkStrictRateLimit(req: Request): Response | null {
   }
   return null;
 }
+
+export function checkRateLimit(
+  req: Request,
+  action: string,
+  config: RateLimitConfig,
+): Response | null {
+  const ip = getClientIp(req);
+  const result = rateLimit(ip, action, config);
+  if (!result.allowed) {
+    return new Response(
+      JSON.stringify({ error: "Too many requests. Please try again later." }),
+      {
+        status: 429,
+        headers: {
+          "Content-Type": "application/json",
+          "Retry-After": String(result.retryAfterSec),
+        },
+      },
+    );
+  }
+  return null;
+}

@@ -398,6 +398,9 @@ function GradePage() {
             Photos are screened for inappropriate content before grading.
             Your grade is kept private — only you see it.
           </p>
+          <p className="mt-2 text-center text-xs text-gray-600">
+            Grades are AI-generated estimates for entertainment purposes. Results may vary.
+          </p>
         </div>
       </main>
     </>
