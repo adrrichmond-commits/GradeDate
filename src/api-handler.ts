@@ -51,6 +51,8 @@ import {
   getReferralStats,
   getReferralRewardForReferee,
   applyReferralReward,
+  getDailyLikesRemaining,
+  useDailyLike,
   type User,
   type UserPhoto,
 } from "../src/db.ts";
@@ -779,6 +781,17 @@ async function handleLike(req: Request): Promise<Response> {
     return json({ error: "You cannot like yourself" }, 400);
   }
 
+  // Daily like cap for non-subscribers
+  if (user.subscription_status !== "active") {
+    const remaining = await useDailyLike(user.id);
+    if (remaining === 0) {
+      return json(
+        { error: "Daily like limit reached. Subscribe for unlimited likes.", code: "DAILY_LIMIT" },
+        402,
+      );
+    }
+  }
+
   await recordLike(user.id, likedId, "like");
 
   // Check if this creates a mutual match
@@ -1118,6 +1131,21 @@ async function handleActivateRevealLikes(req: Request): Promise<Response> {
 
   await revealLikes(user.id);
   return json({ ok: true, message: "You can now see who liked you!", likes_revealed: 1 });
+}
+
+// ── Daily Likes ──────────────────────────────────────────────
+
+async function handleLikesRemaining(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+
+  const remaining = await getDailyLikesRemaining(user.id);
+  if (remaining === -1) {
+    return json({ remaining: "unlimited" });
+  }
+  return json({ remaining });
 }
 
 // ── Stripe Webhook ─────────────────────────────────────────────
@@ -1620,6 +1648,11 @@ export async function handleApiRoute(
   }
   if (pathname === "/api/subscription/activate" && method === "POST") {
     return handleSubscriptionActivate(req);
+  }
+
+  // Daily likes
+  if (pathname === "/api/likes/remaining" && method === "GET") {
+    return handleLikesRemaining(req);
   }
 
   // Upsell activations

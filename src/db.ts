@@ -78,6 +78,12 @@ export async function initTables(): Promise<void> {
   try {
     await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_expires_at TIMESTAMPTZ`;
   } catch { /* ignore */ }
+  try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_likes_remaining INTEGER DEFAULT 10`;
+  } catch { /* ignore */ }
+  try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_likes_reset_at TEXT`;
+  } catch { /* ignore */ }
 
   await sql()`
     CREATE TABLE IF NOT EXISTS sessions (
@@ -219,6 +225,8 @@ export interface User {
   max_distance: number;
   location_city: string | null;
   location_state: string | null;
+  daily_likes_remaining: number;
+  daily_likes_reset_at: string | null;
   created_at: string;
 }
 
@@ -590,6 +598,80 @@ export async function getUsersByGradeRange(
     }
     return { ...rest, photos } as unknown as MatchUser;
   });
+}
+
+// ── Daily Like Caps ───────────────────────────────────────────
+
+function getNextMidnightUTC(): string {
+  const now = new Date();
+  const midnight = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0, 0));
+  return midnight.toISOString();
+}
+
+export async function getDailyLikesRemaining(userId: number): Promise<number> {
+  const rows = await sql()`
+    SELECT daily_likes_remaining, daily_likes_reset_at, subscription_status
+    FROM users WHERE id = ${userId}
+  `;
+  if (rows.length === 0) return 0;
+
+  const row = rows[0] as { daily_likes_remaining: number; daily_likes_reset_at: string | null; subscription_status: string };
+
+  // Subscribers always have unlimited
+  if (row.subscription_status === "active") return -1;
+
+  const now = new Date();
+  const resetAt = row.daily_likes_reset_at ? new Date(row.daily_likes_reset_at) : null;
+
+  // If reset time has passed (or no reset time set), reset to 10
+  if (!resetAt || now >= resetAt) {
+    const nextMidnight = getNextMidnightUTC();
+    await sql()`
+      UPDATE users SET daily_likes_remaining = 10, daily_likes_reset_at = ${nextMidnight}
+      WHERE id = ${userId}
+    `;
+    return 10;
+  }
+
+  return row.daily_likes_remaining;
+}
+
+export async function useDailyLike(userId: number): Promise<number> {
+  const rows = await sql()`
+    SELECT daily_likes_remaining, daily_likes_reset_at, subscription_status
+    FROM users WHERE id = ${userId}
+  `;
+  if (rows.length === 0) return 0;
+
+  const row = rows[0] as { daily_likes_remaining: number; daily_likes_reset_at: string | null; subscription_status: string };
+
+  // Subscribers always have unlimited
+  if (row.subscription_status === "active") return -1;
+
+  const now = new Date();
+  const resetAt = row.daily_likes_reset_at ? new Date(row.daily_likes_reset_at) : null;
+
+  // If reset time has passed (or no reset time set), reset to 10 then decrement
+  if (!resetAt || now >= resetAt) {
+    const nextMidnight = getNextMidnightUTC();
+    await sql()`
+      UPDATE users SET daily_likes_remaining = 9, daily_likes_reset_at = ${nextMidnight}
+      WHERE id = ${userId}
+    `;
+    return 9;
+  }
+
+  // Already at 0 — don't decrement below 0
+  if (row.daily_likes_remaining <= 0) return 0;
+
+  // Decrement
+  const updated = await sql()`
+    UPDATE users SET daily_likes_remaining = daily_likes_remaining - 1
+    WHERE id = ${userId} AND daily_likes_remaining > 0
+    RETURNING daily_likes_remaining
+  `;
+  if (updated.length === 0) return 0;
+  return (updated[0] as { daily_likes_remaining: number }).daily_likes_remaining;
 }
 
 // ── Likes ────────────────────────────────────────────────────
