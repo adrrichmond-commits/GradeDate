@@ -1117,8 +1117,8 @@ async function handleCreateCheckout(req: Request): Promise<Response> {
 
   const priceId =
     body.plan === "annual"
-      ? "price_1Tvzh8GuEElH7kaizZdfy7s9"
-      : "price_1TvzqyGuEElH7kaiCi3hjt8b";
+      ? "price_1TvzqyGuEElH7kaiCi3hjt8b"
+      : "price_1Tvzh8GuEElH7kaizZdfy7s9";
 
   const session = await stripe.checkout.sessions.create({
     mode: "subscription",
