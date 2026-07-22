@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { useAuth } from "~/auth-context";
+import { getCsrfToken } from "~/csrf-client";
 
 export const Route = createFileRoute("/logout")({
   component: Logout,
@@ -12,7 +13,10 @@ function Logout() {
 
   useEffect(() => {
     const doLogout = async () => {
-      await fetch("/api/auth/logout", { method: "POST" });
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        headers: { "X-CSRF-Token": getCsrfToken() || "" },
+      });
       await refetch();
       navigate({ to: "/" });
     };

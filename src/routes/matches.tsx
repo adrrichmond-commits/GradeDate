@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "~/auth-context";
 import { useRequireSubscription, SubscriptionBanner } from "~/subscription-guard";
+import { getCsrfToken } from "~/csrf-client";
 
 interface MatchPhoto {
   id: number;
@@ -139,7 +140,10 @@ function MatchesPage() {
     try {
       const res = await fetch("/api/matches/like", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": getCsrfToken() || "",
+        },
         body: JSON.stringify({ liked_id: current.id }),
       });
       const data = await res.json();
@@ -194,7 +198,10 @@ function MatchesPage() {
     try {
       await fetch("/api/matches/pass", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": getCsrfToken() || "",
+        },
         body: JSON.stringify({ passed_id: current.id }),
       });
     } catch {
@@ -711,7 +718,10 @@ function MatchesPage() {
                       try {
                         await fetch("/api/users/report", {
                           method: "POST",
-                          headers: { "Content-Type": "application/json" },
+                          headers: {
+                            "Content-Type": "application/json",
+                            "X-CSRF-Token": getCsrfToken() || "",
+                          },
                           body: JSON.stringify({ user_id: current.id, reason: reportReason }),
                         });
                         setReportDone(true);

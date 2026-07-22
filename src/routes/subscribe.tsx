@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { useAuth } from "~/auth-context";
+import { getCsrfToken } from "~/csrf-client";
 
 type Plan = "monthly" | "annual";
 
@@ -60,7 +61,7 @@ function SubscribePage() {
     try {
       const res = await fetch("/api/subscription/create-checkout", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": getCsrfToken() || "" },
         body: JSON.stringify({ plan }),
       });
       const data = await res.json();

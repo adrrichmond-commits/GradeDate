@@ -60,6 +60,7 @@ import { sendPasswordResetEmail } from "../src/email.ts";
 import { lookupZip } from "../src/zipcode.ts";
 import { checkAuthRateLimit, checkStrictRateLimit } from "../src/rate-limit.ts";
 import { VAPID_PUBLIC_KEY, sendPushNotification } from "../src/push.ts";
+import { generateCsrfToken, setCsrfCookie, verifyCsrfToken, getCsrfTokenFromRequest, CSRF_COOKIE } from "../src/csrf.ts";
 import Stripe from "stripe";
 import { mkdirSync, existsSync, writeFileSync, readFileSync, unlinkSync } from "node:fs";
 import path from "node:path";
@@ -256,7 +257,10 @@ async function handleSignup(req: Request): Promise<Response> {
     }
   }
 
-  return setSessionCookie(json({ user: toSafeUser(user) }, 201), session.id);
+  return setSessionCookie(
+    setCsrfCookie(json({ user: toSafeUser(user) }, 201), generateCsrfToken()),
+    session.id,
+  );
 }
 
 async function handleLogin(req: Request): Promise<Response> {
@@ -282,7 +286,10 @@ async function handleLogin(req: Request): Promise<Response> {
   }
 
   const session = await createSession(user.id);
-  return setSessionCookie(json({ user: toSafeUser(user) }), session.id);
+  return setSessionCookie(
+    setCsrfCookie(json({ user: toSafeUser(user) }), generateCsrfToken()),
+    session.id,
+  );
 }
 
 async function handleLogout(req: Request): Promise<Response> {
@@ -300,7 +307,14 @@ async function handleMe(req: Request): Promise<Response> {
   }
   const safe = toSafeUser(user);
   const photos = await getUserPhotos(user.id);
-  return json({ user: { ...safe, photos } });
+  let response = json({ user: { ...safe, photos } });
+
+  // Ensure CSRF cookie is set for existing sessions (login before CSRF was added)
+  if (!getCsrfTokenFromRequest(req)) {
+    response = setCsrfCookie(response, generateCsrfToken());
+  }
+
+  return response;
 }
 
 async function handleUpload(req: Request): Promise<Response> {
@@ -966,8 +980,7 @@ async function handleBlock(req: Request): Promise<Response> {
     return json({ error: "Unauthorized" }, 401);
   }
 
-  const subErr = requireSubscription(user);
-  if (subErr) return subErr;
+  // No subscription required — safety features are available to all users
 
   const body = await req.json().catch(() => null);
   const targetId = body?.user_id;
@@ -998,8 +1011,7 @@ async function handleReport(req: Request): Promise<Response> {
     return json({ error: "Unauthorized" }, 401);
   }
 
-  const subErr = requireSubscription(user);
-  if (subErr) return subErr;
+  // No subscription required — safety features are available to all users
 
   const body = await req.json().catch(() => null);
   const targetId = body?.user_id;
@@ -1215,33 +1227,26 @@ async function handleStripeWebhook(req: Request): Promise<Response> {
   // Read the raw body for signature verification
   const rawBody = await req.text();
 
-  let event: Stripe.Event;
+  if (!webhookSecret) {
+    console.error("STRIPE_WEBHOOK_SECRET not configured — rejecting webhook");
+    return json({ error: "Webhook secret not configured" }, 500);
+  }
 
-  if (webhookSecret) {
-    const stripe = getStripe();
-    if (!stripe) {
-      return json({ error: "Stripe not configured" }, 500);
-    }
-    try {
-      event = stripe.webhooks.constructEvent(
-        rawBody,
-        signature,
-        webhookSecret,
-      );
-    } catch (err) {
-      console.error("Stripe webhook signature verification failed:", err);
-      return json({ error: "Invalid signature" }, 400);
-    }
-  } else {
-    // Fallback: no webhook secret configured — parse without verification
-    console.warn(
-      "STRIPE_WEBHOOK_SECRET not set — accepting webhook without signature verification",
+  const stripe = getStripe();
+  if (!stripe) {
+    return json({ error: "Stripe not configured" }, 500);
+  }
+
+  let event: Stripe.Event;
+  try {
+    event = stripe.webhooks.constructEvent(
+      rawBody,
+      signature,
+      webhookSecret,
     );
-    try {
-      event = JSON.parse(rawBody) as Stripe.Event;
-    } catch {
-      return json({ error: "Invalid JSON body" }, 400);
-    }
+  } catch (err) {
+    console.error("Stripe webhook signature verification failed:", err);
+    return json({ error: "Invalid signature" }, 400);
   }
 
   console.log(`Stripe webhook received: ${event.type}`);
@@ -1598,13 +1603,24 @@ async function handleApplyReferralCode(req: Request): Promise<Response> {
 
 // ── Router ────────────────────────────────────────────────────
 
+/**
+ * Verify CSRF token for state-changing POST endpoints.
+ * Returns an error response if invalid, or null if valid.
+ */
+function checkCsrf(req: Request): Response | null {
+  if (!verifyCsrfToken(req)) {
+    return json({ error: "Invalid or missing CSRF token" }, 403);
+  }
+  return null;
+}
+
 export async function handleApiRoute(
   req: Request,
 ): Promise<Response | null> {
   const url = new URL(req.url);
   const { method, pathname } = { method: req.method, pathname: url.pathname };
 
-  // Auth routes
+  // Auth routes — CSRF not required (pre-auth or token-based)
   if (pathname === "/api/auth/signup" && method === "POST") {
     return handleSignup(req);
   }
@@ -1612,6 +1628,8 @@ export async function handleApiRoute(
     return handleLogin(req);
   }
   if (pathname === "/api/auth/logout" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handleLogout(req);
   }
   if (pathname === "/api/auth/me" && method === "GET") {
@@ -1624,26 +1642,36 @@ export async function handleApiRoute(
     return handleResetPassword(req);
   }
 
-  // Profile
+  // Profile — CSRF required
   if (pathname === "/api/auth/update-profile" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handleUpdateProfile(req);
   }
 
-  // Upload
+  // Upload — CSRF required
   if (pathname === "/api/upload" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handleUpload(req);
   }
 
-  // Photos management
+  // Photos management — CSRF required
   const photosDeleteMatch = pathname.match(/^\/api\/photos\/(\d+)$/);
   if (photosDeleteMatch && method === "DELETE") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handleDeletePhoto(req, Number(photosDeleteMatch[1]));
   }
   if (pathname === "/api/photos/reorder" && method === "PUT") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handleReorderPhotos(req);
   }
   const photosPrimaryMatch = pathname.match(/^\/api\/photos\/(\d+)\/primary$/);
   if (photosPrimaryMatch && method === "PUT") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handleSetPrimary(req, Number(photosPrimaryMatch[1]));
   }
 
@@ -1652,8 +1680,10 @@ export async function handleApiRoute(
     return handleLocationLookup(req);
   }
 
-  // Grade
+  // Grade — CSRF required
   if (pathname === "/api/grade" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handleGrade(req);
   }
 
@@ -1662,14 +1692,20 @@ export async function handleApiRoute(
     return handleGetMatches(req);
   }
   if (pathname === "/api/matches/like" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handleLike(req);
   }
   if (pathname === "/api/matches/pass" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handlePass(req);
   }
 
   // Messages
   if (pathname === "/api/messages/send" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handleSendMessage(req);
   }
   if (pathname === "/api/messages/unread-count" && method === "GET") {
@@ -1686,14 +1722,20 @@ export async function handleApiRoute(
     return handleGetConnections(req);
   }
 
-  // User Safety
+  // User Safety — CSRF required
   if (pathname === "/api/users/block" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handleBlock(req);
   }
   if (pathname === "/api/users/report" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handleReport(req);
   }
   if (pathname === "/api/account/delete" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handleDeleteAccount(req);
   }
 
@@ -1702,9 +1744,13 @@ export async function handleApiRoute(
     return handleSubscriptionStatus(req);
   }
   if (pathname === "/api/subscription/activate" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handleSubscriptionActivate(req);
   }
   if (pathname === "/api/subscription/create-checkout" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handleCreateCheckout(req);
   }
 
@@ -1713,30 +1759,40 @@ export async function handleApiRoute(
     return handleLikesRemaining(req);
   }
 
-  // Upsell activations
+  // Upsell activations — CSRF required
   if (pathname === "/api/store/activate-re-grade" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handleActivateReGrade(req);
   }
   if (pathname === "/api/store/activate-boost" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handleActivateBoost(req);
   }
   if (pathname === "/api/store/activate-reveal-likes" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handleActivateRevealLikes(req);
   }
 
-  // Stripe webhook (unauthenticated — validated by Stripe signature)
+  // Stripe webhook (unauthenticated — validated by Stripe signature, no CSRF)
   if (pathname === "/api/webhooks/stripe" && method === "POST") {
     return handleStripeWebhook(req);
   }
 
-  // Push notifications
+  // Push notifications — CSRF required for subscribe/unsubscribe
   if (pathname === "/api/push/vapid-public-key" && method === "GET") {
     return handleVapidPublicKey();
   }
   if (pathname === "/api/push/subscribe" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handlePushSubscribe(req);
   }
   if (pathname === "/api/push/unsubscribe" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handlePushUnsubscribe(req);
   }
 
@@ -1745,6 +1801,8 @@ export async function handleApiRoute(
     return handleGetReferralCode(req);
   }
   if (pathname === "/api/referral/apply" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handleApplyReferralCode(req);
   }
 

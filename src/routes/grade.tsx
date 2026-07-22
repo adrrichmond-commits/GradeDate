@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useAuth } from "~/auth-context";
+import { getCsrfToken } from "~/csrf-client";
 
 export const Route = createFileRoute("/grade")({
   component: GradePage,
@@ -45,6 +46,7 @@ function GradePage() {
       // Step 1: Upload
       const uploadRes = await fetch("/api/upload", {
         method: "POST",
+        headers: { "X-CSRF-Token": getCsrfToken() || "" },
         body: formData,
       });
 
@@ -73,7 +75,7 @@ function GradePage() {
 
       const gradeRes = await fetch("/api/grade", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": getCsrfToken() || "" },
         body: JSON.stringify(gradeBody),
       });
 

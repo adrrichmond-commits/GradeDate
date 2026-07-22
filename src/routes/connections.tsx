@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "~/auth-context";
-import { useRequireSubscription, SubscriptionBanner } from "~/subscription-guard";
+import { getCsrfToken } from "~/csrf-client";
 
 interface Connection {
   match_id: number;
@@ -28,7 +28,6 @@ export const Route = createFileRoute("/connections")({
 function ConnectionsPage() {
   const navigate = useNavigate();
   const { user, loading } = useAuth();
-  const { isSubscribed, checking } = useRequireSubscription();
   const [connections, setConnections] = useState<Connection[]>([]);
   const [fetching, setFetching] = useState(true);
   const [error, setError] = useState("");
@@ -66,10 +65,10 @@ function ConnectionsPage() {
   }, []);
 
   useEffect(() => {
-    if (user && isSubscribed) {
+    if (user) {
       fetchConnections();
     }
-  }, [user, isSubscribed]);
+  }, [user]);
 
   function formatTime(ts: string | null): string {
     if (!ts) return "";
@@ -86,7 +85,7 @@ function ConnectionsPage() {
     return d.toLocaleDateString();
   }
 
-  if (loading || checking || fetching) {
+  if (loading || fetching) {
     return (
       <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center px-4">
         <div className="flex flex-col items-center gap-4">
@@ -97,11 +96,10 @@ function ConnectionsPage() {
     );
   }
 
-  if (!user || !isSubscribed) return null;
+  if (!user) return null;
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-8">
-      <SubscriptionBanner />
       <div className="mb-8">
         <h1 className="text-3xl font-bold">Connections</h1>
         <p className="mt-2 text-gray-400">
@@ -250,7 +248,10 @@ function ConnectionsPage() {
                       try {
                         await fetch("/api/users/block", {
                           method: "POST",
-                          headers: { "Content-Type": "application/json" },
+                          headers: {
+                            "Content-Type": "application/json",
+                            "X-CSRF-Token": getCsrfToken() || "",
+                          },
                           body: JSON.stringify({ user_id: conn.user_id }),
                         });
                         setConnections((prev) => prev.filter((c) => c.user_id !== conn.user_id));
@@ -339,7 +340,10 @@ function ConnectionsPage() {
                       try {
                         await fetch("/api/users/report", {
                           method: "POST",
-                          headers: { "Content-Type": "application/json" },
+                          headers: {
+                            "Content-Type": "application/json",
+                            "X-CSRF-Token": getCsrfToken() || "",
+                          },
                           body: JSON.stringify({ user_id: menuConn.user_id, reason: reportReason }),
                         });
                         setReportDone(true);
