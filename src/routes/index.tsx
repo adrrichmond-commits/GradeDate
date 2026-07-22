@@ -495,6 +495,9 @@ function Home() {
             but you'll get the idea.
           </p>
           <DemoGrader />
+          <p className="mt-4 text-center text-xs text-gray-600">
+            This demo uses simulated grading, not real AI analysis. Sign up and subscribe for real AI-powered grading.
+          </p>
         </div>
       </section>
 

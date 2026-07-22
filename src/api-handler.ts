@@ -26,6 +26,7 @@ import {
   blockUser,
   isBlocked,
   getBlockedUserIds,
+  unmatchUser,
   reportUser,
   deleteUserAccount,
   addReGrade,
@@ -62,7 +63,8 @@ import {
 } from "../src/db.ts";
 import { sendPasswordResetEmail } from "../src/email.ts";
 import { lookupZip } from "../src/zipcode.ts";
-import { checkAuthRateLimit, checkStrictRateLimit } from "../src/rate-limit.ts";
+import { checkAuthRateLimit, checkStrictRateLimit, checkRateLimit } from "../src/rate-limit.ts";
+import { filterMessage } from "../src/profanity.ts";
 import { VAPID_PUBLIC_KEY, sendPushNotification } from "../src/push.ts";
 import { generateCsrfToken, setCsrfCookie, verifyCsrfToken, getCsrfTokenFromRequest, CSRF_COOKIE } from "../src/csrf.ts";
 import Stripe from "stripe";
@@ -322,6 +324,9 @@ async function handleMe(req: Request): Promise<Response> {
 }
 
 async function handleUpload(req: Request): Promise<Response> {
+  const rateLimitResponse = checkRateLimit(req, "upload", { maxRequests: 10, windowMs: 15 * 60 * 1000 });
+  if (rateLimitResponse) return rateLimitResponse;
+
   const user = await getCurrentUser(req);
 
   const contentType = req.headers.get("content-type") || "";
@@ -440,6 +445,14 @@ async function handleUpdateProfile(req: Request): Promise<Response> {
     const dist = Number(max_distance);
     if (isNaN(dist) || dist < 1 || dist > 500) {
       return json({ error: "Max distance must be between 1 and 500 miles" }, 400);
+    }
+  }
+
+  // Profanity filter for bio
+  if (bio !== undefined && typeof bio === "string" && bio.trim().length > 0) {
+    const filterResult = filterMessage(bio.trim());
+    if (filterResult.blocked) {
+      return json({ error: "Bio contains inappropriate content" }, 400);
     }
   }
 
@@ -641,6 +654,9 @@ async function gradeWithAI(photoPath: string): Promise<{ grade: number; analysis
 }
 
 async function handleGrade(req: Request): Promise<Response> {
+  const rateLimitResponse = checkRateLimit(req, "grade", { maxRequests: 5, windowMs: 15 * 60 * 1000 });
+  if (rateLimitResponse) return rateLimitResponse;
+
   const user = await getCurrentUser(req);
 
   // For anonymous free preview, accept photo_path in the request body
@@ -785,6 +801,9 @@ async function handleGetMatches(req: Request): Promise<Response> {
 }
 
 async function handleLike(req: Request): Promise<Response> {
+  const rateLimitResponse = checkRateLimit(req, "like", { maxRequests: 30, windowMs: 15 * 60 * 1000 });
+  if (rateLimitResponse) return rateLimitResponse;
+
   const user = await getCurrentUser(req);
   if (!user) {
     return json({ error: "Unauthorized" }, 401);
@@ -858,6 +877,9 @@ async function handleLike(req: Request): Promise<Response> {
 }
 
 async function handlePass(req: Request): Promise<Response> {
+  const rateLimitResponse = checkRateLimit(req, "pass", { maxRequests: 30, windowMs: 15 * 60 * 1000 });
+  if (rateLimitResponse) return rateLimitResponse;
+
   const user = await getCurrentUser(req);
   if (!user) {
     return json({ error: "Unauthorized" }, 401);
@@ -877,6 +899,9 @@ async function handlePass(req: Request): Promise<Response> {
 // ── Messages ─────────────────────────────────────────────────
 
 async function handleSendMessage(req: Request): Promise<Response> {
+  const rateLimitResponse = checkRateLimit(req, "message", { maxRequests: 20, windowMs: 15 * 60 * 1000 });
+  if (rateLimitResponse) return rateLimitResponse;
+
   const user = await getCurrentUser(req);
   if (!user) {
     return json({ error: "Unauthorized" }, 401);
@@ -890,6 +915,12 @@ async function handleSendMessage(req: Request): Promise<Response> {
   }
   if (!content || typeof content !== "string" || content.trim().length === 0) {
     return json({ error: "content is required" }, 400);
+  }
+
+  // Profanity filter
+  const filterResult = filterMessage(content.trim());
+  if (filterResult.blocked) {
+    return json({ error: "Message contains inappropriate content" }, 400);
   }
 
   // Verify user is a participant in this match
@@ -1000,6 +1031,27 @@ async function handleBlock(req: Request): Promise<Response> {
   }
 
   await blockUser(user.id, targetId);
+  return json({ success: true });
+}
+
+async function handleUnmatch(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+
+  const body = await req.json().catch(() => null);
+  const targetId = body?.matchUserId;
+
+  if (!targetId || typeof targetId !== "number") {
+    return json({ error: "matchUserId is required" }, 400);
+  }
+
+  if (targetId === user.id) {
+    return json({ error: "You cannot unmatch yourself" }, 400);
+  }
+
+  await unmatchUser(user.id, targetId);
   return json({ success: true });
 }
 
@@ -1754,6 +1806,11 @@ export async function handleApiRoute(
     const csrfErr = checkCsrf(req);
     if (csrfErr) return csrfErr;
     return handlePass(req);
+  }
+  if (pathname === "/api/matches/unmatch" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
+    return handleUnmatch(req);
   }
 
   // Messages

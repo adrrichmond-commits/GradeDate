@@ -898,6 +898,24 @@ export async function isBlocked(userId: number, otherUserId: number): Promise<bo
   return rows.length > 0;
 }
 
+// ── Unmatching ──────────────────────────────────────────────────
+
+export async function unmatchUser(userId: number, otherUserId: number): Promise<void> {
+  // Remove all likes between the two users in both directions
+  await sql()`
+    DELETE FROM likes
+    WHERE (liker_id = ${userId} AND liked_id = ${otherUserId})
+       OR (liker_id = ${otherUserId} AND liked_id = ${userId})
+  `;
+
+  // Delete the match row (does NOT block, unlike blockUser)
+  const [a, b] = userId < otherUserId ? [userId, otherUserId] : [otherUserId, userId];
+  await sql()`
+    DELETE FROM matches
+    WHERE user1_id = ${a} AND user2_id = ${b}
+  `;
+}
+
 export async function getBlockedUserIds(userId: number): Promise<number[]> {
   const rows = await sql()`
     SELECT blocked_id FROM blocks WHERE blocker_id = ${userId}
