@@ -191,7 +191,7 @@ function ChatPage() {
     );
   }
 
-  if (!user || !isSubscribed) return null;
+  if (!user) return null;
 
   if (error && messages.length === 0) {
     return (

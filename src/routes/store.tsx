@@ -6,6 +6,7 @@ import { getCsrfToken } from "~/csrf-client";
 const RE_GRADE_LINK = "https://buy.stripe.com/5kQ7sL3gq0CW4edfxt7Re02";
 const BOOST_LINK = "https://buy.stripe.com/14A9AT2cm3P8265etp7Re03";
 const REVEAL_LIKES_LINK = "https://buy.stripe.com/eVq8wPbMW1H02659957Re04";
+const LIKE_PACK_LINK = "https://buy.stripe.com/28o8wPbMW1H02659957Re05";
 
 interface Product {
   id: string;
@@ -75,6 +76,25 @@ const products: Product[] = [
       </svg>
     ),
   },
+  {
+    id: "like-pack",
+    name: "5 Extra Likes",
+    price: "$0.99",
+    description:
+      "Ran out of daily likes? Get 5 extra likes to keep swiping. Perfect for free users who want more action.",
+    paymentLink: LIKE_PACK_LINK,
+    endpoint: "/api/store/activate-like-pack",
+    icon: (
+      <svg className="h-7 w-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={1.5}
+          d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z"
+        />
+      </svg>
+    ),
+  },
 ];
 
 export const Route = createFileRoute("/store")({
@@ -133,7 +153,7 @@ function StorePage() {
       {user && user.subscription_status !== "active" && (
         <div className="mb-8 rounded-xl border border-amber-500/30 bg-amber-500/10 p-5 text-center">
           <p className="text-amber-400 font-semibold text-sm">
-            ⚠️ An active subscription is required to purchase upsells.
+            ⚠️ An active subscription is required for most upsells. Like packs are available to everyone!
           </p>
           <Link
             to="/subscribe"
@@ -164,7 +184,8 @@ function StorePage() {
           const isOwned =
             (product.id === "re-grade" && (user?.regrades_available ?? 0) > 0) ||
             (product.id === "boost" && user?.boost_until && new Date(user.boost_until) > new Date()) ||
-            (product.id === "reveal-likes" && (user?.likes_revealed ?? 0) > 0);
+            (product.id === "reveal-likes" && (user?.likes_revealed ?? 0) > 0) ||
+            (product.id === "like-pack" && false); // always purchasable
           const justActivated = activated === product.id;
 
           return (
@@ -234,7 +255,7 @@ function StorePage() {
                   </p>
                   <button
                     onClick={() => handleActivate(product)}
-                    disabled={activating === product.id || (user?.subscription_status !== "active")}
+                    disabled={activating === product.id || (user?.subscription_status !== "active" && product.id !== "like-pack")}
                     className="block w-full rounded-full border border-green-500/50 bg-green-600/20 px-4 py-2.5 text-sm font-semibold text-green-400 transition hover:bg-green-600/30 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     {activating === product.id ? (

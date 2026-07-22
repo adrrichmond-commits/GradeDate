@@ -29,8 +29,12 @@ import {
   reportUser,
   deleteUserAccount,
   addReGrade,
+  useReGrade,
   activateBoost,
   revealLikes,
+  addLikePacks,
+  getLikePacksRemaining,
+  getLikers,
   createPasswordResetToken,
   getPasswordResetToken,
   markTokenUsed,
@@ -650,8 +654,13 @@ async function handleGrade(req: Request): Promise<Response> {
         return json({ error: "You must upload a photo before getting graded" }, 400);
       }
 
-      if (user.grade !== null) {
-        return json({ error: "You have already been graded", grade: user.grade }, 400);
+      if (user.grade !== null && user.regrades_available <= 0) {
+        return json({ error: "You have already been graded. Purchase a re-grade from the store.", grade: user.grade }, 400);
+      }
+
+      // If user has regrades available, consume one and allow re-grade
+      if (user.grade !== null && user.regrades_available > 0) {
+        await useReGrade(user.id);
       }
 
       photoPath = user.photo_path;
@@ -739,9 +748,6 @@ async function handleGetMatches(req: Request): Promise<Response> {
   if (!user) {
     return json({ error: "Unauthorized" }, 401);
   }
-
-  const subErr = requireSubscription(user);
-  if (subErr) return subErr;
 
   if (user.grade === null) {
     return json({ error: "You must get graded before browsing matches", code: "NO_GRADE" }, 400);
@@ -1202,7 +1208,55 @@ async function handleLikesRemaining(req: Request): Promise<Response> {
   if (remaining === -1) {
     return json({ remaining: "unlimited" });
   }
-  return json({ remaining });
+  // Also return like_packs count for free users
+  const packs = await getLikePacksRemaining(user.id);
+  return json({ remaining, like_packs: packs });
+}
+
+// ── Like Packs ──────────────────────────────────────────────
+
+async function handleActivateLikePack(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+
+  // Like packs are purchasable by anyone (free or subscribed)
+  await addLikePacks(user.id, 5);
+  const packs = await getLikePacksRemaining(user.id);
+  return json({ ok: true, message: "5 extra likes activated!", like_packs: packs });
+}
+
+// ── Liked Me ──────────────────────────────────────────────
+
+async function handleLikedMe(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+
+  // If user hasn't activated reveal-likes, return paywalled preview
+  if (!user.likes_revealed || user.likes_revealed <= 0) {
+    // Return count only, no details
+    const likers = await getLikers(user.id);
+    return json({
+      paywalled: true,
+      count: likers.length,
+      message: "Unlock to see who liked you!",
+    });
+  }
+
+  const likers = await getLikers(user.id);
+  const safeLikers = likers.map((u) => ({
+    id: u.id,
+    display_name: u.display_name,
+    age: u.age,
+    gender: u.gender,
+    bio: u.bio,
+    photo_path: u.photo_path,
+    photos: u.photos || [],
+  }));
+  return json({ paywalled: false, likers: safeLikers });
 }
 
 // ── Stripe Webhook ─────────────────────────────────────────────
@@ -1774,6 +1828,16 @@ export async function handleApiRoute(
     const csrfErr = checkCsrf(req);
     if (csrfErr) return csrfErr;
     return handleActivateRevealLikes(req);
+  }
+  if (pathname === "/api/store/activate-like-pack" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
+    return handleActivateLikePack(req);
+  }
+
+  // Liked Me
+  if (pathname === "/api/matches/liked-me" && method === "GET") {
+    return handleLikedMe(req);
   }
 
   // Stripe webhook (unauthenticated — validated by Stripe signature, no CSRF)
