@@ -1,10 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "~/auth-context";
-
-const STRIPE_MONTHLY_LINK = "https://buy.stripe.com/5kQ6oBbMWadwh0Z5WT7Re01";
-// Placeholder — will be replaced with actual annual payment link once created in Stripe
-const STRIPE_ANNUAL_LINK = "https://buy.stripe.com/6oU14ncR05Xg4ed9957Re05";
 
 type Plan = "monthly" | "annual";
 
@@ -12,7 +8,6 @@ interface PlanInfo {
   label: string;
   price: number;
   period: string;
-  stripeLink: string;
   savingsBadge: string | null;
   equivalent: string | null;
 }
@@ -22,7 +17,6 @@ const PLANS: Record<Plan, PlanInfo> = {
     label: "Monthly",
     price: 5.99,
     period: "/month",
-    stripeLink: STRIPE_MONTHLY_LINK,
     savingsBadge: null,
     equivalent: null,
   },
@@ -30,7 +24,6 @@ const PLANS: Record<Plan, PlanInfo> = {
     label: "Annual",
     price: 49.99,
     period: "/year",
-    stripeLink: STRIPE_ANNUAL_LINK,
     savingsBadge: "Save 30%",
     equivalent: "$4.17/mo equivalent",
   },
@@ -38,39 +31,58 @@ const PLANS: Record<Plan, PlanInfo> = {
 
 export const Route = createFileRoute("/subscribe")({
   component: SubscribePage,
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { success?: string; canceled?: string } => {
+    return {
+      success: search.success as string | undefined,
+      canceled: search.canceled as string | undefined,
+    };
+  },
 });
 
 function SubscribePage() {
   const { user, loading, refetch } = useAuth();
   const [plan, setPlan] = useState<Plan>("monthly");
-  const [activating, setActivating] = useState(false);
-  const [activated, setActivated] = useState(false);
+  const [checkingOut, setCheckingOut] = useState(false);
   const [error, setError] = useState("");
+
+  // Read URL params for post-Stripe-redirect status
+  const search = Route.useSearch();
+  const showSuccess = search.success === "true";
+  const showCanceled = search.canceled === "true";
 
   const currentPlan = PLANS[plan];
 
-  const handleActivate = async () => {
-    setActivating(true);
+  const handleSubscribe = async () => {
+    setCheckingOut(true);
     setError("");
     try {
-      const res = await fetch("/api/subscription/activate", {
+      const res = await fetch("/api/subscription/create-checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ plan }),
       });
       const data = await res.json();
-      if (res.ok && data.ok) {
-        setActivated(true);
-        await refetch();
+      if (res.ok && data.url) {
+        // Redirect to Stripe Checkout
+        window.location.href = data.url;
       } else {
-        setError(data.error || "Failed to activate subscription");
+        setError(data.error || "Failed to create checkout session");
+        setCheckingOut(false);
       }
     } catch {
       setError("Network error. Please try again.");
-    } finally {
-      setActivating(false);
+      setCheckingOut(false);
     }
   };
+
+  // After returning from Stripe with success=true, refetch user to pick up subscription
+  useEffect(() => {
+    if (showSuccess) {
+      refetch();
+    }
+  }, [showSuccess]);
 
   if (loading) {
     return (
@@ -84,7 +96,7 @@ function SubscribePage() {
   }
 
   // If already subscribed, show success
-  if (user?.subscription_status === "active" || activated) {
+  if (user?.subscription_status === "active") {
     return (
       <div className="flex min-h-[80vh] items-center justify-center px-4">
         <div className="max-w-md text-center">
@@ -142,6 +154,41 @@ function SubscribePage() {
           start chatting. Choose monthly or save 30% with an annual plan.
         </p>
 
+        {/* Success banner */}
+        {showSuccess && (
+          <div className="mb-6 rounded-xl border border-green-500/30 bg-green-500/10 p-4">
+            <p className="font-semibold text-green-400">
+              ✅ Subscription successful! Your account is now active.
+            </p>
+            <p className="mt-1 text-sm text-green-400/70">
+              Head to{" "}
+              <Link to="/matches" className="underline hover:text-green-300">
+                Browse Matches
+              </Link>{" "}
+              to start connecting.
+            </p>
+          </div>
+        )}
+
+        {/* Canceled banner */}
+        {showCanceled && (
+          <div className="mb-6 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
+            <p className="font-semibold text-amber-400">
+              Payment was canceled. No charges were made.
+            </p>
+            <p className="mt-1 text-sm text-amber-400/70">
+              You can try again whenever you're ready.
+            </p>
+          </div>
+        )}
+
+        {/* Error banner */}
+        {error && (
+          <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/10 p-4">
+            <p className="text-sm text-red-400">{error}</p>
+          </div>
+        )}
+
         {/* Plan Toggle */}
         <div className="mb-6 inline-flex rounded-full bg-gray-800 p-1 shadow-inner">
           {(Object.keys(PLANS) as Plan[]).map((key) => (
@@ -178,7 +225,7 @@ function SubscribePage() {
           }`}
         >
           <div className="mb-2 text-sm font-semibold uppercase tracking-wider text-rose-400">
-            Step 1 — Subscribe
+            Subscribe
           </div>
 
           {/* Price display */}
@@ -228,47 +275,40 @@ function SubscribePage() {
             ))}
           </ul>
 
-          {/* Stripe Payment Link */}
-          <a
-            href={currentPlan.stripeLink}
-            className={`mb-4 block w-full rounded-full px-8 py-4 text-center text-lg font-semibold text-white shadow-lg transition ${
+          {/* Checkout Button */}
+          <button
+            onClick={handleSubscribe}
+            disabled={checkingOut}
+            className={`w-full rounded-full px-8 py-4 text-center text-lg font-semibold text-white shadow-lg transition ${
               plan === "annual"
                 ? "bg-rose-500 shadow-rose-500/30 hover:bg-rose-400"
                 : "bg-rose-600 shadow-rose-600/25 hover:bg-rose-500 hover:shadow-rose-500/30"
-            }`}
+            } disabled:cursor-wait disabled:opacity-60`}
           >
-            Pay ${currentPlan.price.toFixed(2)}{currentPlan.period} on Stripe →
-          </a>
-          <p className="text-xs text-gray-500">
-            After paying on Stripe, come back here and click "I've Subscribed"
-            below to activate your account.
+            {checkingOut ? (
+              <span className="flex items-center justify-center gap-2">
+                <span className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                Redirecting to Stripe...
+              </span>
+            ) : (
+              `Subscribe — $${currentPlan.price.toFixed(2)}${currentPlan.period}`
+            )}
+          </button>
+          <p className="mt-3 text-xs text-gray-500">
+            You'll be redirected to Stripe to complete your subscription securely.
           </p>
         </div>
 
-        {/* Activation */}
-        <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-6">
-          <p className="mb-1 text-sm font-semibold text-amber-400">Step 2</p>
-          <p className="mb-4 text-sm text-gray-400">
-            After completing payment on Stripe, click below to activate your
-            subscription and unlock the app.
-          </p>
-          <button
-            onClick={handleActivate}
-            disabled={activating}
-            className="w-full rounded-full bg-green-600 px-6 py-3 font-semibold text-white transition hover:bg-green-500 disabled:opacity-50"
-          >
-            {activating ? (
-              <span className="flex items-center justify-center gap-2">
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                Activating...
-              </span>
-            ) : (
-              "I've Subscribed — Activate Now"
-            )}
-          </button>
-          {error && (
-            <p className="mt-3 text-sm text-red-400">{error}</p>
-          )}
+        {/* Security / trust badges */}
+        <div className="flex items-center justify-center gap-6 text-xs text-gray-500">
+          <span className="flex items-center gap-1">
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+            Secure checkout
+          </span>
+          <span>Powered by Stripe</span>
+          <span>Cancel anytime</span>
         </div>
       </div>
     </div>
