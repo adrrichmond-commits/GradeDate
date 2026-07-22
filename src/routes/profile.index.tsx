@@ -16,6 +16,13 @@ const DISTANCE_OPTIONS = [
   { value: 250, label: "250 miles" },
 ];
 
+interface PhotoItem {
+  id: number;
+  photo_path: string;
+  sort_order: number;
+  is_primary: boolean;
+}
+
 function ProfilePage() {
   const navigate = useNavigate();
   const { user, loading, refetch } = useAuth();
@@ -30,10 +37,10 @@ function ProfilePage() {
   const [editGender, setEditGender] = useState("");
   const [editLookingFor, setEditLookingFor] = useState("");
   const [editBio, setEditBio] = useState("");
-  const [editPhotoFile, setEditPhotoFile] = useState<File | null>(null);
-  const [editPhotoPreview, setEditPhotoPreview] = useState<string | null>(null);
+  const [editPhotos, setEditPhotos] = useState<PhotoItem[]>([]);
   const [saving, setSaving] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [uploadingIdx, setUploadingIdx] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const [saveError, setSaveError] = useState("");
   const [saveSuccess, setSaveSuccess] = useState(false);
   const successTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -80,8 +87,17 @@ function ProfilePage() {
     setEditGender(user.gender || "");
     setEditLookingFor(user.looking_for || "everyone");
     setEditBio(user.bio || "");
-    setEditPhotoFile(null);
-    setEditPhotoPreview(null);
+    setEditPhotos(
+      user.photos
+        ? [...user.photos].sort((a, b) => {
+            if (a.is_primary) return -1;
+            if (b.is_primary) return 1;
+            return a.sort_order - b.sort_order;
+          })
+        : []
+    );
+    setUploadingIdx(null);
+    setDeletingId(null);
     setEditZipCode("");
     setEditMaxDistance(user.max_distance || 50);
     setEditLocationResult(
@@ -104,11 +120,72 @@ function ProfilePage() {
     setEditing(false);
   };
 
-  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setEditPhotoFile(file);
-    setEditPhotoPreview(URL.createObjectURL(file));
+  const handleUploadToSlot = async (slotIndex: number, file: File) => {
+    setUploadingIdx(slotIndex);
+    setSaveError("");
+    try {
+      const formData = new FormData();
+      formData.append("photo", file);
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setSaveError(data.error || "Upload failed");
+        return;
+      }
+      setEditPhotos((prev) => [...prev, data.photo]);
+    } catch {
+      setSaveError("Photo upload failed. Please try again.");
+    } finally {
+      setUploadingIdx(null);
+    }
+  };
+
+  const handleDeletePhoto = async (photoId: number) => {
+    setDeletingId(photoId);
+    setSaveError("");
+    try {
+      const res = await fetch(`/api/photos/${photoId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setSaveError(data?.error || "Failed to delete photo");
+        return;
+      }
+      setEditPhotos((prev) => prev.filter((p) => p.id !== photoId));
+    } catch {
+      setSaveError("Failed to delete photo. Please try again.");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleSetPrimary = async (photoId: number) => {
+    setSaveError("");
+    try {
+      const res = await fetch(`/api/photos/${photoId}/primary`, {
+        method: "PUT",
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setSaveError(data?.error || "Failed to set primary photo");
+        return;
+      }
+      setEditPhotos((prev) =>
+        prev
+          .map((p) => ({ ...p, is_primary: p.id === photoId }))
+          .sort((a, b) => {
+            if (a.is_primary) return -1;
+            if (b.is_primary) return 1;
+            return a.sort_order - b.sort_order;
+          })
+      );
+    } catch {
+      setSaveError("Network error. Please try again.");
+    }
   };
 
   const handleZipLookup = async () => {
@@ -163,7 +240,6 @@ function ProfilePage() {
     setDeleting(true);
     try {
       await fetch("/api/account/delete", { method: "POST" });
-      // Clear auth context and redirect
       await refetch();
       navigate({ to: "/" });
     } catch {
@@ -171,35 +247,10 @@ function ProfilePage() {
     }
   };
 
-  const handleUploadPhoto = async (): Promise<string | null> => {
-    if (!editPhotoFile) return null;
-    setUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append("photo", editPhotoFile);
-      const res = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setSaveError(data.error || "Upload failed");
-        return null;
-      }
-      return data.photo_path;
-    } catch {
-      setSaveError("Photo upload failed. Please try again.");
-      return null;
-    } finally {
-      setUploading(false);
-    }
-  };
-
   const handleSave = async () => {
     setSaveError("");
     setSaveSuccess(false);
 
-    // Validate required fields
     if (!editName.trim()) {
       setSaveError("Display name is required");
       return;
@@ -223,27 +274,15 @@ function ProfilePage() {
 
     setSaving(true);
 
-    // Upload photo first if a new one was selected
-    let photoPath = user?.photo_path;
-    if (editPhotoFile) {
-      const uploadedPath = await handleUploadPhoto();
-      if (uploadedPath) {
-        photoPath = uploadedPath;
-      } else {
-        setSaving(false);
-        return;
-      }
-    }
-
-    // Save profile via API
     try {
+      const primaryPhoto = editPhotos.find((p) => p.is_primary);
       const payload: Record<string, unknown> = {
         display_name: editName.trim(),
         age: ageNum,
         gender: editGender,
         looking_for: editLookingFor,
         bio: editBio.trim(),
-        photo_path: photoPath,
+        photo_path: primaryPhoto?.photo_path || user?.photo_path || "",
         max_distance: editMaxDistance,
       };
 
@@ -270,7 +309,6 @@ function ProfilePage() {
       setSaveSuccess(true);
       setEditing(false);
 
-      // Clear success toast after 3s
       if (successTimeout.current) clearTimeout(successTimeout.current);
       successTimeout.current = setTimeout(() => setSaveSuccess(false), 3000);
     } catch {
@@ -293,8 +331,10 @@ function ProfilePage() {
 
   if (!user || !isSubscribed) return null;
 
-  // Current photo to display
-  const displayPhoto = editPhotoPreview || user.photo_path;
+  // Current photo to display (view mode)
+  const displayPhoto = user.photo_path;
+  const photoCount = user.photos?.length || (user.photo_path ? 1 : 0);
+  const totalSlots = 6;
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-12">
@@ -318,45 +358,143 @@ function ProfilePage() {
       </div>
 
       <div className="card p-8">
-        {/* Photo */}
-        <div className="mb-8 flex justify-center">
-          {displayPhoto ? (
-            <img
-              src={displayPhoto}
-              alt={user.display_name || "Profile"}
-              className="h-40 w-40 rounded-full object-cover ring-3 ring-rose-500/15 ring-offset-4 ring-offset-gray-950"
-            />
-          ) : (
-            <div className="flex h-40 w-40 items-center justify-center rounded-full bg-gray-800 ring-3 ring-rose-500/15 ring-offset-4 ring-offset-gray-950 text-gray-500">
-              <svg
-                className="h-16 w-16"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={1.5}
-                  d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"
+        {/* ── Photo Section ── */}
+        <div className="mb-8 flex flex-col items-center">
+          {/* View mode: main photo + count badge */}
+          {!editing && (
+            <div className="relative">
+              {displayPhoto ? (
+                <img
+                  src={displayPhoto}
+                  alt={user.display_name || "Profile"}
+                  className="h-40 w-40 rounded-full object-cover ring-3 ring-rose-500/15 ring-offset-4 ring-offset-gray-950"
                 />
-              </svg>
+              ) : (
+                <div className="flex h-40 w-40 items-center justify-center rounded-full bg-gray-800 ring-3 ring-rose-500/15 ring-offset-4 ring-offset-gray-950 text-gray-500">
+                  <svg
+                    className="h-16 w-16"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={1.5}
+                      d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"
+                    />
+                  </svg>
+                </div>
+              )}
+              {photoCount > 0 && (
+                <span className="absolute -bottom-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full bg-rose-500 text-xs font-bold text-white ring-2 ring-gray-950">
+                  {photoCount}
+                </span>
+              )}
             </div>
           )}
 
-          {/* Photo upload in edit mode */}
+          {/* Edit mode: 3×2 photo grid */}
           {editing && (
-            <div className="ml-6 flex flex-col justify-center">
-              <label className="cursor-pointer rounded-lg border border-gray-600 px-4 py-2.5 text-sm text-gray-300 transition hover:border-rose-500/50 hover:text-white">
-                Change Photo
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handlePhotoChange}
-                  className="hidden"
-                />
+            <div className="w-full">
+              <label className="mb-3 block text-sm font-medium text-gray-300">
+                Photos ({editPhotos.length}/6)
               </label>
-              <p className="mt-1 text-xs text-gray-500">A clear face photo works best.</p>
+              <div className="grid grid-cols-3 gap-3">
+                {Array.from({ length: totalSlots }).map((_, i) => {
+                  const photo = editPhotos[i] || null;
+                  const isPlaceholder = i >= editPhotos.length;
+
+                  if (isPlaceholder) {
+                    return (
+                      <label
+                        key={`slot-${i}`}
+                        className="relative flex aspect-[3/4] cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-600 bg-gray-800/50 transition hover:border-rose-500/50 hover:bg-gray-800"
+                      >
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              handleUploadToSlot(i, file);
+                            }
+                            e.target.value = "";
+                          }}
+                        />
+                        <svg
+                          className="mb-1 h-6 w-6 text-gray-500"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M12 4v16m8-8H4"
+                          />
+                        </svg>
+                        <span className="text-xs text-gray-500">Add Photo</span>
+                      </label>
+                    );
+                  }
+
+                  return (
+                    <div
+                      key={photo!.id}
+                      className="relative aspect-[3/4] overflow-hidden rounded-xl bg-gray-800"
+                    >
+                      {uploadingIdx === i ? (
+                        <div className="flex h-full w-full items-center justify-center">
+                          <div className="loader-pulse" />
+                        </div>
+                      ) : (
+                        <img
+                          src={photo!.photo_path}
+                          alt={`Photo ${i + 1}`}
+                          className="h-full w-full object-cover"
+                        />
+                      )}
+
+                      {/* Star badge (primary toggle) */}
+                      <button
+                        type="button"
+                        disabled={deletingId === photo!.id}
+                        onClick={() => handleSetPrimary(photo!.id)}
+                        className={`absolute left-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-black/50 text-sm transition hover:bg-black/70 ${
+                          photo!.is_primary
+                            ? "text-amber-400"
+                            : "text-gray-400"
+                        }`}
+                        title={photo!.is_primary ? "Primary photo" : "Set as primary"}
+                      >
+                        ★
+                      </button>
+
+                      {/* Delete button */}
+                      {deletingId === photo!.id ? (
+                        <div className="absolute right-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-black/50">
+                          <div className="h-3 w-3 animate-spin rounded-full border-2 border-red-400 border-t-transparent" />
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleDeletePhoto(photo!.id)}
+                          className="absolute right-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-black/50 text-xs text-white/80 transition hover:bg-red-500/70 hover:text-white"
+                          title="Remove photo"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="mt-1.5 text-xs text-gray-500">
+                Upload up to 6 photos. Tap the ★ to set your primary photo.
+              </p>
             </div>
           )}
         </div>
@@ -675,17 +813,17 @@ function ProfilePage() {
               <button
                 type="button"
                 onClick={handleCancelEdit}
-                disabled={saving || uploading}
+                disabled={saving || uploadingIdx !== null || deletingId !== null}
                 className="flex-1 rounded-full border border-gray-600 px-6 py-2.5 text-sm font-semibold text-gray-300 transition hover:border-gray-500 hover:text-white disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                disabled={saving || uploading}
+                disabled={saving || uploadingIdx !== null || deletingId !== null}
                 className="flex-1 rounded-full bg-rose-600 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-rose-500 disabled:opacity-50"
               >
-                {uploading ? "Uploading photo..." : saving ? "Saving..." : "Save Changes"}
+                {saving ? "Saving..." : "Save Changes"}
               </button>
             </div>
           </form>
