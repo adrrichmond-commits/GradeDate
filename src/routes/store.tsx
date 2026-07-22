@@ -6,7 +6,7 @@ import { getCsrfToken } from "~/csrf-client";
 const RE_GRADE_LINK = "https://buy.stripe.com/5kQ7sL3gq0CW4edfxt7Re02";
 const BOOST_LINK = "https://buy.stripe.com/14A9AT2cm3P8265etp7Re03";
 const REVEAL_LIKES_LINK = "https://buy.stripe.com/eVq8wPbMW1H02659957Re04";
-const LIKE_PACK_LINK = "https://buy.stripe.com/28o8wPbMW1H02659957Re05";
+const LIKE_PACK_LINK = "https://buy.stripe.com/28E5kD8AK2L4fWVfxt7Re06";
 
 interface Product {
   id: string;
