@@ -407,6 +407,16 @@ function RootDocument({ children }: { children: ReactNode }) {
     <html lang="en" className="dark">
       <head>
         <HeadContent />
+        <title>GradeDate — Looks-Matched Dating</title>
+        <meta name="description" content="Stop dating out of your league. GradeDate uses AI to match you with singles at your attractiveness level. Get your grade free." />
+        <meta property="og:title" content="GradeDate — Looks-Matched Dating" />
+        <meta property="og:description" content="Stop dating out of your league. AI-powered grading matches you with looks-compatible singles. Free preview." />
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content="https://gradedate.app" />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content="GradeDate — Looks-Matched Dating" />
+        <meta name="twitter:description" content="Stop dating out of your league. AI-powered grading matches you with looks-compatible singles. Free preview." />
+        <link rel="canonical" href="https://gradedate.app" />
       </head>
       <body>
         {children}
