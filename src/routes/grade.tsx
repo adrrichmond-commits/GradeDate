@@ -292,20 +292,28 @@ function GradePage() {
                   />
                 )}
                 <div className="text-center">
+                  <div className="text-xs font-semibold uppercase tracking-widest text-gray-500">
+                    Your Match Level
+                  </div>
                   <div className="animate-[scaleIn_0.6s_ease-out] text-7xl font-black tracking-tighter text-rose-400">
-                    {grade}
+                    {grade}<span className="text-3xl text-gray-500">/10</span>
                   </div>
-                  <div className="mt-1 text-sm font-medium text-gray-500">
-                    out of 10
-                    {gradingMethod === "mock" && (
-                      <span className="ml-1 text-xs text-gray-600">(mock)</span>
-                    )}
-                  </div>
+                  {gradingMethod === "mock" && (
+                    <div className="mt-1 text-xs text-gray-600">(mock)</div>
+                  )}
                   {analysis && (
                     <p className="mt-2 text-sm italic text-gray-400">
                       "{analysis}"
                     </p>
                   )}
+                  <p className="mt-2 text-xs text-gray-500">
+                    This is used only to find looks-compatible matches.
+                    It is never shared with other users.
+                  </p>
+                  <p className="mt-1 text-xs text-gray-600">
+                    AI-generated estimate for entertainment purposes.
+                    Results may vary.
+                  </p>
                 </div>
 
                 <div className="flex w-full max-w-xs gap-0.5">
@@ -396,10 +404,7 @@ function GradePage() {
           {/* Footer note */}
           <p className="mt-6 text-center text-xs text-gray-600">
             Photos are screened for inappropriate content before grading.
-            Your grade is kept private — only you see it.
-          </p>
-          <p className="mt-2 text-center text-xs text-gray-600">
-            Grades are AI-generated estimates for entertainment purposes. Results may vary.
+            Your match level is kept private — only you see it.
           </p>
         </div>
       </main>
