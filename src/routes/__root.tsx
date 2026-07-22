@@ -145,9 +145,10 @@ function BrandedLoader({ text }: { text?: string }) {
 /* App Shell                                                           */
 /* ------------------------------------------------------------------ */
 function AppShell() {
-  const { user, loading } = useAuth();
+  const { user, loading, pushPermission, pushSubscribed, subscribeToPush, unsubscribeFromPush } = useAuth();
   const [unread, setUnread] = useState(0);
   const [cookieConsent, setCookieConsent] = useState(true);
+  const [showPushPrompt, setShowPushPrompt] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -155,6 +156,32 @@ function AppShell() {
       setCookieConsent(false);
     }
   }, []);
+
+  // Register service worker for push notifications
+  useEffect(() => {
+    if (typeof window !== "undefined" && "serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch((err) => {
+        console.error("Service worker registration failed:", err);
+      });
+    }
+  }, []);
+
+  // Show push prompt when user is logged in and notification permission is "default"
+  useEffect(() => {
+    if (
+      user &&
+      typeof window !== "undefined" &&
+      "Notification" in window &&
+      pushPermission === "default" &&
+      !pushSubscribed
+    ) {
+      // Delay the prompt slightly so it doesn't flash on load
+      const timer = setTimeout(() => setShowPushPrompt(true), 2000);
+      return () => clearTimeout(timer);
+    } else {
+      setShowPushPrompt(false);
+    }
+  }, [user, pushPermission, pushSubscribed]);
 
   const acceptCookies = () => {
     localStorage.setItem("gd-cookie-consent", "1");
@@ -259,6 +286,41 @@ function AppShell() {
 
       {/* Page content with fade-in transition */}
       <div className="page-enter pt-16">
+        {/* Push notification prompt */}
+        {showPushPrompt && user && (
+          <div className="mx-auto max-w-6xl px-4 pt-4">
+            <div className="rounded-xl border border-rose-500/30 bg-gradient-to-r from-rose-500/10 to-rose-600/5 px-6 py-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">🔔</span>
+                <div>
+                  <p className="text-sm font-semibold text-white">
+                    Get notified about new matches
+                  </p>
+                  <p className="text-xs text-gray-400">
+                    We&apos;ll let you know instantly when someone matches or messages you.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => setShowPushPrompt(false)}
+                  className="text-sm text-gray-400 hover:text-white transition px-2 py-1"
+                >
+                  Not now
+                </button>
+                <button
+                  onClick={async () => {
+                    await subscribeToPush();
+                    setShowPushPrompt(false);
+                  }}
+                  className="rounded-full bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-500 hover:scale-105 active:scale-95"
+                >
+                  Enable notifications
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         <Outlet />
       </div>
 

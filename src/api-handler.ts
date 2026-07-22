@@ -40,12 +40,16 @@ import {
   setPrimaryPhoto,
   getUserPhotos,
   getUserPhotoCount,
+  savePushSubscription,
+  getPushSubscriptions,
+  deletePushSubscription,
   type User,
   type UserPhoto,
 } from "../src/db.ts";
 import { sendPasswordResetEmail } from "../src/email.ts";
 import { lookupZip } from "../src/zipcode.ts";
 import { checkAuthRateLimit, checkStrictRateLimit } from "../src/rate-limit.ts";
+import { VAPID_PUBLIC_KEY, sendPushNotification } from "../src/push.ts";
 import Stripe from "stripe";
 import { mkdirSync, existsSync, writeFileSync, readFileSync, unlinkSync } from "node:fs";
 import path from "node:path";
@@ -770,6 +774,19 @@ async function handleLike(req: Request): Promise<Response> {
     if (match) {
       matched = true;
       matchId = match.id;
+
+      // Push notifications for the new match — notify both users
+      sendPushNotification(user.id, {
+        title: "New Match! 💘",
+        body: "You have a new match! Start chatting now.",
+        url: `/chat/${match.id}`,
+      }).catch((err) => console.error("Push notification failed (liker):", err));
+
+      sendPushNotification(likedId, {
+        title: "New Match! 💘",
+        body: "Someone just matched with you! Check it out.",
+        url: `/chat/${match.id}`,
+      }).catch((err) => console.error("Push notification failed (liked):", err));
     }
   }
 
@@ -834,6 +851,15 @@ async function handleSendMessage(req: Request): Promise<Response> {
   }
 
   const message = await createMessage(match_id, user.id, content.trim());
+
+  // Notify the other participant
+  const recipientId =
+    match.user1_id === user.id ? match.user2_id : match.user1_id;
+  sendPushNotification(recipientId, {
+    title: `New message from ${user.display_name || "someone"}`,
+    body: content.trim().slice(0, 128),
+    url: `/chat/${match_id}`,
+  }).catch((err) => console.error("Push notification failed (message):", err));
 
   return json({
     ok: true,
@@ -1357,6 +1383,48 @@ async function handleLocationLookup(req: Request): Promise<Response> {
   });
 }
 
+// ── Push Notifications ──────────────────────────────────────
+
+function handleVapidPublicKey(): Response {
+  return json({ publicKey: VAPID_PUBLIC_KEY });
+}
+
+async function handlePushSubscribe(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+
+  const body = await req.json().catch(() => null);
+  if (!body?.endpoint || !body?.keys?.p256dh || !body?.keys?.auth) {
+    return json({ error: "endpoint, keys.p256dh, and keys.auth are required" }, 400);
+  }
+
+  await savePushSubscription(
+    user.id,
+    String(body.endpoint),
+    String(body.keys.p256dh),
+    String(body.keys.auth),
+  );
+
+  return json({ ok: true });
+}
+
+async function handlePushUnsubscribe(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+
+  const body = await req.json().catch(() => null);
+  if (!body?.endpoint) {
+    return json({ error: "endpoint is required" }, 400);
+  }
+
+  await deletePushSubscription(user.id, String(body.endpoint));
+  return json({ ok: true });
+}
+
 // ── Router ────────────────────────────────────────────────────
 
 export async function handleApiRoute(
@@ -1480,6 +1548,17 @@ export async function handleApiRoute(
   // Stripe webhook (unauthenticated — validated by Stripe signature)
   if (pathname === "/api/webhooks/stripe" && method === "POST") {
     return handleStripeWebhook(req);
+  }
+
+  // Push notifications
+  if (pathname === "/api/push/vapid-public-key" && method === "GET") {
+    return handleVapidPublicKey();
+  }
+  if (pathname === "/api/push/subscribe" && method === "POST") {
+    return handlePushSubscribe(req);
+  }
+  if (pathname === "/api/push/unsubscribe" && method === "POST") {
+    return handlePushUnsubscribe(req);
   }
 
   return null; // Not an API route

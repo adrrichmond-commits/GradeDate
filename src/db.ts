@@ -153,6 +153,18 @@ export async function initTables(): Promise<void> {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `;
+
+  await sql()`
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      endpoint TEXT NOT NULL,
+      p256dh TEXT NOT NULL,
+      auth TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(user_id, endpoint)
+    )
+  `;
 }
 
 // ── Types ──────────────────────────────────────────────────────
@@ -825,5 +837,53 @@ export async function activateBoost(userId: number, durationHours = 24): Promise
 export async function revealLikes(userId: number): Promise<void> {
   await sql()`
     UPDATE users SET likes_revealed = 1 WHERE id = ${userId}
+  `;
+}
+
+// ── Push Subscriptions ─────────────────────────────────────────
+
+export interface PushSubscriptionRow {
+  id: number;
+  user_id: number;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  created_at: string;
+}
+
+export async function savePushSubscription(
+  userId: number,
+  endpoint: string,
+  p256dh: string,
+  auth: string,
+): Promise<PushSubscriptionRow> {
+  const rows = await sql()`
+    INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth)
+    VALUES (${userId}, ${endpoint}, ${p256dh}, ${auth})
+    ON CONFLICT (user_id, endpoint) DO UPDATE SET
+      p256dh = ${p256dh},
+      auth = ${auth},
+      created_at = NOW()
+    RETURNING *
+  `;
+  return rows[0] as unknown as PushSubscriptionRow;
+}
+
+export async function getPushSubscriptions(
+  userId: number,
+): Promise<PushSubscriptionRow[]> {
+  const rows = await sql()`
+    SELECT * FROM push_subscriptions WHERE user_id = ${userId}
+  `;
+  return rows as unknown as PushSubscriptionRow[];
+}
+
+export async function deletePushSubscription(
+  userId: number,
+  endpoint: string,
+): Promise<void> {
+  await sql()`
+    DELETE FROM push_subscriptions
+    WHERE user_id = ${userId} AND endpoint = ${endpoint}
   `;
 }
