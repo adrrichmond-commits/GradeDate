@@ -66,6 +66,7 @@ import { sendPasswordResetEmail } from "../src/email.ts";
 import { sendWaitlistConfirmation } from "../src/email.ts";
 import { lookupZip } from "../src/zipcode.ts";
 import { checkAuthRateLimit, checkStrictRateLimit, checkRateLimit } from "../src/rate-limit.ts";
+import { getApproximateLocation } from "../src/geo.ts";
 import { filterMessage } from "../src/profanity.ts";
 import { VAPID_PUBLIC_KEY, sendPushNotification } from "../src/push.ts";
 import { generateCsrfToken, setCsrfCookie, verifyCsrfToken, getCsrfTokenFromRequest, CSRF_COOKIE } from "../src/csrf.ts";
@@ -1599,6 +1600,18 @@ async function handleSetPrimary(req: Request, photoId: number): Promise<Response
   return json({ ok: true, photo });
 }
 
+// ── Geo Check (Austin gating) ─────────────────────────────
+
+const GEO_CHECK_LIMIT = { maxRequests: 10, windowMs: 60_000 }; // 10 req/min per IP
+
+async function handleGeoCheck(req: Request): Promise<Response> {
+  const rateLimitResponse = checkRateLimit(req, "geo-check", GEO_CHECK_LIMIT);
+  if (rateLimitResponse) return rateLimitResponse;
+
+  const { city, region, isAustinMetro } = await getApproximateLocation(req);
+  return json({ isAustinMetro, city, region });
+}
+
 // ── Location ─────────────────────────────────────────────────
 
 async function handleLocationLookup(req: Request): Promise<Response> {
@@ -1765,6 +1778,11 @@ export async function handleApiRoute(
   // CSRF token endpoint — allows anonymous users to get a token before POST requests
   if (pathname === "/api/csrf" && method === "GET") {
     return setCsrfCookie(json({ ok: true }), generateCsrfToken());
+  }
+
+  // Geo check — public, rate-limited, no auth required
+  if (pathname === "/api/geo-check" && method === "GET") {
+    return handleGeoCheck(req);
   }
 
   // Auth routes — CSRF not required (pre-auth or token-based)
