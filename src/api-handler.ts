@@ -38,6 +38,7 @@ import {
 } from "../src/db.ts";
 import { sendPasswordResetEmail } from "../src/email.ts";
 import { lookupZip } from "../src/zipcode.ts";
+import { checkAuthRateLimit, checkStrictRateLimit } from "../src/rate-limit.ts";
 import Stripe from "stripe";
 import { mkdirSync, existsSync, writeFileSync, readFileSync, unlinkSync } from "node:fs";
 import path from "node:path";
@@ -123,7 +124,7 @@ function setSessionCookie(response: Response, sessionId: string): Response {
   const headers = new Headers(response.headers);
   headers.set(
     "Set-Cookie",
-    `${SESSION_COOKIE}=${sessionId}; HttpOnly; SameSite=Lax; Path=/; Max-Age=604800`,
+    `${SESSION_COOKIE}=${sessionId}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=604800`,
   );
   return new Response(response.body, {
     status: response.status,
@@ -180,6 +181,9 @@ function requireSubscription(user: User): Response | null {
 // ── API Route Handlers ────────────────────────────────────────
 
 async function handleSignup(req: Request): Promise<Response> {
+  const rateLimitResponse = checkStrictRateLimit(req);
+  if (rateLimitResponse) return rateLimitResponse;
+
   const body = await req.json().catch(() => null);
   if (!body?.email || !body?.password) {
     return json({ error: "Email and password are required" }, 400);
@@ -225,6 +229,9 @@ async function handleSignup(req: Request): Promise<Response> {
 }
 
 async function handleLogin(req: Request): Promise<Response> {
+  const rateLimitResponse = checkAuthRateLimit(req);
+  if (rateLimitResponse) return rateLimitResponse;
+
   const body = await req.json().catch(() => null);
   if (!body?.email || !body?.password) {
     return json({ error: "Email and password are required" }, 400);
@@ -284,6 +291,11 @@ async function handleUpload(req: Request): Promise<Response> {
   const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
   if (!ALLOWED_TYPES.includes(file.type)) {
     return json({ error: "Only JPEG, PNG, and WebP images are allowed" }, 400);
+  }
+
+  const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+  if (file.size > MAX_FILE_SIZE) {
+    return json({ error: "Photo must be under 10 MB" }, 400);
   }
 
   const ext = file.name.split(".").pop() || "jpg";
@@ -1158,6 +1170,9 @@ async function handleStripeWebhook(req: Request): Promise<Response> {
 // ── Password Reset ─────────────────────────────────────────────
 
 async function handleForgotPassword(req: Request): Promise<Response> {
+  const rateLimitResponse = checkStrictRateLimit(req);
+  if (rateLimitResponse) return rateLimitResponse;
+
   const body = await req.json().catch(() => null);
   if (!body?.email) {
     return json({ error: "Email is required" }, 400);
@@ -1187,6 +1202,9 @@ async function handleForgotPassword(req: Request): Promise<Response> {
 }
 
 async function handleResetPassword(req: Request): Promise<Response> {
+  const rateLimitResponse = checkStrictRateLimit(req);
+  if (rateLimitResponse) return rateLimitResponse;
+
   const body = await req.json().catch(() => null);
   if (!body?.token || !body?.password) {
     return json({ error: "Token and password are required" }, 400);
