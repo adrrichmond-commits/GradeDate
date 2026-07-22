@@ -14,6 +14,24 @@ import handler from "./dist/server/server.js";
 import { initTables } from "./src/db.ts";
 import { handleApiRoute } from "./src/api-handler.ts";
 
+const SECURITY_HEADERS: Record<string, string> = {
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
+  "Strict-Transport-Security": "max-age=63072000; includeSubDomains; preload",
+  "Referrer-Policy": "strict-origin-when-cross-origin",
+  "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+  "Content-Security-Policy":
+    "default-src 'self'; " +
+    "script-src 'self' 'unsafe-inline'; " +
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+    "font-src 'self' https://fonts.gstatic.com; " +
+    "img-src 'self' data: https:; " +
+    "connect-src 'self'; " +
+    "frame-ancestors 'none'; " +
+    "base-uri 'self'; " +
+    "form-action 'self'",
+};
+
 const fetchHandler = handler as {
   fetch: (request: Request) => Response | Promise<Response>;
 };
@@ -51,6 +69,10 @@ async function streamResponse(
 ): Promise<void> {
   res.statusCode = webRes.status;
   webRes.headers.forEach((value, key) => res.setHeader(key, value));
+  // Apply security headers (won't override existing)
+  for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
+    if (!webRes.headers.has(key)) res.setHeader(key, value);
+  }
   if (webRes.body) {
     const reader = webRes.body.getReader();
     for (;;) {
@@ -87,6 +109,9 @@ export default async function vercelHandler(
     // return a stack trace to the public visitor of the site.
     console.error("[team-site] request failed", error);
     res.statusCode = 500;
+    for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
+      res.setHeader(key, value);
+    }
     res.setHeader("content-type", "text/plain");
     res.end("Internal Server Error");
   }
