@@ -169,6 +169,27 @@ export async function initTables(): Promise<void> {
       UNIQUE(user_id, endpoint)
     )
   `;
+
+  await sql()`
+    CREATE TABLE IF NOT EXISTS referral_codes (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      code TEXT UNIQUE NOT NULL,
+      usage_count INTEGER DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `;
+
+  await sql()`
+    CREATE TABLE IF NOT EXISTS referral_rewards (
+      id SERIAL PRIMARY KEY,
+      referrer_user_id INTEGER NOT NULL REFERENCES users(id),
+      referee_user_id INTEGER NOT NULL REFERENCES users(id),
+      reward_type TEXT DEFAULT 'free_month',
+      applied BOOLEAN DEFAULT false,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `;
 }
 
 // ── Types ──────────────────────────────────────────────────────
@@ -773,6 +794,9 @@ export async function deleteUserAccount(userId: number): Promise<void> {
   await sql()`DELETE FROM matches WHERE user1_id = ${userId} OR user2_id = ${userId}`;
   // Delete likes
   await sql()`DELETE FROM likes WHERE liker_id = ${userId} OR liked_id = ${userId}`;
+  // Delete referral data
+  await sql()`DELETE FROM referral_rewards WHERE referrer_user_id = ${userId} OR referee_user_id = ${userId}`;
+  await sql()`DELETE FROM referral_codes WHERE user_id = ${userId}`;
   // Delete sessions
   await sql()`DELETE FROM sessions WHERE user_id = ${userId}`;
   // Delete the user record itself
@@ -902,5 +926,180 @@ export async function deletePushSubscription(
   await sql()`
     DELETE FROM push_subscriptions
     WHERE user_id = ${userId} AND endpoint = ${endpoint}
+  `;
+}
+
+// ── Referral Codes ──────────────────────────────────────────────
+
+export interface ReferralCode {
+  id: number;
+  user_id: number;
+  code: string;
+  usage_count: number;
+  created_at: string;
+}
+
+export interface ReferralReward {
+  id: number;
+  referrer_user_id: number;
+  referee_user_id: number;
+  reward_type: string;
+  applied: boolean;
+  created_at: string;
+}
+
+export interface ReferralStats {
+  code: string;
+  usage_count: number;
+  rewards_earned: number;
+}
+
+function generateRandomSuffix(length: number = 6): string {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  let result = "";
+  for (let i = 0; i < length; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
+export async function generateReferralCode(userId: number): Promise<ReferralCode> {
+  // Check if user already has a code
+  const existing = await sql()`
+    SELECT * FROM referral_codes WHERE user_id = ${userId}
+  `;
+  if (existing.length > 0) {
+    return existing[0] as unknown as ReferralCode;
+  }
+
+  // Get the user's display name for the prefix
+  const user = await getUserById(userId);
+  const prefix = (user?.display_name || "USER")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .slice(0, 12);
+
+  // Generate a unique code
+  let code: string;
+  let attempts = 0;
+  do {
+    code = `${prefix}-${generateRandomSuffix()}`;
+    const dup = await sql()`SELECT id FROM referral_codes WHERE code = ${code}`;
+    if (dup.length === 0) break;
+    attempts++;
+  } while (attempts < 10);
+
+  const rows = await sql()`
+    INSERT INTO referral_codes (user_id, code)
+    VALUES (${userId}, ${code})
+    RETURNING *
+  `;
+  return rows[0] as unknown as ReferralCode;
+}
+
+export async function getReferralCode(userId: number): Promise<ReferralCode | null> {
+  const rows = await sql()`
+    SELECT * FROM referral_codes WHERE user_id = ${userId}
+  `;
+  return rows.length > 0 ? (rows[0] as unknown as ReferralCode) : null;
+}
+
+export async function getReferralCodeByCode(code: string): Promise<ReferralCode | null> {
+  const rows = await sql()`
+    SELECT * FROM referral_codes WHERE code = ${code}
+  `;
+  return rows.length > 0 ? (rows[0] as unknown as ReferralCode) : null;
+}
+
+export async function applyReferralCode(
+  code: string,
+  newUserId: number,
+): Promise<{ success: boolean; error?: string }> {
+  const referral = await getReferralCodeByCode(code);
+  if (!referral) {
+    return { success: false, error: "Invalid referral code" };
+  }
+
+  if (referral.user_id === newUserId) {
+    return { success: false, error: "You cannot use your own referral code" };
+  }
+
+  // Check if this referee was already referred by someone
+  const existing = await sql()`
+    SELECT id FROM referral_rewards WHERE referee_user_id = ${newUserId}
+  `;
+  if (existing.length > 0) {
+    return { success: false, error: "You have already used a referral code" };
+  }
+
+  // Increment usage count
+  await sql()`
+    UPDATE referral_codes SET usage_count = usage_count + 1
+    WHERE id = ${referral.id}
+  `;
+
+  // Create reward record (not applied yet — applied when referee subscribes)
+  await sql()`
+    INSERT INTO referral_rewards (referrer_user_id, referee_user_id)
+    VALUES (${referral.user_id}, ${newUserId})
+  `;
+
+  return { success: true };
+}
+
+export async function getReferralStats(userId: number): Promise<ReferralStats | null> {
+  const code = await getReferralCode(userId);
+  if (!code) return null;
+
+  const rewardsResult = await sql()`
+    SELECT COUNT(*)::int AS cnt FROM referral_rewards
+    WHERE referrer_user_id = ${userId} AND applied = true
+  `;
+  const rewardsEarned = rewardsResult.length > 0
+    ? Number((rewardsResult[0] as { cnt: number }).cnt)
+    : 0;
+
+  return {
+    code: code.code,
+    usage_count: code.usage_count,
+    rewards_earned: rewardsEarned,
+  };
+}
+
+export async function getReferralRewardForReferee(
+  refereeUserId: number,
+): Promise<ReferralReward | null> {
+  const rows = await sql()`
+    SELECT * FROM referral_rewards WHERE referee_user_id = ${refereeUserId}
+  `;
+  return rows.length > 0 ? (rows[0] as unknown as ReferralReward) : null;
+}
+
+export async function applyReferralReward(rewardId: number): Promise<void> {
+  const reward = await sql()`
+    SELECT * FROM referral_rewards WHERE id = ${rewardId}
+  `;
+  if (reward.length === 0) return;
+
+  const r = reward[0] as unknown as ReferralReward;
+  if (r.applied) return;
+
+  // Extend referrer's subscription by 1 month
+  await sql()`
+    UPDATE users SET
+      subscription_expires_at = COALESCE(subscription_expires_at, NOW()) + INTERVAL '1 month'
+    WHERE id = ${r.referrer_user_id}
+  `;
+
+  // Extend referee's subscription by 1 month
+  await sql()`
+    UPDATE users SET
+      subscription_expires_at = COALESCE(subscription_expires_at, NOW()) + INTERVAL '1 month'
+    WHERE id = ${r.referee_user_id}
+  `;
+
+  // Mark reward as applied
+  await sql()`
+    UPDATE referral_rewards SET applied = true WHERE id = ${r.id}
   `;
 }
