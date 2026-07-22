@@ -1,9 +1,31 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 export const Route = createFileRoute("/")({
   component: Home,
 });
+
+// ─── Geo-gating helper ────────────────────────────────────────
+function useGeoCheck() {
+  const [isAustinMetro, setIsAustinMetro] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/geo-check")
+      .then((res) => res.json())
+      .then((data: { isAustinMetro: boolean }) => {
+        if (!cancelled) setIsAustinMetro(data.isAustinMetro ?? false);
+      })
+      .catch(() => {
+        if (!cancelled) setIsAustinMetro(false); // safe default on error
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return isAustinMetro;
+}
 
 // ---------------------------------------------------------------------------
 // Demo Grader Component (UNCHANGED)
@@ -420,6 +442,8 @@ function WaitlistSection() {
 // Home Page
 // ---------------------------------------------------------------------------
 function Home() {
+  const isAustinMetro = useGeoCheck();
+
   return (
     <>
       {/* ─────────────────────────────────────────────────────────────
@@ -492,32 +516,81 @@ function Home() {
             so every match has real potential.
           </p>
 
-          {/* CTA Button */}
-          <Link
-            to="/grade"
-            className="btn-primary mt-10 inline-flex items-center gap-2 px-8 py-4 text-lg font-bold"
-          >
-            <svg
-              className="h-5 w-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-              />
-            </svg>
-            Get Your Grade — Free
-          </Link>
+          {/* CTA Button — changes based on geo */}
+          {isAustinMetro ? (
+            <>
+              <Link
+                to="/grade"
+                className="btn-primary mt-10 inline-flex items-center gap-2 px-8 py-4 text-lg font-bold bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500"
+              >
+                <svg
+                  className="h-5 w-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z"
+                  />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z"
+                  />
+                </svg>
+                Start Matching in Austin
+              </Link>
+              {/* Austin launch banner */}
+              <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-green-500/30 bg-green-500/10 px-4 py-2">
+                <span className="text-base">📍</span>
+                <span className="text-sm text-green-400">
+                  Austin is our launch city — you're in! Start matching with singles near you.
+                </span>
+              </div>
+            </>
+          ) : (
+            <>
+              <Link
+                to="/grade"
+                className="btn-primary mt-10 inline-flex items-center gap-2 px-8 py-4 text-lg font-bold"
+              >
+                <svg
+                  className="h-5 w-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                  />
+                </svg>
+                Get Your Grade — Free
+              </Link>
+              {/* Non-Austin note */}
+              <p className="mt-3 text-sm text-gray-500">
+                We're launching in Austin first. Join the waitlist to know when we reach your city.
+              </p>
+            </>
+          )}
 
           {/* CTA Footnote */}
           <div className="mt-4 flex flex-col items-center gap-1.5 text-sm">
-            <p className="text-gray-500">
-              $5.99/month after. No commitment. Cancel anytime.
-            </p>
+            {isAustinMetro ? (
+              <p className="text-gray-500">
+                $5.99/month. Join Austin's looks-matched dating community.
+              </p>
+            ) : (
+              <p className="text-gray-500">
+                $5.99/month after. No commitment. Cancel anytime.
+              </p>
+            )}
             <div className="flex items-center gap-1">
               {Array.from({ length: 5 }).map((_, i) => (
                 <svg
@@ -738,8 +811,9 @@ function Home() {
 
       {/* ─────────────────────────────────────────────────────────────
           3.5. WAITLIST — "Get notified when singles join your area"
+          (Hidden for Austin metro visitors — they get the full signup flow)
           ───────────────────────────────────────────────────────────── */}
-      <WaitlistSection />
+      {!isAustinMetro && <WaitlistSection />}
 
       {/* ─────────────────────────────────────────────────────────────
           4. FREE PREVIEW GRADING (ELEVATED — above pricing)
