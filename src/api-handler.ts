@@ -6,6 +6,7 @@ import {
   updateUserProfile,
   updateUserGrade,
   updateSubscriptionStatus,
+  activateAnnualSubscription,
   updateUserStripeInfo,
   getUserByStripeCustomerId,
   getUsersByGradeRange,
@@ -1023,6 +1024,12 @@ async function handleSubscriptionActivate(req: Request): Promise<Response> {
     return json({ error: "Unauthorized" }, 401);
   }
 
+  let plan: string | null = null;
+  try {
+    const body = await req.json();
+    plan = body.plan || null;
+  } catch { /* no body */ }
+
   if (user.subscription_status === "active") {
     return json({
       ok: true,
@@ -1031,10 +1038,15 @@ async function handleSubscriptionActivate(req: Request): Promise<Response> {
     });
   }
 
-  await updateSubscriptionStatus(user.id, "active");
+  if (plan === "annual") {
+    await activateAnnualSubscription(user.id);
+  } else {
+    await updateSubscriptionStatus(user.id, "active");
+  }
+
   return json({
     ok: true,
-    message: "Subscription activated",
+    message: plan === "annual" ? "Annual subscription activated" : "Subscription activated",
     subscription_status: "active",
   });
 }

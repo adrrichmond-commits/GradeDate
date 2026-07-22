@@ -31,6 +31,7 @@ export async function initTables(): Promise<void> {
       grade INTEGER,
       subscription_status TEXT DEFAULT 'inactive',
       subscription_updated_at TIMESTAMPTZ,
+      subscription_expires_at TIMESTAMPTZ,
       stripe_customer_id TEXT,
       stripe_subscription_id TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW()
@@ -73,6 +74,9 @@ export async function initTables(): Promise<void> {
   } catch { /* ignore */ }
   try {
     await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS location_state TEXT`;
+  } catch { /* ignore */ }
+  try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_expires_at TIMESTAMPTZ`;
   } catch { /* ignore */ }
 
   await sql()`
@@ -182,6 +186,7 @@ export interface User {
   grade: number | null;
   subscription_status: string;
   subscription_updated_at: string | null;
+  subscription_expires_at: string | null;
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
   regrades_available: number;
@@ -442,6 +447,18 @@ export async function updateSubscriptionStatus(
     UPDATE users SET
       subscription_status = ${status},
       subscription_updated_at = NOW()
+    WHERE id = ${userId}
+  `;
+}
+
+export async function activateAnnualSubscription(
+  userId: number,
+): Promise<void> {
+  await sql()`
+    UPDATE users SET
+      subscription_status = 'active',
+      subscription_updated_at = NOW(),
+      subscription_expires_at = NOW() + INTERVAL '1 year'
     WHERE id = ${userId}
   `;
 }
