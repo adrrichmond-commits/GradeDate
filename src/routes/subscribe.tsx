@@ -4,7 +4,7 @@ import { useAuth } from "~/auth-context";
 
 const STRIPE_MONTHLY_LINK = "https://buy.stripe.com/5kQ6oBbMWadwh0Z5WT7Re01";
 // Placeholder — will be replaced with actual annual payment link once created in Stripe
-const STRIPE_ANNUAL_LINK = "https://buy.stripe.com/ANNUAL_PLACEHOLDER";
+const STRIPE_ANNUAL_LINK = "https://buy.stripe.com/6oU14ncR05Xg4ed9957Re05";
 
 type Plan = "monthly" | "annual";
 
