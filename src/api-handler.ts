@@ -1054,6 +1054,10 @@ async function handleSubscriptionActivate(req: Request): Promise<Response> {
     return json({ error: "Unauthorized" }, 401);
   }
 
+  console.warn(
+    "POST /api/subscription/activate is deprecated — use /api/subscription/create-checkout with Stripe Checkout Sessions instead.",
+  );
+
   let plan: string | null = null;
   try {
     const body = await req.json();
@@ -1086,6 +1090,47 @@ async function handleSubscriptionActivate(req: Request): Promise<Response> {
     message: plan === "annual" ? "Annual subscription activated" : "Subscription activated",
     subscription_status: "active",
   });
+}
+
+async function handleCreateCheckout(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+
+  if (user.subscription_status === "active") {
+    return json({
+      error: "Subscription already active",
+      subscription_status: "active",
+    }, 400);
+  }
+
+  const body = await req.json().catch(() => null);
+  if (!body?.plan || !["monthly", "annual"].includes(body.plan)) {
+    return json({ error: "plan must be 'monthly' or 'annual'" }, 400);
+  }
+
+  const stripe = getStripe();
+  if (!stripe) {
+    return json({ error: "Stripe is not configured" }, 500);
+  }
+
+  const priceId =
+    body.plan === "annual"
+      ? "price_1Tvzh8GuEElH7kaizZdfy7s9"
+      : "price_1TvzqyGuEElH7kaiCi3hjt8b";
+
+  const session = await stripe.checkout.sessions.create({
+    mode: "subscription",
+    line_items: [{ price: priceId, quantity: 1 }],
+    success_url: "https://gradedate.app/subscribe?success=true",
+    cancel_url: "https://gradedate.app/subscribe?canceled=true",
+    client_reference_id: String(user.id),
+    customer_email: user.email,
+    metadata: { user_id: String(user.id) },
+  });
+
+  return json({ url: session.url });
 }
 
 // ── Upsell Activation ──────────────────────────────────────────
@@ -1212,19 +1257,29 @@ async function handleStripeWebhook(req: Request): Promise<Response> {
           typeof session.subscription === "string"
             ? session.subscription
             : null;
+        const clientReferenceId = session.client_reference_id || null;
 
-        if (!customerEmail) {
-          console.warn(
-            "checkout.session.completed: no customer email in session",
-          );
-          break;
+        // Find user: first try email, then client_reference_id, then metadata
+        let user: User | null = null;
+        if (customerEmail) {
+          user = await getUserByEmail(customerEmail.toLowerCase());
+        }
+        if (!user && clientReferenceId) {
+          const userId = parseInt(clientReferenceId, 10);
+          if (!isNaN(userId)) {
+            user = await getUserById(userId);
+          }
+        }
+        if (!user && session.metadata?.user_id) {
+          const userId = parseInt(session.metadata.user_id, 10);
+          if (!isNaN(userId)) {
+            user = await getUserById(userId);
+          }
         }
 
-        // Find user by email
-        const user = await getUserByEmail(customerEmail.toLowerCase());
         if (!user) {
           console.warn(
-            `checkout.session.completed: no user found for email ${customerEmail}`,
+            `checkout.session.completed: no user found for email=${customerEmail}, client_ref=${clientReferenceId}`,
           );
           break;
         }
@@ -1648,6 +1703,9 @@ export async function handleApiRoute(
   }
   if (pathname === "/api/subscription/activate" && method === "POST") {
     return handleSubscriptionActivate(req);
+  }
+  if (pathname === "/api/subscription/create-checkout" && method === "POST") {
+    return handleCreateCheckout(req);
   }
 
   // Daily likes
