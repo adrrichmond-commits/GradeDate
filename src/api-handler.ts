@@ -58,10 +58,12 @@ import {
   applyReferralReward,
   getDailyLikesRemaining,
   useDailyLike,
+  joinWaitlist,
   type User,
   type UserPhoto,
 } from "../src/db.ts";
 import { sendPasswordResetEmail } from "../src/email.ts";
+import { sendWaitlistConfirmation } from "../src/email.ts";
 import { lookupZip } from "../src/zipcode.ts";
 import { checkAuthRateLimit, checkStrictRateLimit, checkRateLimit } from "../src/rate-limit.ts";
 import { filterMessage } from "../src/profanity.ts";
@@ -1707,6 +1709,40 @@ async function handleApplyReferralCode(req: Request): Promise<Response> {
   return json({ success: true, message: "Referral code applied! You'll both get a free month when you subscribe." });
 }
 
+// ── Waitlist ────────────────────────────────────────────────────
+
+async function handleWaitlistJoin(req: Request): Promise<Response> {
+  const rateLimitResponse = checkStrictRateLimit(req);
+  if (rateLimitResponse) return rateLimitResponse;
+
+  const body = await req.json().catch(() => null);
+  if (!body?.email || typeof body.email !== "string") {
+    return json({ error: "Email is required" }, 400);
+  }
+
+  const email = String(body.email).trim().toLowerCase();
+  const zipCode = body.zip_code ? String(body.zip_code).trim() : undefined;
+
+  // Basic email validation
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return json({ error: "Please enter a valid email address" }, 400);
+  }
+
+  // Validate ZIP code if provided (basic: 5 digits, optional dash+4)
+  if (zipCode && !/^\d{5}(-\d{4})?$/.test(zipCode)) {
+    return json({ error: "Please enter a valid ZIP code" }, 400);
+  }
+
+  // Insert into waitlist (duplicates are silently ignored)
+  await joinWaitlist(email, zipCode);
+
+  // Send confirmation email (best-effort, don't fail if email fails)
+  await sendWaitlistConfirmation(email);
+
+  return json({ success: true });
+}
+
 // ── Router ────────────────────────────────────────────────────
 
 /**
@@ -1925,6 +1961,11 @@ export async function handleApiRoute(
     const csrfErr = checkCsrf(req);
     if (csrfErr) return csrfErr;
     return handleApplyReferralCode(req);
+  }
+
+  // Waitlist — public, rate-limited but no CSRF required
+  if (pathname === "/api/waitlist/join" && method === "POST") {
+    return handleWaitlistJoin(req);
   }
 
   return null; // Not an API route

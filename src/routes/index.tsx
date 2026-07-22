@@ -274,6 +274,149 @@ function PricingSection() {
 }
 
 // ---------------------------------------------------------------------------
+// Waitlist Section Component
+// ---------------------------------------------------------------------------
+function WaitlistSection() {
+  const [email, setEmail] = useState("");
+  const [zipCode, setZipCode] = useState("");
+  const [state, setState] = useState<"idle" | "submitting" | "success" | "error">("idle");
+  const [errorMsg, setErrorMsg] = useState("");
+
+  const validate = (): string | null => {
+    const trimmed = email.trim();
+    if (!trimmed) return "Please enter your email address";
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) return "Please enter a valid email address";
+    if (zipCode.trim() && !/^\d{5}(-\d{4})?$/.test(zipCode.trim())) return "Please enter a valid ZIP code";
+    return null;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const err = validate();
+    if (err) {
+      setErrorMsg(err);
+      setState("error");
+      return;
+    }
+
+    setState("submitting");
+    setErrorMsg("");
+
+    try {
+      const res = await fetch("/api/waitlist/join", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: email.trim(),
+          zip_code: zipCode.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setState("success");
+        setEmail("");
+        setZipCode("");
+      } else {
+        setErrorMsg(data.error || "Something went wrong. Please try again.");
+        setState("error");
+      }
+    } catch {
+      setErrorMsg("Network error. Please check your connection and try again.");
+      setState("error");
+    }
+  };
+
+  return (
+    <section className="relative overflow-hidden px-4 py-24">
+      {/* Subtle gradient background */}
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-rose-500/[0.02] to-transparent" />
+
+      <div className="relative mx-auto max-w-2xl text-center">
+        <div className="card border-rose-500/20 bg-gradient-to-br from-rose-500/5 to-violet-500/5 p-10">
+          {/* Icon */}
+          <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-rose-500/20 to-violet-500/20 ring-1 ring-rose-500/30">
+            <svg className="h-7 w-7 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+            </svg>
+          </div>
+
+          <h2 className="mb-3 text-2xl font-bold sm:text-3xl">
+            Get notified when singles join your area
+          </h2>
+          <p className="mb-8 text-gray-400">
+            We're growing fast. Be the first to know when new matches arrive near you.
+          </p>
+
+          {state === "success" ? (
+            <div className="flex flex-col items-center gap-3">
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-green-500/10 ring-1 ring-green-500/30">
+                <svg className="h-7 w-7 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <p className="text-lg font-semibold text-white">You're on the list!</p>
+              <p className="text-sm text-gray-400">Check your email for confirmation.</p>
+              <button
+                onClick={() => setState("idle")}
+                className="mt-2 text-xs text-gray-500 underline transition hover:text-gray-300"
+              >
+                Sign up another email
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => { setEmail(e.target.value); if (state === "error") setState("idle"); }}
+                  placeholder="you@example.com"
+                  className="input-field flex-1"
+                  disabled={state === "submitting"}
+                  required
+                />
+                <input
+                  type="text"
+                  value={zipCode}
+                  onChange={(e) => setZipCode(e.target.value)}
+                  placeholder="ZIP code (optional)"
+                  className="input-field sm:max-w-[160px]"
+                  disabled={state === "submitting"}
+                  maxLength={10}
+                />
+              </div>
+
+              {state === "error" && errorMsg && (
+                <p className="text-sm text-red-400">{errorMsg}</p>
+              )}
+
+              <button
+                type="submit"
+                disabled={state === "submitting"}
+                className="btn-primary w-full justify-center"
+              >
+                {state === "submitting" ? (
+                  <span className="flex items-center gap-2">
+                    <span className="loader-pulse" />
+                    Subscribing...
+                  </span>
+                ) : (
+                  "Notify Me"
+                )}
+              </button>
+            </form>
+          )}
+
+          <p className="mt-4 text-xs text-gray-500">
+            No spam. Unsubscribe anytime. We'll only email you when new singles join your area.
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Home Page
 // ---------------------------------------------------------------------------
 function Home() {
@@ -592,6 +735,11 @@ function Home() {
           </div>
         </div>
       </section>
+
+      {/* ─────────────────────────────────────────────────────────────
+          3.5. WAITLIST — "Get notified when singles join your area"
+          ───────────────────────────────────────────────────────────── */}
+      <WaitlistSection />
 
       {/* ─────────────────────────────────────────────────────────────
           4. FREE PREVIEW GRADING (ELEVATED — above pricing)

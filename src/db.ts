@@ -199,6 +199,16 @@ export async function initTables(): Promise<void> {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `;
+
+  await sql()`
+    CREATE TABLE IF NOT EXISTS waitlist (
+      id SERIAL PRIMARY KEY,
+      email TEXT UNIQUE NOT NULL,
+      zip_code TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      confirmed_at TIMESTAMPTZ
+    )
+  `;
 }
 
 // ── Types ──────────────────────────────────────────────────────
@@ -1269,5 +1279,44 @@ export async function applyReferralReward(rewardId: number): Promise<void> {
   // Mark reward as applied
   await sql()`
     UPDATE referral_rewards SET applied = true WHERE id = ${r.id}
+  `;
+}
+
+// ── Waitlist ──────────────────────────────────────────────────────
+
+export interface WaitlistEntry {
+  id: number;
+  email: string;
+  zip_code: string | null;
+  created_at: string;
+  confirmed_at: string | null;
+}
+
+export async function joinWaitlist(
+  email: string,
+  zipCode?: string,
+): Promise<WaitlistEntry | null> {
+  try {
+    const rows = await sql()`
+      INSERT INTO waitlist (email, zip_code)
+      VALUES (${email}, ${zipCode || null})
+      ON CONFLICT (email) DO NOTHING
+      RETURNING *
+    `;
+    if (rows.length > 0) {
+      return rows[0] as unknown as WaitlistEntry;
+    }
+    // Email already exists — return null (but not an error, to avoid leaking data)
+    return null;
+  } catch {
+    // Gracefully handle any DB errors
+    return null;
+  }
+}
+
+export async function confirmWaitlistEntry(email: string): Promise<void> {
+  await sql()`
+    UPDATE waitlist SET confirmed_at = NOW()
+    WHERE email = ${email}
   `;
 }
