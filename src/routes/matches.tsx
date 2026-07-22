@@ -50,6 +50,10 @@ function MatchesPage() {
   // Photo carousel state
   const [photoIndex, setPhotoIndex] = useState(0);
 
+  // Daily likes state
+  const [likesRemaining, setLikesRemaining] = useState<number | "unlimited" | null>(null);
+  const [showLikesLimitOverlay, setShowLikesLimitOverlay] = useState(false);
+
   // Report state
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportReason, setReportReason] = useState("");
@@ -111,6 +115,22 @@ function MatchesPage() {
     }
   }, [user]);
 
+  const fetchLikesRemaining = useCallback(async () => {
+    try {
+      const res = await fetch("/api/likes/remaining");
+      const data = await res.json();
+      setLikesRemaining(data.remaining);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    if (user) {
+      fetchLikesRemaining();
+    }
+  }, [user]);
+
   const handleLike = async () => {
     const current = matches[currentIdx];
     if (!current) return;
@@ -123,6 +143,16 @@ function MatchesPage() {
         body: JSON.stringify({ liked_id: current.id }),
       });
       const data = await res.json();
+
+      if (!res.ok && data.code === "DAILY_LIMIT") {
+        setAnimState(null);
+        setShowLikesLimitOverlay(true);
+        setLikesRemaining(0);
+        return;
+      }
+
+      // Refresh likes remaining
+      fetchLikesRemaining();
 
       if (data.matched) {
         setMatchCelebration({
@@ -198,6 +228,26 @@ function MatchesPage() {
   return (
     <div className="mx-auto max-w-lg px-4 py-8">
       <SubscriptionBanner />
+
+      {/* Likes remaining badge */}
+      {likesRemaining !== null && (
+        <div className="flex justify-center mb-4">
+          {likesRemaining === "unlimited" ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-500/10 px-3 py-1 text-xs font-medium text-rose-400 border border-rose-500/20">
+              Unlimited likes ❤️
+            </span>
+          ) : likesRemaining === 0 ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-400 border border-amber-500/20">
+              0 likes remaining —{" "}
+              <a href="/subscribe" className="underline hover:text-amber-300">Subscribe for unlimited</a>
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-gray-800 px-3 py-1 text-xs font-medium text-gray-400 border border-gray-700">
+              {likesRemaining} like{likesRemaining !== 1 ? "s" : ""} remaining today
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Header */}
       <div className="mb-8 text-center">
@@ -577,6 +627,34 @@ function MatchesPage() {
                 className="btn-secondary justify-center"
               >
                 Keep swiping
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Daily Likes Limit Overlay */}
+      {showLikesLimitOverlay && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="mx-4 w-full max-w-sm animate-[bounceIn_0.5s_ease-out] rounded-2xl bg-gray-900 p-8 text-center shadow-2xl">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-amber-500/10">
+              <svg className="h-8 w-8 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            </div>
+            <h2 className="text-xl font-bold">You're out of likes!</h2>
+            <p className="mt-2 text-sm text-gray-400">
+              You've used all your likes for today. Subscribe for $5.99/mo to get unlimited likes.
+            </p>
+            <div className="mt-6 flex flex-col gap-3">
+              <a href="/subscribe" className="btn-primary justify-center">
+                Subscribe for $5.99/mo
+              </a>
+              <button
+                onClick={() => setShowLikesLimitOverlay(false)}
+                className="btn-secondary justify-center"
+              >
+                Maybe later
               </button>
             </div>
           </div>
