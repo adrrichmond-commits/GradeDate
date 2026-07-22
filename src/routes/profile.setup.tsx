@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "~/auth-context";
 import { useRequireSubscription } from "~/subscription-guard";
 
@@ -16,6 +16,13 @@ const DISTANCE_OPTIONS = [
   { value: 250, label: "250 miles" },
 ];
 
+interface PhotoItem {
+  id: number;
+  photo_path: string;
+  sort_order: number;
+  is_primary: boolean;
+}
+
 function ProfileSetup() {
   const navigate = useNavigate();
   const { user, loading, refetch } = useAuth();
@@ -25,11 +32,11 @@ function ProfileSetup() {
   const [gender, setGender] = useState("");
   const [lookingFor, setLookingFor] = useState("");
   const [bio, setBio] = useState("");
-  const [photoFile, setPhotoFile] = useState<File | null>(null);
-  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [uploadingIdx, setUploadingIdx] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   // Location fields
   const [zipCode, setZipCode] = useState("");
@@ -43,12 +50,26 @@ function ProfileSetup() {
   } | null>(null);
   const [locationError, setLocationError] = useState("");
 
+  // Refs to avoid stale closures in file input handlers
+  const fileInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+
   // Redirect to login if not authenticated
   useEffect(() => {
     if (!loading && !user) {
       navigate({ to: "/login" });
     }
   }, [loading, user]);
+
+  // Load photos from user
+  useEffect(() => {
+    if (user?.photos) {
+      setPhotos([...user.photos].sort((a, b) => {
+        if (a.is_primary) return -1;
+        if (b.is_primary) return 1;
+        return a.sort_order - b.sort_order;
+      }));
+    }
+  }, [user]);
 
   // Pre-fill location if user already has it set
   useEffect(() => {
@@ -60,7 +81,6 @@ function ProfileSetup() {
           city: user.location_city,
           state: user.location_state,
         });
-        // Try to reconstruct ZIP from existing data if available
         setZipCode(user.location_city ? "" : "");
       }
       if (user.max_distance) {
@@ -88,19 +108,12 @@ function ProfileSetup() {
     return null;
   }
 
-  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setPhotoFile(file);
-    setPhotoPreview(URL.createObjectURL(file));
-  };
-
-  const handleUploadPhoto = async (): Promise<string | null> => {
-    if (!photoFile) return null;
-    setUploading(true);
+  const handleUploadToSlot = async (slotIndex: number, file: File) => {
+    setUploadingIdx(slotIndex);
+    setError("");
     try {
       const formData = new FormData();
-      formData.append("photo", photoFile);
+      formData.append("photo", file);
       const res = await fetch("/api/upload", {
         method: "POST",
         body: formData,
@@ -108,14 +121,60 @@ function ProfileSetup() {
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || "Upload failed");
-        return null;
+        return;
       }
-      return data.photo_path;
+      // Append the returned photo to the grid
+      const newPhoto: PhotoItem = data.photo;
+      setPhotos((prev) => [...prev, newPhoto]);
     } catch {
       setError("Photo upload failed. Please try again.");
-      return null;
     } finally {
-      setUploading(false);
+      setUploadingIdx(null);
+    }
+  };
+
+  const handleDeletePhoto = async (photoId: number) => {
+    setDeletingId(photoId);
+    setError("");
+    try {
+      const res = await fetch(`/api/photos/${photoId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setError(data?.error || "Failed to delete photo");
+        return;
+      }
+      setPhotos((prev) => prev.filter((p) => p.id !== photoId));
+    } catch {
+      setError("Failed to delete photo. Please try again.");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleSetPrimary = async (photoId: number) => {
+    setError("");
+    try {
+      const res = await fetch(`/api/photos/${photoId}/primary`, {
+        method: "PUT",
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setError(data?.error || "Failed to set primary photo");
+        return;
+      }
+      setPhotos((prev) =>
+        prev
+          .map((p) => ({ ...p, is_primary: p.id === photoId }))
+          .sort((a, b) => {
+            if (a.is_primary) return -1;
+            if (b.is_primary) return 1;
+            return a.sort_order - b.sort_order;
+          })
+      );
+    } catch {
+      setError("Network error. Please try again.");
     }
   };
 
@@ -176,27 +235,16 @@ function ProfileSetup() {
 
     setSubmitting(true);
 
-    // Upload photo first if one was selected
-    let photoPath = user.photo_path;
-    if (photoFile) {
-      const uploadedPath = await handleUploadPhoto();
-      if (uploadedPath) {
-        photoPath = uploadedPath;
-      } else {
-        setSubmitting(false);
-        return;
-      }
-    }
-
     // Save profile via API
     try {
+      const primaryPhoto = photos.find((p) => p.is_primary);
       const payload: Record<string, unknown> = {
         display_name: displayName.trim(),
         age: ageNum,
         gender,
         looking_for: lookingFor,
         bio: bio.trim(),
-        photo_path: photoPath,
+        photo_path: primaryPhoto?.photo_path || user.photo_path || "",
         max_distance: maxDistance,
       };
 
@@ -228,6 +276,9 @@ function ProfileSetup() {
     }
   };
 
+  const totalSlots = 6;
+  const photoCount = photos.length;
+
   return (
     <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center px-4 py-8">
       <div className="w-full max-w-lg">
@@ -237,7 +288,7 @@ function ProfileSetup() {
           </span>
           <h1 className="text-3xl font-bold">Set Up Your Profile</h1>
           <p className="mt-2 text-gray-400">
-            Tell us about yourself and upload a selfie for grading.
+            Tell us about yourself and upload photos for grading.
           </p>
         </div>
 
@@ -249,53 +300,109 @@ function ProfileSetup() {
               </div>
             )}
 
-            {/* Photo Upload */}
+            {/* ── Multi-Photo Grid (3×2) ── */}
             <div>
-              <label className="mb-2 block text-sm font-medium text-gray-300">
-                Profile Photo (Selfie for Grading)
+              <label className="mb-3 block text-sm font-medium text-gray-300">
+                Photos ({photoCount}/6)
               </label>
-              <div className="flex items-center gap-4">
-                {photoPreview ? (
-                  <img
-                    src={photoPreview}
-                    alt="Preview"
-                    className="h-24 w-24 rounded-full object-cover ring-3 ring-rose-500/15 ring-offset-2 ring-offset-gray-950"
-                  />
-                ) : user.photo_path ? (
-                  <img
-                    src={user.photo_path}
-                    alt="Current"
-                    className="h-24 w-24 rounded-full object-cover ring-3 ring-rose-500/15 ring-offset-2 ring-offset-gray-950"
-                  />
-                ) : (
-                  <div className="flex h-24 w-24 items-center justify-center rounded-full bg-gray-800 text-gray-500">
-                    <svg
-                      className="h-10 w-10"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
+              <div className="grid grid-cols-3 gap-3">
+                {Array.from({ length: totalSlots }).map((_, i) => {
+                  const photo = photos[i] || null;
+                  const isPlaceholder = i >= photoCount;
+
+                  if (isPlaceholder) {
+                    return (
+                      <label
+                        key={`slot-${i}`}
+                        className="relative flex aspect-[3/4] cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-600 bg-gray-800/50 transition hover:border-rose-500/50 hover:bg-gray-800"
+                      >
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          ref={(el) => {
+                            fileInputRefs.current[i] = el;
+                          }}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              handleUploadToSlot(i, file);
+                            }
+                            // Reset so the same file can be re-selected
+                            e.target.value = "";
+                          }}
+                        />
+                        <svg
+                          className="mb-1 h-6 w-6 text-gray-500"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M12 4v16m8-8H4"
+                          />
+                        </svg>
+                        <span className="text-xs text-gray-500">Add Photo</span>
+                      </label>
+                    );
+                  }
+
+                  return (
+                    <div
+                      key={photo!.id}
+                      className="relative aspect-[3/4] overflow-hidden rounded-xl bg-gray-800"
                     >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={1.5}
-                        d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"
-                      />
-                    </svg>
-                  </div>
-                )}
-                <label className="cursor-pointer rounded-lg border border-gray-600 px-4 py-2.5 text-sm text-gray-300 transition hover:border-rose-500/50 hover:text-white">
-                  {photoPreview || user.photo_path ? "Change Photo" : "Upload Selfie"}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handlePhotoChange}
-                    className="hidden"
-                  />
-                </label>
+                      {uploadingIdx === i ? (
+                        <div className="flex h-full w-full items-center justify-center">
+                          <div className="loader-pulse" />
+                        </div>
+                      ) : (
+                        <img
+                          src={photo!.photo_path}
+                          alt={`Photo ${i + 1}`}
+                          className="h-full w-full object-cover"
+                        />
+                      )}
+
+                      {/* Star badge (primary toggle) */}
+                      <button
+                        type="button"
+                        disabled={deletingId === photo!.id}
+                        onClick={() => handleSetPrimary(photo!.id)}
+                        className={`absolute left-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-black/50 text-sm transition hover:bg-black/70 ${
+                          photo!.is_primary
+                            ? "text-amber-400"
+                            : "text-gray-400"
+                        }`}
+                        title={photo!.is_primary ? "Primary photo" : "Set as primary"}
+                      >
+                        ★
+                      </button>
+
+                      {/* Delete button */}
+                      {deletingId === photo!.id ? (
+                        <div className="absolute right-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-black/50">
+                          <div className="h-3 w-3 animate-spin rounded-full border-2 border-red-400 border-t-transparent" />
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleDeletePhoto(photo!.id)}
+                          className="absolute right-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-black/50 text-xs text-white/80 transition hover:bg-red-500/70 hover:text-white"
+                          title="Remove photo"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
               <p className="mt-1.5 text-xs text-gray-500">
-                A clear face photo works best for accurate grading.
+                Upload up to 6 photos. Tap the ★ to set your primary photo.
               </p>
             </div>
 
@@ -486,14 +593,12 @@ function ProfileSetup() {
 
             <button
               type="submit"
-              disabled={submitting || uploading}
+              disabled={submitting || uploadingIdx !== null || deletingId !== null}
               className="w-full rounded-full bg-rose-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-rose-500 disabled:opacity-50"
             >
-              {uploading
-                ? "Uploading photo..."
-                : submitting
-                  ? "Saving..."
-                  : "Save Profile"}
+              {submitting
+                ? "Saving..."
+                : "Save Profile"}
             </button>
           </form>
         </div>

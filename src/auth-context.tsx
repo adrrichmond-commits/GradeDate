@@ -22,6 +22,7 @@ export interface SafeUser {
   location_city?: string;
   location_state?: string;
   distance_km?: number;
+  photos?: { id: number; photo_path: string; sort_order: number; is_primary: boolean }[];
 }
 
 interface AuthState {

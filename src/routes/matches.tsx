@@ -3,6 +3,13 @@ import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "~/auth-context";
 import { useRequireSubscription, SubscriptionBanner } from "~/subscription-guard";
 
+interface MatchPhoto {
+  id: number;
+  photo_path: string;
+  sort_order: number;
+  is_primary: boolean;
+}
+
 interface MatchProfile {
   id: number;
   display_name: string | null;
@@ -10,6 +17,7 @@ interface MatchProfile {
   gender: string | null;
   bio: string | null;
   photo_path: string | null;
+  photos?: MatchPhoto[];
   distance_km?: number;
 }
 
@@ -38,6 +46,9 @@ function MatchesPage() {
     match_id: number;
     other_user: { id: number; display_name: string | null; photo_path: string | null } | null;
   } | null>(null);
+
+  // Photo carousel state
+  const [photoIndex, setPhotoIndex] = useState(0);
 
   // Report state
   const [showReportModal, setShowReportModal] = useState(false);
@@ -86,6 +97,7 @@ function MatchesPage() {
       }
       setMatches(data.matches || []);
       setCurrentIdx(0);
+      setPhotoIndex(0);
     } catch {
       setError("Network error. Please try again.");
     } finally {
@@ -124,6 +136,7 @@ function MatchesPage() {
             setMatches([]);
           } else {
             setCurrentIdx((i) => i + 1);
+            setPhotoIndex(0);
           }
         }, 3000);
         return;
@@ -138,6 +151,7 @@ function MatchesPage() {
         setMatches([]);
       } else {
         setCurrentIdx((i) => i + 1);
+        setPhotoIndex(0);
       }
     }, 400);
   };
@@ -163,6 +177,7 @@ function MatchesPage() {
         setMatches([]);
       } else {
         setCurrentIdx((i) => i + 1);
+        setPhotoIndex(0);
       }
     }, 400);
   };
@@ -292,31 +307,100 @@ function MatchesPage() {
                 "0 0 20px 1px rgba(244,63,94,0.1), 0 0 40px 5px rgba(244,63,94,0.04)",
             }}
           >
-            {/* Photo */}
-            <div className="relative aspect-[3/4] w-full bg-gray-800">
-              {current.photo_path ? (
-                <img
-                  src={current.photo_path}
-                  alt={current.display_name || "Match"}
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-gray-600">
-                  <svg
-                    className="h-20 w-20"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={1.5}
-                      d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"
+            {/* Photo Carousel */}
+            <div className="relative aspect-[3/4] w-full bg-gray-800 overflow-hidden">
+              {(() => {
+                // Sort photos: primary first, then by sort_order
+                const photos = current.photos && current.photos.length > 0
+                  ? [...current.photos].sort((a, b) => {
+                      if (a.is_primary) return -1;
+                      if (b.is_primary) return 1;
+                      return a.sort_order - b.sort_order;
+                    })
+                  : null;
+
+                if (!photos && !current.photo_path) {
+                  return (
+                    <div className="flex h-full w-full items-center justify-center text-gray-600">
+                      <svg className="h-20 w-20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+                      </svg>
+                    </div>
+                  );
+                }
+
+                const photoUrls = photos
+                  ? photos.map((p) => p.photo_path)
+                  : current.photo_path
+                    ? [current.photo_path]
+                    : [];
+                const totalPhotos = photoUrls.length;
+                const idx = Math.min(photoIndex, totalPhotos - 1);
+
+                return (
+                  <>
+                    <img
+                      src={photoUrls[idx]}
+                      alt={current.display_name || "Match"}
+                      className="h-full w-full object-cover"
                     />
-                  </svg>
-                </div>
-              )}
+
+                    {/* Left/Right navigation arrows */}
+                    {totalPhotos > 1 && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPhotoIndex((prev) => (prev > 0 ? prev - 1 : totalPhotos - 1));
+                          }}
+                          className="absolute left-2 top-1/2 -translate-y-1/2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-black/40 text-white/80 transition hover:bg-black/60 hover:text-white"
+                          aria-label="Previous photo"
+                        >
+                          <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPhotoIndex((prev) => (prev < totalPhotos - 1 ? prev + 1 : 0));
+                          }}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-black/40 text-white/80 transition hover:bg-black/60 hover:text-white"
+                          aria-label="Next photo"
+                        >
+                          <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          </svg>
+                        </button>
+                      </>
+                    )}
+
+                    {/* Dots indicator */}
+                    {totalPhotos > 1 && (
+                      <div className="absolute bottom-20 left-0 right-0 z-10 flex justify-center gap-1.5">
+                        {photoUrls.map((_, i) => (
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPhotoIndex(i);
+                            }}
+                            className={`h-2 rounded-full transition-all ${
+                              i === idx
+                                ? "w-5 bg-white"
+                                : "w-2 bg-white/50 hover:bg-white/80"
+                            }`}
+                            aria-label={`Photo ${i + 1}`}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
 
               {/* Photo vignette overlay */}
               <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_40%,rgba(3,7,18,0.6)_100%)]" />
