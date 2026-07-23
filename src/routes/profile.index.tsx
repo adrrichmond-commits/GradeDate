@@ -26,7 +26,8 @@ interface PhotoItem {
 
 interface ReferralData {
   code: string;
-  usage_count: number;
+  uses: number;
+  max_uses: number;
   rewards_earned: number;
   share_url: string;
 }
@@ -100,8 +101,8 @@ function ReferralSection() {
       {/* Stats */}
       <div className="mb-5 grid grid-cols-2 gap-3">
         <div className="rounded-lg border border-amber-500/15 bg-amber-500/5 px-4 py-3 text-center">
-          <span className="text-2xl font-bold text-amber-400">{referralData.usage_count}</span>
-          <p className="text-xs text-gray-500">friends joined</p>
+          <span className="text-2xl font-bold text-amber-400">{referralData.uses}</span>
+          <p className="text-xs text-gray-500">of {referralData.max_uses} uses</p>
         </div>
         <div className="rounded-lg border border-amber-500/15 bg-amber-500/5 px-4 py-3 text-center">
           <span className="text-2xl font-bold text-amber-400">{referralData.rewards_earned}</span>

@@ -31,6 +31,7 @@ export interface SafeUser {
   green_flags: string | null;
   red_flags: string | null;
   obsessions: string | null;
+  is_founder: boolean;
   created_at: string;
   latitude?: number;
   longitude?: number;

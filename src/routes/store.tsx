@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState, type ReactNode } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { useAuth } from "~/auth-context";
 import { getCsrfToken } from "~/csrf-client";
 
@@ -106,6 +106,16 @@ function StorePage() {
   const [activating, setActivating] = useState<string | null>(null);
   const [activated, setActivated] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [foundersCount, setFoundersCount] = useState<{ count: number; remaining: number } | null>(null);
+  const [foundersCheckingOut, setFoundersCheckingOut] = useState(false);
+
+  // Fetch founders count on mount
+  useEffect(() => {
+    fetch("/api/founders/count")
+      .then((r) => r.json())
+      .then((data) => setFoundersCount(data))
+      .catch(() => {});
+  }, []);
 
   const handleActivate = async (product: Product) => {
     setActivating(product.id);
@@ -123,6 +133,27 @@ function StorePage() {
       setError("Network error. Please try again.");
     } finally {
       setActivating(null);
+    }
+  };
+
+  const handleFoundersCheckout = async () => {
+    setFoundersCheckingOut(true);
+    setError("");
+    try {
+      const res = await fetch("/api/founders/checkout", {
+        method: "POST",
+        headers: { "X-CSRF-Token": getCsrfToken() || "" },
+      });
+      const data = await res.json();
+      if (res.ok && data.url) {
+        window.location.href = data.url;
+      } else {
+        setError(data.error || "Failed to start checkout.");
+      }
+    } catch {
+      setError("Network error. Please try again.");
+    } finally {
+      setFoundersCheckingOut(false);
     }
   };
 
@@ -175,6 +206,95 @@ function StorePage() {
           >
             Log In
           </Link>
+        </div>
+      )}
+
+      {/* Founders Club Card */}
+      {user && (
+        <div className="mb-10">
+          <div className="card relative overflow-hidden border-amber-500/30 bg-gradient-to-br from-amber-500/10 via-gray-900 to-gray-950 p-8 shadow-lg shadow-amber-500/5 ring-1 ring-amber-500/20">
+            {/* Crown icon */}
+            <div className="absolute right-6 top-6 text-5xl opacity-20">👑</div>
+
+            <div className="relative z-10">
+              <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1 text-xs font-semibold text-amber-400">
+                👑 Limited — Only 1000 Spots
+              </div>
+              <h2 className="mt-3 text-2xl font-bold">Founders Club</h2>
+              <p className="mt-2 text-gray-400 max-w-xl">
+                Join the first 1000 members and unlock lifetime benefits. One-time purchase, permanent perks.
+              </p>
+
+              <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                <div className="flex items-start gap-2 text-sm">
+                  <span className="mt-0.5 text-amber-400">✓</span>
+                  <div>
+                    <span className="font-medium text-white">Unlimited Regrades</span>
+                    <p className="text-xs text-gray-500">Re-grade your photos anytime, forever</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2 text-sm">
+                  <span className="mt-0.5 text-amber-400">✓</span>
+                  <div>
+                    <span className="font-medium text-white">Founder Badge</span>
+                    <p className="text-xs text-gray-500">Permanent 👑 badge on your profile</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2 text-sm">
+                  <span className="mt-0.5 text-amber-400">✓</span>
+                  <div>
+                    <span className="font-medium text-white">Priority Visibility</span>
+                    <p className="text-xs text-gray-500">Your profile gets boosted permanently</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Claimed count */}
+              <div className="mt-5 flex items-center gap-4">
+                <div className="flex-1">
+                  <div className="h-2 rounded-full bg-gray-700">
+                    <div
+                      className="h-2 rounded-full bg-gradient-to-r from-amber-500 to-amber-400"
+                      style={{ width: `${foundersCount ? Math.min(100, (foundersCount.count / 1000) * 100) : 0}%` }}
+                    />
+                  </div>
+                  <p className="mt-1 text-xs text-gray-500">
+                    {foundersCount ? `${foundersCount.count} / 1000 claimed` : "Loading..."}
+                    {foundersCount ? ` — ${foundersCount.remaining} spots remaining` : ""}
+                  </p>
+                </div>
+
+                {user.is_founder ? (
+                  <div className="rounded-lg border border-green-500/20 bg-green-500/10 px-4 py-2 text-center">
+                    <span className="text-sm font-semibold text-green-400">👑 You're a Founder!</span>
+                  </div>
+                ) : (
+                  <button
+                    onClick={handleFoundersCheckout}
+                    disabled={foundersCheckingOut || (foundersCount !== null && foundersCount.count >= 1000)}
+                    className="rounded-full bg-gradient-to-r from-amber-500 to-amber-600 px-6 py-2.5 text-sm font-semibold text-black transition hover:from-amber-400 hover:to-amber-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {foundersCheckingOut ? (
+                      <span className="flex items-center gap-2">
+                        <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-black border-t-transparent" />
+                        Redirecting...
+                      </span>
+                    ) : foundersCount !== null && foundersCount.count >= 1000 ? (
+                      "Sold Out"
+                    ) : (
+                      "Join Founders Club →"
+                    )}
+                  </button>
+                )}
+              </div>
+
+              {!user.is_founder && (
+                <p className="mt-3 text-xs text-gray-500">
+                  Price set by our team. You'll be redirected to Stripe for secure payment.
+                </p>
+              )}
+            </div>
+          </div>
         </div>
       )}
 

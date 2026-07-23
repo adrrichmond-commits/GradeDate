@@ -134,6 +134,9 @@ export async function initTables(): Promise<void> {
   try {
     await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS obsessions TEXT`;
   } catch { /* ignore */ }
+  try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_founder BOOLEAN DEFAULT false`;
+  } catch { /* ignore */ }
 
   await sql()`
     CREATE TABLE IF NOT EXISTS sessions (
@@ -244,9 +247,15 @@ export async function initTables(): Promise<void> {
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       code TEXT UNIQUE NOT NULL,
       usage_count INTEGER DEFAULT 0,
+      max_uses INTEGER DEFAULT 1000,
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `;
+
+  // Add max_uses column if missing (migration)
+  try {
+    await sql()`ALTER TABLE referral_codes ADD COLUMN IF NOT EXISTS max_uses INTEGER DEFAULT 1000`;
+  } catch { /* ignore */ }
 
   await sql()`
     CREATE TABLE IF NOT EXISTS referral_rewards (
@@ -315,6 +324,7 @@ export interface User {
   green_flags: string | null;
   red_flags: string | null;
   obsessions: string | null;
+  is_founder: boolean;
   created_at: string;
 }
 
@@ -900,6 +910,11 @@ export function calculateCompatibility(
  */
 export async function getUserBadges(user: User): Promise<Badge[]> {
   const badges: Badge[] = [];
+
+  // founder → permanent badge for Founders Club members
+  if (user.is_founder) {
+    badges.push({ id: "founder", label: "Founder", emoji: "👑" });
+  }
 
   // verified → has display_name and photo_path (profile is set up)
   if (user.display_name && user.photo_path) {
@@ -1589,6 +1604,7 @@ export interface ReferralCode {
   user_id: number;
   code: string;
   usage_count: number;
+  max_uses: number;
   created_at: string;
 }
 
@@ -1607,7 +1623,7 @@ export interface ReferralStats {
   rewards_earned: number;
 }
 
-function generateRandomSuffix(length: number = 6): string {
+function generateRandomCode(length: number = 8): string {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   let result = "";
   for (let i = 0; i < length; i++) {
@@ -1625,18 +1641,11 @@ export async function generateReferralCode(userId: number): Promise<ReferralCode
     return existing[0] as unknown as ReferralCode;
   }
 
-  // Get the user's display name for the prefix
-  const user = await getUserById(userId);
-  const prefix = (user?.display_name || "USER")
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, "")
-    .slice(0, 12);
-
-  // Generate a unique code
+  // Generate a unique 8-char alphanumeric code (e.g. "GRD8XK2P")
   let code: string;
   let attempts = 0;
   do {
-    code = `${prefix}-${generateRandomSuffix()}`;
+    code = generateRandomCode();
     const dup = await sql()`SELECT id FROM referral_codes WHERE code = ${code}`;
     if (dup.length === 0) break;
     attempts++;
@@ -1675,6 +1684,11 @@ export async function applyReferralCode(
 
   if (referral.user_id === newUserId) {
     return { success: false, error: "You cannot use your own referral code" };
+  }
+
+  // Check max_uses cap (1000 total redemptions per code)
+  if (referral.usage_count >= referral.max_uses) {
+    return { success: false, error: "This referral code has reached its maximum uses" };
   }
 
   // Check if this referee was already referred by someone
@@ -1737,16 +1751,18 @@ export async function applyReferralReward(rewardId: number): Promise<void> {
   const r = reward[0] as unknown as ReferralReward;
   if (r.applied) return;
 
-  // Extend referrer's subscription by 1 month
+  // Give referrer 1 month of premium — set to active and extend
   await sql()`
     UPDATE users SET
+      subscription_status = 'active',
       subscription_expires_at = COALESCE(subscription_expires_at, NOW()) + INTERVAL '1 month'
     WHERE id = ${r.referrer_user_id}
   `;
 
-  // Extend referee's subscription by 1 month
+  // Give referee 1 month of premium — set to active and extend
   await sql()`
     UPDATE users SET
+      subscription_status = 'active',
       subscription_expires_at = COALESCE(subscription_expires_at, NOW()) + INTERVAL '1 month'
     WHERE id = ${r.referee_user_id}
   `;
@@ -1754,6 +1770,22 @@ export async function applyReferralReward(rewardId: number): Promise<void> {
   // Mark reward as applied
   await sql()`
     UPDATE referral_rewards SET applied = true WHERE id = ${r.id}
+  `;
+}
+
+// ── Founders Club ──────────────────────────────────────────────
+
+export async function getFounderCount(): Promise<number> {
+  const rows = await sql()`
+    SELECT COUNT(*)::int AS cnt FROM users WHERE is_founder = true
+  `;
+  return rows.length > 0 ? (rows[0] as { cnt: number }).cnt : 0;
+}
+
+export async function setFounder(userId: number): Promise<void> {
+  await sql()`
+    UPDATE users SET is_founder = true, regrades_available = 999999
+    WHERE id = ${userId}
   `;
 }
 
