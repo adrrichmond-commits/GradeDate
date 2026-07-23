@@ -286,11 +286,16 @@ function Signup() {
                 value={referralCode}
                 onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
                 className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-gray-100 placeholder-gray-500 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
-                placeholder="e.g. SARAH-X7K2MP"
+                placeholder="e.g. GRD8XK2P"
               />
               {referralCode && (
                 <p className="mt-1 text-xs text-amber-400">
-                  🎁 You and your friend will both get a free month when you subscribe!
+                  🎁 You and your friend will both get 1 month free when you subscribe!
+                </p>
+              )}
+              {search.ref && !referralCode && (
+                <p className="mt-1 text-xs text-green-400">
+                  🎉 You've been invited! Enter the code above to claim your free month.
                 </p>
               )}
             </div>

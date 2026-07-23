@@ -945,6 +945,17 @@ function Home() {
           ───────────────────────────────────────────────────────────── */}
       <section className="px-4 py-24">
         <div className="mx-auto max-w-2xl text-center">
+          {/* Founders Club subtle mention */}
+          <div className="mb-8 inline-flex items-center gap-2 rounded-full border border-amber-500/20 bg-amber-500/10 px-4 py-2">
+            <span>👑</span>
+            <span className="text-sm text-amber-400">
+              <Link to="/store" className="font-semibold underline hover:text-amber-300">
+                Join the Founders Club
+              </Link>
+              {" "}— first 1000 members get lifetime benefits
+            </span>
+          </div>
+
           <div className="card border-purple-500/20 bg-gradient-to-br from-purple-500/5 to-rose-500/5 p-12">
             <h2 className="mb-4 text-3xl font-bold sm:text-4xl">
               Ready to build a better dating profile?

@@ -67,6 +67,8 @@ import {
   updateLastFreeRegrade,
   joinWaitlist,
   getUserBadges,
+  getFounderCount,
+  setFounder,
   type User,
   type UserPhoto,
   type PhotoGrade,
@@ -1745,6 +1747,15 @@ async function handleStripeWebhook(req: Request): Promise<Response> {
           break;
         }
 
+        // Check if this is a Founders Club purchase
+        if (session.metadata?.product === "founders_club") {
+          await setFounder(user.id);
+          console.log(
+            `Founders Club activated for user ${user.id} (${customerEmail})`,
+          );
+          break;
+        }
+
         if (customerId && subscriptionId) {
           await updateUserStripeInfo(user.id, customerId, subscriptionId);
           console.log(
@@ -2042,7 +2053,8 @@ async function handleGetReferralCode(req: Request): Promise<Response> {
 
   return json({
     code: code.code,
-    usage_count: stats?.usage_count ?? 0,
+    uses: stats?.usage_count ?? 0,
+    max_uses: code.max_uses ?? 1000,
     rewards_earned: stats?.rewards_earned ?? 0,
     share_url: `https://gradedate.app/signup?ref=${code.code}`,
   });
@@ -2067,6 +2079,54 @@ async function handleApplyReferralCode(req: Request): Promise<Response> {
   }
 
   return json({ success: true, message: "Referral code applied! You'll both get a free month when you subscribe." });
+}
+
+// ── Founders Club ────────────────────────────────────────────────
+
+async function handleFoundersCheckout(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+
+  // Check if already a founder
+  if (user.is_founder) {
+    return json({ error: "You are already a Founders Club member!" }, 400);
+  }
+
+  // Check the 1000 cap
+  const count = await getFounderCount();
+  if (count >= 1000) {
+    return json({ error: "Sorry, all 1000 Founders Club spots have been claimed." }, 400);
+  }
+
+  const stripe = getStripe();
+  if (!stripe) {
+    return json({ error: "Stripe is not configured" }, 500);
+  }
+
+  // Founders Club product price ID — placeholder, change in Stripe dashboard
+  const foundersPriceId = process.env.FOUNDERS_CLUB_PRICE_ID || "price_placeholder";
+
+  const session = await stripe.checkout.sessions.create({
+    mode: "payment",
+    line_items: [{ price: foundersPriceId, quantity: 1 }],
+    success_url: "https://gradedate.app/store?founders=success",
+    cancel_url: "https://gradedate.app/store?founders=canceled",
+    client_reference_id: String(user.id),
+    customer_email: user.email,
+    metadata: {
+      user_id: String(user.id),
+      product: "founders_club",
+    },
+  });
+
+  return json({ url: session.url });
+}
+
+async function handleFoundersCount(_req: Request): Promise<Response> {
+  const count = await getFounderCount();
+  return json({ count, remaining: Math.max(0, 1000 - count) });
 }
 
 // ── Waitlist ────────────────────────────────────────────────────
@@ -2308,6 +2368,16 @@ export async function handleApiRoute(
     return handleActivateLikePack(req);
   }
 
+  // Founders Club
+  if (pathname === "/api/founders/checkout" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
+    return handleFoundersCheckout(req);
+  }
+  if (pathname === "/api/founders/count" && method === "GET") {
+    return handleFoundersCount(req);
+  }
+
   // Liked Me
   if (pathname === "/api/matches/liked-me" && method === "GET") {
     return handleLikedMe(req);
@@ -2335,6 +2405,9 @@ export async function handleApiRoute(
 
   // Referral
   if (pathname === "/api/referral/code" && method === "GET") {
+    return handleGetReferralCode(req);
+  }
+  if (pathname === "/api/referral-code" && method === "GET") {
     return handleGetReferralCode(req);
   }
   if (pathname === "/api/referral/apply" && method === "POST") {
