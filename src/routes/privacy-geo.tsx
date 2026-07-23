@@ -19,6 +19,11 @@ function GeoPrivacy() {
             city, state, and approximate geographic coordinates (latitude and longitude).
             This data is stored on your profile to enable location-based matching.
           </p>
+          <p className="mt-3">
+            We may determine your approximate city from your IP address when you visit our
+            landing page. This helps us show you relevant options (e.g., whether our service
+            is available in your area). This data is processed by ip-api.com and is not stored.
+          </p>
         </section>
 
         <section>

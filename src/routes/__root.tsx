@@ -152,8 +152,22 @@ function AppShell() {
   const [showPushPrompt, setShowPushPrompt] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Cookie helper
+  function getCookie(name: string): string | null {
+    if (typeof document === "undefined") return null;
+    const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
+    return match ? decodeURIComponent(match[1]) : null;
+  }
+
+  function setCookie(name: string, value: string, days: number) {
+    if (typeof document === "undefined") return;
+    const d = new Date();
+    d.setTime(d.getTime() + days * 86400000);
+    document.cookie = `${name}=${encodeURIComponent(value)}; expires=${d.toUTCString()}; path=/; SameSite=Lax`;
+  }
+
   useEffect(() => {
-    if (typeof window !== "undefined" && !localStorage.getItem("gd-cookie-consent")) {
+    if (typeof window !== "undefined" && !getCookie("cookie_consent")) {
       setCookieConsent(false);
     }
   }, []);
@@ -185,7 +199,7 @@ function AppShell() {
   }, [user, pushPermission, pushSubscribed]);
 
   const acceptCookies = () => {
-    localStorage.setItem("gd-cookie-consent", "1");
+    setCookie("cookie_consent", "1", 365);
     setCookieConsent(true);
   };
 
@@ -346,55 +360,67 @@ function AppShell() {
             All rights reserved.
           </span>
           <div className="flex flex-wrap gap-x-6 gap-y-2">
+            <Link to="/terms" className="transition hover:text-gray-300">
+              Terms of Service
+            </Link>
             <Link to="/privacy" className="transition hover:text-gray-300">
-              Privacy
+              Privacy Policy
             </Link>
             <Link to="/cookies" className="transition hover:text-gray-300">
-              Cookies
-            </Link>
-            <Link to="/terms" className="transition hover:text-gray-300">
-              Terms
-            </Link>
-            <Link to="/refund" className="transition hover:text-gray-300">
-              Refund
-            </Link>
-            <Link to="/rules" className="transition hover:text-gray-300">
-              Rules
+              Cookie Policy
             </Link>
             <Link to="/safety" className="transition hover:text-gray-300">
-              Safety
+              Safety Tips
+            </Link>
+            <Link to="/refund" className="transition hover:text-gray-300">
+              Refund Policy
+            </Link>
+            <Link to="/rules" className="transition hover:text-gray-300">
+              Community Rules
             </Link>
             <Link to="/dmca" className="transition hover:text-gray-300">
               DMCA
             </Link>
-            <Link to="/data" className="transition hover:text-gray-300">
-              Data
-            </Link>
             <Link to="/accessibility" className="transition hover:text-gray-300">
               Accessibility
             </Link>
-            <a href="mailto:support@gradedate.app" className="transition hover:text-gray-300">
-              Contact
-            </a>
+            <Link to="/data" className="transition hover:text-gray-300">
+              Data Rights
+            </Link>
+            <Link to="/legal" className="transition hover:text-gray-300">
+              Law Enforcement
+            </Link>
           </div>
         </div>
       </footer>
 
       {/* Cookie Consent Banner */}
       {!cookieConsent && (
-        <div className="fixed bottom-0 inset-x-0 z-50 border-t border-white/10 bg-gray-900/95 backdrop-blur-md px-4 py-4">
-          <div className="mx-auto max-w-6xl flex flex-col sm:flex-row items-center justify-between gap-3">
-            <p className="text-sm text-gray-300">
-              GradeDate uses session cookies for authentication only. No tracking, no ads.
-              By continuing, you agree to our{" "}
-              <Link to="/privacy" className="text-rose-400 underline hover:text-rose-300">Privacy Policy</Link>.
-            </p>
-            <button
-              onClick={acceptCookies}
-              className="rounded-full bg-rose-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-rose-500 shrink-0"
-            >
-              Got it
-            </button>
+        <div className="fixed bottom-0 inset-x-0 z-50 border-t border-rose-500/30 bg-gradient-to-r from-rose-500/10 to-rose-600/5 backdrop-blur-md px-4 py-4">
+          <div className="mx-auto max-w-6xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-white">
+                We use essential cookies for security and sessions.
+              </p>
+              <p className="text-xs text-gray-400 mt-0.5">
+                See our{" "}
+                <Link to="/cookies" className="text-rose-400 underline hover:text-rose-300">cookie policy</Link>.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Link
+                to="/cookies"
+                className="text-sm text-gray-400 hover:text-white transition px-2 py-1"
+              >
+                Cookie Policy
+              </Link>
+              <button
+                onClick={acceptCookies}
+                className="rounded-full bg-rose-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-rose-500 hover:scale-105 active:scale-95 shrink-0"
+              >
+                Got it
+              </button>
+            </div>
           </div>
         </div>
       )}
