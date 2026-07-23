@@ -85,6 +85,15 @@ export async function initTables(): Promise<void> {
     await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_likes_reset_at TEXT`;
   } catch { /* ignore */ }
   try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_free_regrade_at TIMESTAMPTZ`;
+  } catch { /* ignore */ }
+  try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS percentile REAL`;
+  } catch { /* ignore */ }
+  try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS percentile_city TEXT`;
+  } catch { /* ignore */ }
+  try {
     await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS like_packs INTEGER DEFAULT 0`;
   } catch { /* ignore */ }
 
@@ -180,6 +189,18 @@ export async function initTables(): Promise<void> {
   `;
 
   await sql()`
+    CREATE TABLE IF NOT EXISTS photo_grades (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      photo_path TEXT NOT NULL,
+      grade INTEGER NOT NULL,
+      feedback TEXT NOT NULL DEFAULT '',
+      is_best BOOLEAN DEFAULT false,
+      graded_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `;
+
+  await sql()`
     CREATE TABLE IF NOT EXISTS referral_codes (
       id SERIAL PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -240,6 +261,9 @@ export interface User {
   location_state: string | null;
   daily_likes_remaining: number;
   daily_likes_reset_at: string | null;
+  last_free_regrade_at: string | null;
+  percentile: number | null;
+  percentile_city: string | null;
   like_packs: number;
   created_at: string;
 }
@@ -257,6 +281,16 @@ export interface UserPhoto {
   sort_order: number;
   is_primary: boolean;
   created_at: string;
+}
+
+export interface PhotoGrade {
+  id: number;
+  user_id: number;
+  photo_path: string;
+  grade: number;
+  feedback: string;
+  is_best: boolean;
+  graded_at: string;
 }
 
 export interface MatchUser {
@@ -455,6 +489,109 @@ export async function getUserPhotoCount(userId: number): Promise<number> {
     SELECT COUNT(*)::int AS cnt FROM user_photos WHERE user_id = ${userId}
   `;
   return rows.length > 0 ? Number((rows[0] as { cnt: number }).cnt) : 0;
+}
+
+// ── Photo Grades ──────────────────────────────────────────────
+
+export async function insertPhotoGrades(
+  userId: number,
+  grades: { photo_path: string; grade: number; feedback: string; is_best: boolean }[],
+): Promise<PhotoGrade[]> {
+  // Delete existing grades for this user first
+  await sql()`DELETE FROM photo_grades WHERE user_id = ${userId}`;
+
+  // Insert new grades
+  const result: PhotoGrade[] = [];
+  for (const g of grades) {
+    const rows = await sql()`
+      INSERT INTO photo_grades (user_id, photo_path, grade, feedback, is_best)
+      VALUES (${userId}, ${g.photo_path}, ${g.grade}, ${g.feedback}, ${g.is_best})
+      RETURNING *
+    `;
+    result.push(rows[0] as unknown as PhotoGrade);
+  }
+  return result;
+}
+
+export async function getPhotoGrades(userId: number): Promise<PhotoGrade[]> {
+  const rows = await sql()`
+    SELECT * FROM photo_grades WHERE user_id = ${userId}
+    ORDER BY grade DESC
+  `;
+  return rows as unknown as PhotoGrade[];
+}
+
+export async function getBestPhotoGrade(userId: number): Promise<PhotoGrade | null> {
+  const rows = await sql()`
+    SELECT * FROM photo_grades WHERE user_id = ${userId} AND is_best = true
+    LIMIT 1
+  `;
+  return rows.length > 0 ? (rows[0] as unknown as PhotoGrade) : null;
+}
+
+// ── Percentile ────────────────────────────────────────────────
+
+export async function calculatePercentile(userId: number): Promise<{
+  percentile: number;
+  percentile_city: string;
+  bestGrade: number;
+} | null> {
+  // Get the user's location city/state and best grade
+  const user = await getUserById(userId);
+  if (!user || !user.location_city) return null;
+
+  const best = await getBestPhotoGrade(userId);
+  if (!best) return null;
+
+  const cityName = user.location_state
+    ? `${user.location_city}, ${user.location_state}`
+    : user.location_city;
+
+  // Count users in the same city who have a percentile/grade
+  const totalRows = await sql()`
+    SELECT COUNT(*)::int AS cnt FROM users
+    WHERE location_city = ${user.location_city}
+      AND percentile IS NOT NULL
+      AND id != ${userId}
+  `;
+  const totalInCity = (totalRows[0] as { cnt: number }).cnt;
+
+  // Need at least 10 users in the city (including this user)
+  if (totalInCity < 9) return null;
+
+  // Count how many users have a lower or equal grade
+  const lowerRows = await sql()`
+    SELECT COUNT(*)::int AS cnt FROM users
+    WHERE location_city = ${user.location_city}
+      AND percentile IS NOT NULL
+      AND id != ${userId}
+      AND percentile <= ${best.grade}
+  `;
+  const lowerOrEqual = (lowerRows[0] as { cnt: number }).cnt;
+
+  // Percentile: what percentage of users you rank above
+  // (lowerOrEqual / totalInCity) * 100
+  const percentile = Math.round((lowerOrEqual / totalInCity) * 1000) / 10;
+
+  return { percentile, percentile_city: cityName, bestGrade: best.grade };
+}
+
+export async function updateUserPercentile(
+  userId: number,
+  percentile: number,
+  percentileCity: string,
+): Promise<void> {
+  await sql()`
+    UPDATE users SET percentile = ${percentile}, percentile_city = ${percentileCity}
+    WHERE id = ${userId}
+  `;
+}
+
+export async function updateLastFreeRegrade(userId: number): Promise<void> {
+  await sql()`
+    UPDATE users SET last_free_regrade_at = NOW()
+    WHERE id = ${userId}
+  `;
 }
 
 // ── Session queries ───────────────────────────────────────────
@@ -949,6 +1086,8 @@ export async function reportUser(reporterId: number, reportedId: number, reason:
 export async function deleteUserAccount(userId: number): Promise<void> {
   // Delete from user_photos
   await sql()`DELETE FROM user_photos WHERE user_id = ${userId}`;
+  // Delete from photo_grades
+  await sql()`DELETE FROM photo_grades WHERE user_id = ${userId}`;
   // Delete from blocks where user is involved
   await sql()`DELETE FROM blocks WHERE blocker_id = ${userId} OR blocked_id = ${userId}`;
   // Delete from reports where user is involved
