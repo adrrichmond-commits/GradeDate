@@ -22,6 +22,15 @@ export interface SafeUser {
   communication_style: string | null;
   lifestyle: string | null;
   dating_goals: string | null;
+  college: string | null;
+  occupation: string | null;
+  hobbies: string | null;
+  height: string | null;
+  pronouns: string | null;
+  ideal_first_date: string | null;
+  green_flags: string | null;
+  red_flags: string | null;
+  obsessions: string | null;
   created_at: string;
   latitude?: number;
   longitude?: number;
@@ -30,6 +39,7 @@ export interface SafeUser {
   location_state?: string;
   distance_km?: number;
   photos?: { id: number; photo_path: string; sort_order: number; is_primary: boolean }[];
+  badges?: { id: string; label: string; emoji: string }[];
 }
 
 interface AuthState {

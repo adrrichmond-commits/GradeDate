@@ -66,9 +66,11 @@ import {
   updateUserPercentile,
   updateLastFreeRegrade,
   joinWaitlist,
+  getUserBadges,
   type User,
   type UserPhoto,
   type PhotoGrade,
+  type Badge,
 } from "../src/db.ts";
 import { sendPasswordResetEmail } from "../src/email.ts";
 import { sendWaitlistConfirmation } from "../src/email.ts";
@@ -324,7 +326,8 @@ async function handleMe(req: Request): Promise<Response> {
   }
   const safe = toSafeUser(user);
   const photos = await getUserPhotos(user.id);
-  let response = json({ user: { ...safe, photos } });
+  const badges = await getUserBadges(user);
+  let response = json({ user: { ...safe, photos, badges } });
 
   // Ensure CSRF cookie is set for existing sessions (login before CSRF was added)
   if (!getCsrfTokenFromRequest(req)) {
@@ -443,7 +446,7 @@ async function handleUpdateProfile(req: Request): Promise<Response> {
     return json({ error: "Invalid request body" }, 400);
   }
 
-  const { display_name, age, gender, looking_for, bio, photo_path, latitude, longitude, max_distance, location_city, location_state, communication_style, lifestyle, dating_goals } = body;
+  const { display_name, age, gender, looking_for, bio, photo_path, latitude, longitude, max_distance, location_city, location_state, communication_style, lifestyle, dating_goals, college, occupation, hobbies, height, pronouns, ideal_first_date, green_flags, red_flags, obsessions } = body;
 
   // Support partial updates: only validate fields that are explicitly provided
   if (display_name !== undefined && (!display_name || String(display_name).trim().length === 0)) {
@@ -476,11 +479,21 @@ async function handleUpdateProfile(req: Request): Promise<Response> {
     }
   }
 
-  // Profanity filter for bio
-  if (bio !== undefined && typeof bio === "string" && bio.trim().length > 0) {
-    const filterResult = filterMessage(bio.trim());
-    if (filterResult.blocked) {
-      return json({ error: "Bio contains inappropriate content" }, 400);
+  // Profanity filter for bio and expanded text fields
+  const textFieldsToFilter: Record<string, string | undefined> = {
+    bio: bio !== undefined && typeof bio === "string" ? bio.trim() : undefined,
+    hobbies: hobbies !== undefined && typeof hobbies === "string" ? hobbies.trim() : undefined,
+    ideal_first_date: ideal_first_date !== undefined && typeof ideal_first_date === "string" ? ideal_first_date.trim() : undefined,
+    green_flags: green_flags !== undefined && typeof green_flags === "string" ? green_flags.trim() : undefined,
+    red_flags: red_flags !== undefined && typeof red_flags === "string" ? red_flags.trim() : undefined,
+    obsessions: obsessions !== undefined && typeof obsessions === "string" ? obsessions.trim() : undefined,
+  };
+  for (const [fieldName, fieldValue] of Object.entries(textFieldsToFilter)) {
+    if (fieldValue && fieldValue.length > 0) {
+      const filterResult = filterMessage(fieldValue);
+      if (filterResult.blocked) {
+        return json({ error: `${fieldName.replace(/_/g, " ")} contains inappropriate content` }, 400);
+      }
     }
   }
 
@@ -500,6 +513,15 @@ async function handleUpdateProfile(req: Request): Promise<Response> {
     ...(communication_style !== undefined ? { communication_style: communication_style ? String(communication_style) : null } : {}),
     ...(lifestyle !== undefined ? { lifestyle: lifestyle ? String(lifestyle) : null } : {}),
     ...(dating_goals !== undefined ? { dating_goals: dating_goals ? String(dating_goals) : null } : {}),
+    ...(college !== undefined ? { college: college ? String(college) : null } : {}),
+    ...(occupation !== undefined ? { occupation: occupation ? String(occupation) : null } : {}),
+    ...(hobbies !== undefined ? { hobbies: hobbies ? String(hobbies) : null } : {}),
+    ...(height !== undefined ? { height: height ? String(height) : null } : {}),
+    ...(pronouns !== undefined ? { pronouns: pronouns ? String(pronouns) : null } : {}),
+    ...(ideal_first_date !== undefined ? { ideal_first_date: ideal_first_date ? String(ideal_first_date) : null } : {}),
+    ...(green_flags !== undefined ? { green_flags: green_flags ? String(green_flags) : null } : {}),
+    ...(red_flags !== undefined ? { red_flags: red_flags ? String(red_flags) : null } : {}),
+    ...(obsessions !== undefined ? { obsessions: obsessions ? String(obsessions) : null } : {}),
   });
 
   return json({ ok: true });
@@ -1036,6 +1058,43 @@ async function handleGetPercentile(req: Request): Promise<Response> {
 
 // ── Matching ─────────────────────────────────────────────────
 
+/**
+ * Compute badges for a MatchUser without extra DB calls.
+ * Uses available data on the MatchUser record.
+ */
+function computeMatchBadges(u: {
+  id: number;
+  display_name?: string | null;
+  photo_path?: string | null;
+  photos?: { is_primary?: boolean }[] | null;
+  communication_style?: string | null;
+  lifestyle?: string | null;
+  dating_goals?: string | null;
+  college?: string | null;
+  occupation?: string | null;
+  hobbies?: string | null;
+}): Badge[] {
+  const badges: Badge[] = [];
+
+  // verified → has display_name and photo_path
+  if (u.display_name && u.photo_path) {
+    badges.push({ id: "verified", label: "Verified", emoji: "✅" });
+  }
+
+  // best_photo → has photos array
+  if (u.photos && u.photos.length > 0) {
+    badges.push({ id: "best_photo", label: "Best Photo Picked", emoji: "📸" });
+  }
+
+  // profile_complete → has detailed profile info
+  const hasDetails = u.communication_style || u.lifestyle || u.dating_goals || u.college || u.occupation || u.hobbies;
+  if (hasDetails) {
+    badges.push({ id: "detailed", label: "Detailed Profile", emoji: "📝" });
+  }
+
+  return badges;
+}
+
 async function handleGetMatches(req: Request): Promise<Response> {
   const user = await getCurrentUser(req);
   if (!user) {
@@ -1071,8 +1130,18 @@ async function handleGetMatches(req: Request): Promise<Response> {
     communication_style: u.communication_style,
     lifestyle: u.lifestyle,
     dating_goals: u.dating_goals,
+    college: u.college,
+    occupation: u.occupation,
+    hobbies: u.hobbies,
+    height: u.height,
+    pronouns: u.pronouns,
+    ideal_first_date: u.ideal_first_date,
+    green_flags: u.green_flags,
+    red_flags: u.red_flags,
+    obsessions: u.obsessions,
     is_outside_range: u.is_outside_range || false,
     compatibility_score: u.compatibility_score ?? 0,
+    badges: computeMatchBadges(u),
     ...(u.distance_miles !== undefined && u.distance_miles !== null
       ? { distance_km: Math.round(u.distance_miles * 1.60934 * 10) / 10 }
       : {}),
