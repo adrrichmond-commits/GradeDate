@@ -33,6 +33,9 @@ function ProfileSetup() {
   const [gender, setGender] = useState("");
   const [lookingFor, setLookingFor] = useState("");
   const [bio, setBio] = useState("");
+  const [communicationStyle, setCommunicationStyle] = useState("");
+  const [lifestyle, setLifestyle] = useState("");
+  const [datingGoals, setDatingGoals] = useState("");
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -250,6 +253,9 @@ function ProfileSetup() {
         bio: bio.trim(),
         photo_path: primaryPhoto?.photo_path || user.photo_path || "",
         max_distance: maxDistance,
+        communication_style: communicationStyle || null,
+        lifestyle: lifestyle || null,
+        dating_goals: datingGoals || null,
       };
 
       if (locationResult) {
@@ -516,6 +522,71 @@ function ProfileSetup() {
                 className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-gray-100 placeholder-gray-500 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
                 placeholder="A few words about yourself..."
               />
+            </div>
+
+            {/* Communication Style */}
+            <div>
+              <label
+                htmlFor="communicationStyle"
+                className="mb-1.5 block text-sm font-medium text-gray-300"
+              >
+                Communication Style
+              </label>
+              <select
+                id="communicationStyle"
+                value={communicationStyle}
+                onChange={(e) => setCommunicationStyle(e.target.value)}
+                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-gray-100 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+              >
+                <option value="">Prefer not to say</option>
+                <option value="texter">I prefer texting</option>
+                <option value="caller">I prefer phone calls</option>
+                <option value="either">Either works</option>
+              </select>
+            </div>
+
+            {/* Lifestyle */}
+            <div>
+              <label
+                htmlFor="lifestyle"
+                className="mb-1.5 block text-sm font-medium text-gray-300"
+              >
+                Lifestyle
+              </label>
+              <select
+                id="lifestyle"
+                value={lifestyle}
+                onChange={(e) => setLifestyle(e.target.value)}
+                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-gray-100 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+              >
+                <option value="">Prefer not to say</option>
+                <option value="active">Active / Outdoorsy</option>
+                <option value="chill">Chill / Laid-back</option>
+                <option value="social">Social / Party</option>
+                <option value="homebody">Homebody / Cozy</option>
+              </select>
+            </div>
+
+            {/* Dating Goals */}
+            <div>
+              <label
+                htmlFor="datingGoals"
+                className="mb-1.5 block text-sm font-medium text-gray-300"
+              >
+                Dating Goals
+              </label>
+              <select
+                id="datingGoals"
+                value={datingGoals}
+                onChange={(e) => setDatingGoals(e.target.value)}
+                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-gray-100 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+              >
+                <option value="">Prefer not to say</option>
+                <option value="long_term">Long-term relationship</option>
+                <option value="casual">Casual dating</option>
+                <option value="still_figuring_it_out">Still figuring it out</option>
+                <option value="new_connections">New connections</option>
+              </select>
             </div>
 
             {/* Location Section */}

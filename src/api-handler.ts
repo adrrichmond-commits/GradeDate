@@ -10,6 +10,7 @@ import {
   updateUserStripeInfo,
   getUserByStripeCustomerId,
   getUsersByGradeRange,
+  getUsersWith8020Matching,
   recordLike,
   getLike,
   createSession,
@@ -442,7 +443,7 @@ async function handleUpdateProfile(req: Request): Promise<Response> {
     return json({ error: "Invalid request body" }, 400);
   }
 
-  const { display_name, age, gender, looking_for, bio, photo_path, latitude, longitude, max_distance, location_city, location_state } = body;
+  const { display_name, age, gender, looking_for, bio, photo_path, latitude, longitude, max_distance, location_city, location_state, communication_style, lifestyle, dating_goals } = body;
 
   // Support partial updates: only validate fields that are explicitly provided
   if (display_name !== undefined && (!display_name || String(display_name).trim().length === 0)) {
@@ -496,6 +497,9 @@ async function handleUpdateProfile(req: Request): Promise<Response> {
     ...(max_distance !== undefined ? { max_distance: Number(max_distance) } : {}),
     ...(location_city !== undefined ? { location_city: String(location_city) } : {}),
     ...(location_state !== undefined ? { location_state: String(location_state) } : {}),
+    ...(communication_style !== undefined ? { communication_style: communication_style ? String(communication_style) : null } : {}),
+    ...(lifestyle !== undefined ? { lifestyle: lifestyle ? String(lifestyle) : null } : {}),
+    ...(dating_goals !== undefined ? { dating_goals: dating_goals ? String(dating_goals) : null } : {}),
   });
 
   return json({ ok: true });
@@ -1044,10 +1048,9 @@ async function handleGetMatches(req: Request): Promise<Response> {
 
   const blockedIds = await getBlockedUserIds(user.id);
 
-  const users = await getUsersByGradeRange(
+  const users = await getUsersWith8020Matching(
+    user.id,
     user.grade,
-    user.grade - 1,
-    user.grade + 1,
     user.id,
     user.looking_for || "everyone",
     blockedIds,
@@ -1065,6 +1068,11 @@ async function handleGetMatches(req: Request): Promise<Response> {
     bio: u.bio,
     photo_path: u.photo_path,
     photos: u.photos || [],
+    communication_style: u.communication_style,
+    lifestyle: u.lifestyle,
+    dating_goals: u.dating_goals,
+    is_outside_range: u.is_outside_range || false,
+    compatibility_score: u.compatibility_score ?? 0,
     ...(u.distance_miles !== undefined && u.distance_miles !== null
       ? { distance_km: Math.round(u.distance_miles * 1.60934 * 10) / 10 }
       : {}),
