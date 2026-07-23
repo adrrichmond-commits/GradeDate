@@ -2259,8 +2259,10 @@ export async function handleApiRoute(
     return handleGrade(req);
   }
 
-  // Multi-photo grading (rebrand)
+  // Multi-photo grading (rebrand) — CSRF required
   if (pathname === "/api/grade-photos" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handleGradePhotos(req);
   }
 

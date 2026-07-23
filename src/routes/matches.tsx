@@ -626,27 +626,6 @@ function MatchesPage() {
                 />
               </svg>
             </button>
-
-            <button
-              onClick={handlePass}
-              disabled={animState !== null}
-              className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-red-500/40 bg-gray-900 text-red-400 transition-all duration-200 hover:scale-110 hover:border-red-400 hover:bg-red-500/10 hover:shadow-lg hover:shadow-red-500/10 disabled:opacity-50"
-              aria-label="Pass"
-            >
-              <svg
-                className="h-8 w-8"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-            </button>
           </div>
 
           {/* Report & Counter */}

@@ -226,7 +226,7 @@ function PricingSection() {
             {[
               "Everything in Free",
               "Unlimited likes",
-              "Re-grade once per month",
+              "Unlimited regrades",
               "No ads, ever",
             ].map((item) => (
               <li key={item} className="flex items-center gap-3 text-sm">
@@ -481,7 +481,7 @@ function Home() {
             <>
               <Link
                 to="/grade"
-                className="btn-primary mt-10 inline-flex items-center gap-2 px-8 py-4 text-lg font-bold bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500"
+                className="btn-primary mt-10 inline-flex items-center gap-2 px-8 py-4 text-lg font-bold bg-gradient-to-r from-rose-500 to-rose-600 hover:from-rose-400 hover:to-rose-500"
               >
                 <svg
                   className="h-5 w-5"
