@@ -96,6 +96,15 @@ export async function initTables(): Promise<void> {
   try {
     await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS like_packs INTEGER DEFAULT 0`;
   } catch { /* ignore */ }
+  try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS communication_style TEXT`;
+  } catch { /* ignore */ }
+  try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS lifestyle TEXT`;
+  } catch { /* ignore */ }
+  try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS dating_goals TEXT`;
+  } catch { /* ignore */ }
 
   await sql()`
     CREATE TABLE IF NOT EXISTS sessions (
@@ -265,6 +274,9 @@ export interface User {
   percentile: number | null;
   percentile_city: string | null;
   like_packs: number;
+  communication_style: string | null;
+  lifestyle: string | null;
+  dating_goals: string | null;
   created_at: string;
 }
 
@@ -303,6 +315,11 @@ export interface MatchUser {
   grade: number;
   distance_miles?: number;
   photos?: UserPhoto[];
+  communication_style?: string | null;
+  lifestyle?: string | null;
+  dating_goals?: string | null;
+  is_outside_range?: boolean;
+  compatibility_score?: number;
 }
 
 export interface Like {
@@ -389,6 +406,9 @@ export async function updateUserProfile(
     max_distance?: number;
     location_city?: string | null;
     location_state?: string | null;
+    communication_style?: string | null;
+    lifestyle?: string | null;
+    dating_goals?: string | null;
   },
 ): Promise<void> {
   await sql()`
@@ -404,6 +424,9 @@ export async function updateUserProfile(
       ${data.max_distance !== undefined ? sql()`, max_distance = ${data.max_distance}` : sql()``}
       ${data.location_city !== undefined ? sql()`, location_city = ${data.location_city}` : sql()``}
       ${data.location_state !== undefined ? sql()`, location_state = ${data.location_state}` : sql()``}
+      ${data.communication_style !== undefined ? sql()`, communication_style = ${data.communication_style}` : sql()``}
+      ${data.lifestyle !== undefined ? sql()`, lifestyle = ${data.lifestyle}` : sql()``}
+      ${data.dating_goals !== undefined ? sql()`, dating_goals = ${data.dating_goals}` : sql()``}
     WHERE id = ${id}
   `;
 }
@@ -683,7 +706,8 @@ export async function getUsersByGradeRange(
 
   const rows = await sql()`
     SELECT
-      id, display_name, age, gender, bio, photo_path, grade
+      id, display_name, age, gender, bio, photo_path, grade,
+      communication_style, lifestyle, dating_goals
       ${
         hasLocation
           ? sql`, (6371 * acos(
@@ -751,6 +775,190 @@ export async function getUsersByGradeRange(
     }
     return { ...rest, photos } as unknown as MatchUser;
   });
+}
+
+// ── Compatibility Scoring ──────────────────────────────────────
+
+export function calculateCompatibility(
+  userA: { age?: number | null; communication_style?: string | null; lifestyle?: string | null; dating_goals?: string | null },
+  userB: { age?: number | null; communication_style?: string | null; lifestyle?: string | null; dating_goals?: string | null; distance_miles?: number },
+): number {
+  let score = 0;
+
+  // Same dating_goals: +30
+  if (userA.dating_goals && userB.dating_goals && userA.dating_goals === userB.dating_goals) {
+    score += 30;
+  }
+
+  // Same lifestyle: +25
+  if (userA.lifestyle && userB.lifestyle && userA.lifestyle === userB.lifestyle) {
+    score += 25;
+  }
+
+  // Same communication_style: +20
+  if (userA.communication_style && userB.communication_style && userA.communication_style === userB.communication_style) {
+    score += 20;
+  }
+
+  // Distance scoring
+  if (userB.distance_miles !== undefined) {
+    const dist = userB.distance_miles;
+    if (dist < 10) score += 15;
+    else if (dist < 25) score += 10;
+    else if (dist < 50) score += 5;
+  }
+
+  // Similar age (±3 years): +10
+  if (userA.age != null && userB.age != null) {
+    if (Math.abs(userA.age - userB.age) <= 3) {
+      score += 10;
+    }
+  }
+
+  return Math.min(100, score);
+}
+
+// ── 80/20 Matching ─────────────────────────────────────────────
+
+/**
+ * Get users for the swiping feed using an 80/20 distribution:
+ * 80% of results from the user's percentile range (or grade range),
+ * 10% from above, 10% from below. Results are shuffled.
+ */
+export async function getUsersWith8020Matching(
+  userId: number,
+  userGrade: number,
+  excludeUserId: number,
+  lookingFor?: string,
+  blockedByIds?: number[],
+  latitude?: number,
+  longitude?: number,
+  maxDistance?: number,
+): Promise<MatchUser[]> {
+  const user = await getUserById(userId);
+
+  // Determine if we use percentile or grade-based range
+  const usePercentile = user?.percentile != null;
+  const percentile = user?.percentile ?? null;
+
+  // In-range: ±5 percentile points or ±1 grade
+  let inRangeMin: number;
+  let inRangeMax: number;
+
+  if (usePercentile && percentile != null) {
+    inRangeMin = Math.max(0, percentile - 5);
+    inRangeMax = Math.min(100, percentile + 5);
+  } else {
+    inRangeMin = Math.max(1, userGrade - 1);
+    inRangeMax = Math.min(10, userGrade + 1);
+  }
+
+  // Fetch in-range users (80%)
+  const inRangeUsers = await getUsersByGradeRange(
+    userGrade,
+    inRangeMin,
+    inRangeMax,
+    excludeUserId,
+    lookingFor,
+    blockedByIds,
+    latitude,
+    longitude,
+    maxDistance,
+  );
+
+  // Fetch above-range users (10%)
+  let aboveMin: number;
+  let aboveMax: number;
+  if (usePercentile) {
+    aboveMin = inRangeMax;
+    aboveMax = 100;
+  } else {
+    aboveMin = inRangeMax + 1 > 10 ? inRangeMax : inRangeMax + 1;
+    aboveMax = 10;
+  }
+  const aboveUsers = aboveMin <= aboveMax
+    ? await getUsersByGradeRange(
+        userGrade,
+        aboveMin,
+        aboveMax,
+        excludeUserId,
+        lookingFor,
+        blockedByIds,
+        latitude,
+        longitude,
+        maxDistance,
+      )
+    : [];
+
+  // Fetch below-range users (10%)
+  let belowMin: number;
+  let belowMax: number;
+  if (usePercentile) {
+    belowMin = 0;
+    belowMax = inRangeMin;
+  } else {
+    belowMin = 1;
+    belowMax = inRangeMin - 1 < 1 ? inRangeMin : inRangeMin - 1;
+  }
+  const belowUsers = belowMin <= belowMax
+    ? await getUsersByGradeRange(
+        userGrade,
+        belowMin,
+        belowMax,
+        excludeUserId,
+        lookingFor,
+        blockedByIds,
+        latitude,
+        longitude,
+        maxDistance,
+      )
+    : [];
+
+  // Combine: 80% in-range, 10% above, 10% below
+  // Calculate counts — if we don't have enough above/below, fill with in-range
+  const totalInRange = inRangeUsers.length;
+  const aboveCount = Math.max(0, Math.min(aboveUsers.length, Math.ceil(totalInRange * 0.125))); // ~10% of total
+  const belowCount = Math.max(0, Math.min(belowUsers.length, Math.ceil(totalInRange * 0.125)));
+  const inRangeCount = totalInRange; // Keep all in-range
+
+  // Select from each pool
+  const shuffledAbove = [...aboveUsers].sort(() => Math.random() - 0.5).slice(0, aboveCount);
+  const shuffledBelow = [...belowUsers].sort(() => Math.random() - 0.5).slice(0, belowCount);
+  const shuffledInRange = [...inRangeUsers].sort(() => Math.random() - 0.5).slice(0, inRangeCount);
+
+  // Mark outside range and calculate compatibility
+  const userForCompat = {
+    age: user?.age,
+    communication_style: user?.communication_style,
+    lifestyle: user?.lifestyle,
+    dating_goals: user?.dating_goals,
+  };
+
+  const taggedAbove = shuffledAbove.map((u) => ({
+    ...u,
+    is_outside_range: true,
+    compatibility_score: calculateCompatibility(userForCompat, u),
+  }));
+  const taggedBelow = shuffledBelow.map((u) => ({
+    ...u,
+    is_outside_range: true,
+    compatibility_score: calculateCompatibility(userForCompat, u),
+  }));
+  const taggedInRange = shuffledInRange.map((u) => ({
+    ...u,
+    is_outside_range: false,
+    compatibility_score: calculateCompatibility(userForCompat, u),
+  }));
+
+  // Combine all and shuffle
+  const allUsers = [...taggedInRange, ...taggedAbove, ...taggedBelow];
+  // Fisher-Yates shuffle
+  for (let i = allUsers.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [allUsers[i], allUsers[j]] = [allUsers[j], allUsers[i]];
+  }
+
+  return allUsers;
 }
 
 // ── Daily Like Caps ───────────────────────────────────────────

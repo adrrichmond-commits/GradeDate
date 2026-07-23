@@ -19,6 +19,9 @@ export interface SafeUser {
   last_free_regrade_at: string | null;
   percentile: number | null;
   percentile_city: string | null;
+  communication_style: string | null;
+  lifestyle: string | null;
+  dating_goals: string | null;
   created_at: string;
   latitude?: number;
   longitude?: number;

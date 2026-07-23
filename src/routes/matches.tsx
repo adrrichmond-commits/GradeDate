@@ -20,6 +20,11 @@ interface MatchProfile {
   photo_path: string | null;
   photos?: MatchPhoto[];
   distance_km?: number;
+  communication_style?: string | null;
+  lifestyle?: string | null;
+  dating_goals?: string | null;
+  is_outside_range?: boolean;
+  compatibility_score?: number;
 }
 
 const REPORT_REASONS = [
@@ -501,6 +506,22 @@ function MatchesPage() {
                     📍 {Math.round(current.distance_km * 0.621371)} mi away
                   </p>
                 )}
+                {current.is_outside_range && (
+                  <span className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2.5 py-0.5 text-xs font-medium text-amber-400 border border-amber-500/20">
+                    🌟 Outside your range
+                  </span>
+                )}
+                {current.compatibility_score != null && current.compatibility_score > 0 && (
+                  <div className="mt-2 flex items-center gap-1.5">
+                    <div className="h-1.5 flex-1 rounded-full bg-gray-700 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400"
+                        style={{ width: `${current.compatibility_score}%` }}
+                      />
+                    </div>
+                    <span className="text-xs text-gray-500">{current.compatibility_score}%</span>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -509,6 +530,33 @@ function MatchesPage() {
               <p className="text-sm leading-relaxed text-gray-300">
                 {current.bio || "No bio yet."}
               </p>
+              {(current.communication_style || current.lifestyle || current.dating_goals) && (
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {current.communication_style && (
+                    <span className="rounded-full bg-gray-800 px-2.5 py-0.5 text-xs text-gray-400 border border-gray-700">
+                      {current.communication_style === "texter" ? "💬 Texting" :
+                       current.communication_style === "caller" ? "📞 Phone Calls" :
+                       current.communication_style === "either" ? "💬📞 Either" : current.communication_style}
+                    </span>
+                  )}
+                  {current.lifestyle && (
+                    <span className="rounded-full bg-gray-800 px-2.5 py-0.5 text-xs text-gray-400 border border-gray-700">
+                      {current.lifestyle === "active" ? "🏃 Active" :
+                       current.lifestyle === "chill" ? "😌 Chill" :
+                       current.lifestyle === "social" ? "🎉 Social" :
+                       current.lifestyle === "homebody" ? "🏠 Homebody" : current.lifestyle}
+                    </span>
+                  )}
+                  {current.dating_goals && (
+                    <span className="rounded-full bg-gray-800 px-2.5 py-0.5 text-xs text-gray-400 border border-gray-700">
+                      {current.dating_goals === "long_term" ? "💍 Long Term" :
+                       current.dating_goals === "casual" ? "🍸 Casual" :
+                       current.dating_goals === "still_figuring_it_out" ? "🤔 Figuring Out" :
+                       current.dating_goals === "new_connections" ? "🔗 New Connections" : current.dating_goals}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 

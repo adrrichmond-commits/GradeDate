@@ -162,6 +162,9 @@ function ProfilePage() {
   const [editGender, setEditGender] = useState("");
   const [editLookingFor, setEditLookingFor] = useState("");
   const [editBio, setEditBio] = useState("");
+  const [editCommunicationStyle, setEditCommunicationStyle] = useState("");
+  const [editLifestyle, setEditLifestyle] = useState("");
+  const [editDatingGoals, setEditDatingGoals] = useState("");
   const [editPhotos, setEditPhotos] = useState<PhotoItem[]>([]);
   const [saving, setSaving] = useState(false);
   const [uploadingIdx, setUploadingIdx] = useState<number | null>(null);
@@ -212,6 +215,9 @@ function ProfilePage() {
     setEditGender(user.gender || "");
     setEditLookingFor(user.looking_for || "everyone");
     setEditBio(user.bio || "");
+    setEditCommunicationStyle(user.communication_style || "");
+    setEditLifestyle(user.lifestyle || "");
+    setEditDatingGoals(user.dating_goals || "");
     setEditPhotos(
       user.photos
         ? [...user.photos].sort((a, b) => {
@@ -412,6 +418,9 @@ function ProfilePage() {
         bio: editBio.trim(),
         photo_path: primaryPhoto?.photo_path || user?.photo_path || "",
         max_distance: editMaxDistance,
+        communication_style: editCommunicationStyle || null,
+        lifestyle: editLifestyle || null,
+        dating_goals: editDatingGoals || null,
       };
 
       if (editLocationResult) {
@@ -853,6 +862,62 @@ function ProfilePage() {
               />
             </div>
 
+            {/* Communication Style */}
+            <div>
+              <label htmlFor="editCommunicationStyle" className="mb-1.5 block text-sm font-medium text-gray-300">
+                Communication Style
+              </label>
+              <select
+                id="editCommunicationStyle"
+                value={editCommunicationStyle}
+                onChange={(e) => setEditCommunicationStyle(e.target.value)}
+                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-gray-100 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+              >
+                <option value="">Prefer not to say</option>
+                <option value="texter">I prefer texting</option>
+                <option value="caller">I prefer phone calls</option>
+                <option value="either">Either works</option>
+              </select>
+            </div>
+
+            {/* Lifestyle */}
+            <div>
+              <label htmlFor="editLifestyle" className="mb-1.5 block text-sm font-medium text-gray-300">
+                Lifestyle
+              </label>
+              <select
+                id="editLifestyle"
+                value={editLifestyle}
+                onChange={(e) => setEditLifestyle(e.target.value)}
+                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-gray-100 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+              >
+                <option value="">Prefer not to say</option>
+                <option value="active">Active / Outdoorsy</option>
+                <option value="chill">Chill / Laid-back</option>
+                <option value="social">Social / Party</option>
+                <option value="homebody">Homebody / Cozy</option>
+              </select>
+            </div>
+
+            {/* Dating Goals */}
+            <div>
+              <label htmlFor="editDatingGoals" className="mb-1.5 block text-sm font-medium text-gray-300">
+                Dating Goals
+              </label>
+              <select
+                id="editDatingGoals"
+                value={editDatingGoals}
+                onChange={(e) => setEditDatingGoals(e.target.value)}
+                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-gray-100 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+              >
+                <option value="">Prefer not to say</option>
+                <option value="long_term">Long-term relationship</option>
+                <option value="casual">Casual dating</option>
+                <option value="still_figuring_it_out">Still figuring it out</option>
+                <option value="new_connections">New connections</option>
+              </select>
+            </div>
+
             {/* Location Section (Edit Mode) */}
             <div className="rounded-lg border border-white/5 bg-gray-800/30 p-4">
               <h3 className="mb-3 text-sm font-semibold text-gray-300">📍 Location</h3>
@@ -995,6 +1060,41 @@ function ProfilePage() {
                 <p className="mt-1 text-lg font-semibold capitalize text-gray-100">
                   {user.looking_for || "everyone"}
                 </p>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div className="rounded-lg border border-white/5 bg-gray-800/40 p-4">
+                  <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
+                    Communication
+                  </span>
+                  <p className="mt-1 text-sm font-semibold text-gray-100">
+                    {user.communication_style === "texter" ? "Texting" :
+                     user.communication_style === "caller" ? "Phone Calls" :
+                     user.communication_style === "either" ? "Either" : "—"}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-white/5 bg-gray-800/40 p-4">
+                  <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
+                    Lifestyle
+                  </span>
+                  <p className="mt-1 text-sm font-semibold text-gray-100">
+                    {user.lifestyle === "active" ? "Active" :
+                     user.lifestyle === "chill" ? "Chill" :
+                     user.lifestyle === "social" ? "Social" :
+                     user.lifestyle === "homebody" ? "Homebody" : "—"}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-white/5 bg-gray-800/40 p-4">
+                  <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
+                    Dating Goals
+                  </span>
+                  <p className="mt-1 text-sm font-semibold text-gray-100">
+                    {user.dating_goals === "long_term" ? "Long Term" :
+                     user.dating_goals === "casual" ? "Casual" :
+                     user.dating_goals === "still_figuring_it_out" ? "Figuring Out" :
+                     user.dating_goals === "new_connections" ? "New Connections" : "—"}
+                  </p>
+                </div>
               </div>
 
               <div className="rounded-lg border border-white/5 bg-gray-800/40 p-4">
