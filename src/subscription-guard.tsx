@@ -3,9 +3,11 @@ import { useNavigate } from "@tanstack/react-router";
 import { useAuth } from "~/auth-context";
 
 /**
- * Hook that redirects unsubscribed users to /subscribe.
+ * Hook that redirects unauthenticated users to /login.
+ * Does NOT redirect free users — they can access most pages
+ * but are subject to daily like caps.
  * Call this at the top of any protected page component.
- * Returns true if the user is subscribed and can proceed.
+ * Returns true if the user is authenticated and can proceed.
  */
 export function useRequireSubscription(): {
   isSubscribed: boolean;
@@ -22,9 +24,8 @@ export function useRequireSubscription(): {
       return;
     }
 
-    if (user.subscription_status !== "active") {
-      navigate({ to: "/subscribe" });
-    }
+    // Free users are now allowed to access matches/chat/connections
+    // No redirect for non-subscribers
   }, [user, loading]);
 
   if (loading) {

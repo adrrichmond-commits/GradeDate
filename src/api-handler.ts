@@ -26,11 +26,16 @@ import {
   blockUser,
   isBlocked,
   getBlockedUserIds,
+  unmatchUser,
   reportUser,
   deleteUserAccount,
   addReGrade,
+  useReGrade,
   activateBoost,
   revealLikes,
+  addLikePacks,
+  getLikePacksRemaining,
+  getLikers,
   createPasswordResetToken,
   getPasswordResetToken,
   markTokenUsed,
@@ -59,14 +64,19 @@ import {
   calculatePercentile,
   updateUserPercentile,
   updateLastFreeRegrade,
+  joinWaitlist,
   type User,
   type UserPhoto,
   type PhotoGrade,
 } from "../src/db.ts";
 import { sendPasswordResetEmail } from "../src/email.ts";
+import { sendWaitlistConfirmation } from "../src/email.ts";
 import { lookupZip } from "../src/zipcode.ts";
-import { checkAuthRateLimit, checkStrictRateLimit } from "../src/rate-limit.ts";
+import { checkAuthRateLimit, checkStrictRateLimit, checkRateLimit } from "../src/rate-limit.ts";
+import { getApproximateLocation } from "../src/geo.ts";
+import { filterMessage } from "../src/profanity.ts";
 import { VAPID_PUBLIC_KEY, sendPushNotification } from "../src/push.ts";
+import { generateCsrfToken, setCsrfCookie, verifyCsrfToken, getCsrfTokenFromRequest, CSRF_COOKIE } from "../src/csrf.ts";
 import Stripe from "stripe";
 import { mkdirSync, existsSync, writeFileSync, readFileSync, unlinkSync } from "node:fs";
 import path from "node:path";
@@ -263,7 +273,10 @@ async function handleSignup(req: Request): Promise<Response> {
     }
   }
 
-  return setSessionCookie(json({ user: toSafeUser(user) }, 201), session.id);
+  return setSessionCookie(
+    setCsrfCookie(json({ user: toSafeUser(user) }, 201), generateCsrfToken()),
+    session.id,
+  );
 }
 
 async function handleLogin(req: Request): Promise<Response> {
@@ -289,7 +302,10 @@ async function handleLogin(req: Request): Promise<Response> {
   }
 
   const session = await createSession(user.id);
-  return setSessionCookie(json({ user: toSafeUser(user) }), session.id);
+  return setSessionCookie(
+    setCsrfCookie(json({ user: toSafeUser(user) }), generateCsrfToken()),
+    session.id,
+  );
 }
 
 async function handleLogout(req: Request): Promise<Response> {
@@ -307,10 +323,20 @@ async function handleMe(req: Request): Promise<Response> {
   }
   const safe = toSafeUser(user);
   const photos = await getUserPhotos(user.id);
-  return json({ user: { ...safe, photos } });
+  let response = json({ user: { ...safe, photos } });
+
+  // Ensure CSRF cookie is set for existing sessions (login before CSRF was added)
+  if (!getCsrfTokenFromRequest(req)) {
+    response = setCsrfCookie(response, generateCsrfToken());
+  }
+
+  return response;
 }
 
 async function handleUpload(req: Request): Promise<Response> {
+  const rateLimitResponse = checkRateLimit(req, "upload", { maxRequests: 10, windowMs: 15 * 60 * 1000 });
+  if (rateLimitResponse) return rateLimitResponse;
+
   const user = await getCurrentUser(req);
 
   const contentType = req.headers.get("content-type") || "";
@@ -446,6 +472,14 @@ async function handleUpdateProfile(req: Request): Promise<Response> {
     const dist = Number(max_distance);
     if (isNaN(dist) || dist < 1 || dist > 500) {
       return json({ error: "Max distance must be between 1 and 500 miles" }, 400);
+    }
+  }
+
+  // Profanity filter for bio
+  if (bio !== undefined && typeof bio === "string" && bio.trim().length > 0) {
+    const filterResult = filterMessage(bio.trim());
+    if (filterResult.blocked) {
+      return json({ error: "Bio contains inappropriate content" }, 400);
     }
   }
 
@@ -647,6 +681,9 @@ async function gradeWithAI(photoPath: string): Promise<{ grade: number; analysis
 }
 
 async function handleGrade(req: Request): Promise<Response> {
+  const rateLimitResponse = checkRateLimit(req, "grade", { maxRequests: 5, windowMs: 15 * 60 * 1000 });
+  if (rateLimitResponse) return rateLimitResponse;
+
   const user = await getCurrentUser(req);
 
   // For anonymous free preview, accept photo_path in the request body
@@ -660,8 +697,13 @@ async function handleGrade(req: Request): Promise<Response> {
         return json({ error: "You must upload a photo before getting graded" }, 400);
       }
 
-      if (user.grade !== null) {
-        return json({ error: "You have already been graded", grade: user.grade }, 400);
+      if (user.grade !== null && user.regrades_available <= 0) {
+        return json({ error: "You have already been graded. Purchase a re-grade from the store.", grade: user.grade }, 400);
+      }
+
+      // If user has regrades available, consume one and allow re-grade
+      if (user.grade !== null && user.regrades_available > 0) {
+        await useReGrade(user.id);
       }
 
       photoPath = user.photo_path;
@@ -996,9 +1038,6 @@ async function handleGetMatches(req: Request): Promise<Response> {
     return json({ error: "Unauthorized" }, 401);
   }
 
-  const subErr = requireSubscription(user);
-  if (subErr) return subErr;
-
   if (user.grade === null) {
     return json({ error: "You must get graded before browsing matches", code: "NO_GRADE" }, 400);
   }
@@ -1035,6 +1074,9 @@ async function handleGetMatches(req: Request): Promise<Response> {
 }
 
 async function handleLike(req: Request): Promise<Response> {
+  const rateLimitResponse = checkRateLimit(req, "like", { maxRequests: 30, windowMs: 15 * 60 * 1000 });
+  if (rateLimitResponse) return rateLimitResponse;
+
   const user = await getCurrentUser(req);
   if (!user) {
     return json({ error: "Unauthorized" }, 401);
@@ -1108,6 +1150,9 @@ async function handleLike(req: Request): Promise<Response> {
 }
 
 async function handlePass(req: Request): Promise<Response> {
+  const rateLimitResponse = checkRateLimit(req, "pass", { maxRequests: 30, windowMs: 15 * 60 * 1000 });
+  if (rateLimitResponse) return rateLimitResponse;
+
   const user = await getCurrentUser(req);
   if (!user) {
     return json({ error: "Unauthorized" }, 401);
@@ -1127,6 +1172,9 @@ async function handlePass(req: Request): Promise<Response> {
 // ── Messages ─────────────────────────────────────────────────
 
 async function handleSendMessage(req: Request): Promise<Response> {
+  const rateLimitResponse = checkRateLimit(req, "message", { maxRequests: 20, windowMs: 15 * 60 * 1000 });
+  if (rateLimitResponse) return rateLimitResponse;
+
   const user = await getCurrentUser(req);
   if (!user) {
     return json({ error: "Unauthorized" }, 401);
@@ -1140,6 +1188,12 @@ async function handleSendMessage(req: Request): Promise<Response> {
   }
   if (!content || typeof content !== "string" || content.trim().length === 0) {
     return json({ error: "content is required" }, 400);
+  }
+
+  // Profanity filter
+  const filterResult = filterMessage(content.trim());
+  if (filterResult.blocked) {
+    return json({ error: "Message contains inappropriate content" }, 400);
   }
 
   // Verify user is a participant in this match
@@ -1236,8 +1290,7 @@ async function handleBlock(req: Request): Promise<Response> {
     return json({ error: "Unauthorized" }, 401);
   }
 
-  const subErr = requireSubscription(user);
-  if (subErr) return subErr;
+  // No subscription required — safety features are available to all users
 
   const body = await req.json().catch(() => null);
   const targetId = body?.user_id;
@@ -1251,6 +1304,27 @@ async function handleBlock(req: Request): Promise<Response> {
   }
 
   await blockUser(user.id, targetId);
+  return json({ success: true });
+}
+
+async function handleUnmatch(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+
+  const body = await req.json().catch(() => null);
+  const targetId = body?.matchUserId;
+
+  if (!targetId || typeof targetId !== "number") {
+    return json({ error: "matchUserId is required" }, 400);
+  }
+
+  if (targetId === user.id) {
+    return json({ error: "You cannot unmatch yourself" }, 400);
+  }
+
+  await unmatchUser(user.id, targetId);
   return json({ success: true });
 }
 
@@ -1268,8 +1342,7 @@ async function handleReport(req: Request): Promise<Response> {
     return json({ error: "Unauthorized" }, 401);
   }
 
-  const subErr = requireSubscription(user);
-  if (subErr) return subErr;
+  // No subscription required — safety features are available to all users
 
   const body = await req.json().catch(() => null);
   const targetId = body?.user_id;
@@ -1324,6 +1397,10 @@ async function handleSubscriptionActivate(req: Request): Promise<Response> {
     return json({ error: "Unauthorized" }, 401);
   }
 
+  console.warn(
+    "POST /api/subscription/activate is deprecated — use /api/subscription/create-checkout with Stripe Checkout Sessions instead.",
+  );
+
   let plan: string | null = null;
   try {
     const body = await req.json();
@@ -1356,6 +1433,47 @@ async function handleSubscriptionActivate(req: Request): Promise<Response> {
     message: plan === "annual" ? "Annual subscription activated" : "Subscription activated",
     subscription_status: "active",
   });
+}
+
+async function handleCreateCheckout(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+
+  if (user.subscription_status === "active") {
+    return json({
+      error: "Subscription already active",
+      subscription_status: "active",
+    }, 400);
+  }
+
+  const body = await req.json().catch(() => null);
+  if (!body?.plan || !["monthly", "annual"].includes(body.plan)) {
+    return json({ error: "plan must be 'monthly' or 'annual'" }, 400);
+  }
+
+  const stripe = getStripe();
+  if (!stripe) {
+    return json({ error: "Stripe is not configured" }, 500);
+  }
+
+  const priceId =
+    body.plan === "annual"
+      ? "price_1Tvzh8GuEElH7kaizZdfy7s9"
+      : "price_1TvzqyGuEElH7kaiCi3hjt8b";
+
+  const session = await stripe.checkout.sessions.create({
+    mode: "subscription",
+    line_items: [{ price: priceId, quantity: 1 }],
+    success_url: "https://gradedate.app/subscribe?success=true",
+    cancel_url: "https://gradedate.app/subscribe?canceled=true",
+    client_reference_id: String(user.id),
+    customer_email: user.email,
+    metadata: { user_id: String(user.id) },
+  });
+
+  return json({ url: session.url });
 }
 
 // ── Upsell Activation ──────────────────────────────────────────
@@ -1415,7 +1533,55 @@ async function handleLikesRemaining(req: Request): Promise<Response> {
   if (remaining === -1) {
     return json({ remaining: "unlimited" });
   }
-  return json({ remaining });
+  // Also return like_packs count for free users
+  const packs = await getLikePacksRemaining(user.id);
+  return json({ remaining, like_packs: packs });
+}
+
+// ── Like Packs ──────────────────────────────────────────────
+
+async function handleActivateLikePack(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+
+  // Like packs are purchasable by anyone (free or subscribed)
+  await addLikePacks(user.id, 5);
+  const packs = await getLikePacksRemaining(user.id);
+  return json({ ok: true, message: "5 extra likes activated!", like_packs: packs });
+}
+
+// ── Liked Me ──────────────────────────────────────────────
+
+async function handleLikedMe(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+
+  // If user hasn't activated reveal-likes, return paywalled preview
+  if (!user.likes_revealed || user.likes_revealed <= 0) {
+    // Return count only, no details
+    const likers = await getLikers(user.id);
+    return json({
+      paywalled: true,
+      count: likers.length,
+      message: "Unlock to see who liked you!",
+    });
+  }
+
+  const likers = await getLikers(user.id);
+  const safeLikers = likers.map((u) => ({
+    id: u.id,
+    display_name: u.display_name,
+    age: u.age,
+    gender: u.gender,
+    bio: u.bio,
+    photo_path: u.photo_path,
+    photos: u.photos || [],
+  }));
+  return json({ paywalled: false, likers: safeLikers });
 }
 
 // ── Stripe Webhook ─────────────────────────────────────────────
@@ -1440,33 +1606,26 @@ async function handleStripeWebhook(req: Request): Promise<Response> {
   // Read the raw body for signature verification
   const rawBody = await req.text();
 
-  let event: Stripe.Event;
+  if (!webhookSecret) {
+    console.error("STRIPE_WEBHOOK_SECRET not configured — rejecting webhook");
+    return json({ error: "Webhook secret not configured" }, 500);
+  }
 
-  if (webhookSecret) {
-    const stripe = getStripe();
-    if (!stripe) {
-      return json({ error: "Stripe not configured" }, 500);
-    }
-    try {
-      event = stripe.webhooks.constructEvent(
-        rawBody,
-        signature,
-        webhookSecret,
-      );
-    } catch (err) {
-      console.error("Stripe webhook signature verification failed:", err);
-      return json({ error: "Invalid signature" }, 400);
-    }
-  } else {
-    // Fallback: no webhook secret configured — parse without verification
-    console.warn(
-      "STRIPE_WEBHOOK_SECRET not set — accepting webhook without signature verification",
+  const stripe = getStripe();
+  if (!stripe) {
+    return json({ error: "Stripe not configured" }, 500);
+  }
+
+  let event: Stripe.Event;
+  try {
+    event = stripe.webhooks.constructEvent(
+      rawBody,
+      signature,
+      webhookSecret,
     );
-    try {
-      event = JSON.parse(rawBody) as Stripe.Event;
-    } catch {
-      return json({ error: "Invalid JSON body" }, 400);
-    }
+  } catch (err) {
+    console.error("Stripe webhook signature verification failed:", err);
+    return json({ error: "Invalid signature" }, 400);
   }
 
   console.log(`Stripe webhook received: ${event.type}`);
@@ -1482,19 +1641,29 @@ async function handleStripeWebhook(req: Request): Promise<Response> {
           typeof session.subscription === "string"
             ? session.subscription
             : null;
+        const clientReferenceId = session.client_reference_id || null;
 
-        if (!customerEmail) {
-          console.warn(
-            "checkout.session.completed: no customer email in session",
-          );
-          break;
+        // Find user: first try email, then client_reference_id, then metadata
+        let user: User | null = null;
+        if (customerEmail) {
+          user = await getUserByEmail(customerEmail.toLowerCase());
+        }
+        if (!user && clientReferenceId) {
+          const userId = parseInt(clientReferenceId, 10);
+          if (!isNaN(userId)) {
+            user = await getUserById(userId);
+          }
+        }
+        if (!user && session.metadata?.user_id) {
+          const userId = parseInt(session.metadata.user_id, 10);
+          if (!isNaN(userId)) {
+            user = await getUserById(userId);
+          }
         }
 
-        // Find user by email
-        const user = await getUserByEmail(customerEmail.toLowerCase());
         if (!user) {
           console.warn(
-            `checkout.session.completed: no user found for email ${customerEmail}`,
+            `checkout.session.completed: no user found for email=${customerEmail}, client_ref=${clientReferenceId}`,
           );
           break;
         }
@@ -1701,6 +1870,18 @@ async function handleSetPrimary(req: Request, photoId: number): Promise<Response
   return json({ ok: true, photo });
 }
 
+// ── Geo Check (Austin gating) ─────────────────────────────
+
+const GEO_CHECK_LIMIT = { maxRequests: 10, windowMs: 60_000 }; // 10 req/min per IP
+
+async function handleGeoCheck(req: Request): Promise<Response> {
+  const rateLimitResponse = checkRateLimit(req, "geo-check", GEO_CHECK_LIMIT);
+  if (rateLimitResponse) return rateLimitResponse;
+
+  const { city, region, isAustinMetro } = await getApproximateLocation(req);
+  return json({ isAustinMetro, city, region });
+}
+
 // ── Location ─────────────────────────────────────────────────
 
 async function handleLocationLookup(req: Request): Promise<Response> {
@@ -1811,7 +1992,52 @@ async function handleApplyReferralCode(req: Request): Promise<Response> {
   return json({ success: true, message: "Referral code applied! You'll both get a free month when you subscribe." });
 }
 
+// ── Waitlist ────────────────────────────────────────────────────
+
+async function handleWaitlistJoin(req: Request): Promise<Response> {
+  const rateLimitResponse = checkStrictRateLimit(req);
+  if (rateLimitResponse) return rateLimitResponse;
+
+  const body = await req.json().catch(() => null);
+  if (!body?.email || typeof body.email !== "string") {
+    return json({ error: "Email is required" }, 400);
+  }
+
+  const email = String(body.email).trim().toLowerCase();
+  const zipCode = body.zip_code ? String(body.zip_code).trim() : undefined;
+
+  // Basic email validation
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return json({ error: "Please enter a valid email address" }, 400);
+  }
+
+  // Validate ZIP code if provided (basic: 5 digits, optional dash+4)
+  if (zipCode && !/^\d{5}(-\d{4})?$/.test(zipCode)) {
+    return json({ error: "Please enter a valid ZIP code" }, 400);
+  }
+
+  // Insert into waitlist (duplicates are silently ignored)
+  await joinWaitlist(email, zipCode);
+
+  // Send confirmation email (best-effort, don't fail if email fails)
+  await sendWaitlistConfirmation(email);
+
+  return json({ success: true });
+}
+
 // ── Router ────────────────────────────────────────────────────
+
+/**
+ * Verify CSRF token for state-changing POST endpoints.
+ * Returns an error response if invalid, or null if valid.
+ */
+function checkCsrf(req: Request): Response | null {
+  if (!verifyCsrfToken(req)) {
+    return json({ error: "Invalid or missing CSRF token" }, 403);
+  }
+  return null;
+}
 
 export async function handleApiRoute(
   req: Request,
@@ -1819,7 +2045,17 @@ export async function handleApiRoute(
   const url = new URL(req.url);
   const { method, pathname } = { method: req.method, pathname: url.pathname };
 
-  // Auth routes
+  // CSRF token endpoint — allows anonymous users to get a token before POST requests
+  if (pathname === "/api/csrf" && method === "GET") {
+    return setCsrfCookie(json({ ok: true }), generateCsrfToken());
+  }
+
+  // Geo check — public, rate-limited, no auth required
+  if (pathname === "/api/geo-check" && method === "GET") {
+    return handleGeoCheck(req);
+  }
+
+  // Auth routes — CSRF not required (pre-auth or token-based)
   if (pathname === "/api/auth/signup" && method === "POST") {
     return handleSignup(req);
   }
@@ -1827,6 +2063,8 @@ export async function handleApiRoute(
     return handleLogin(req);
   }
   if (pathname === "/api/auth/logout" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handleLogout(req);
   }
   if (pathname === "/api/auth/me" && method === "GET") {
@@ -1839,26 +2077,36 @@ export async function handleApiRoute(
     return handleResetPassword(req);
   }
 
-  // Profile
+  // Profile — CSRF required
   if (pathname === "/api/auth/update-profile" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handleUpdateProfile(req);
   }
 
-  // Upload
+  // Upload — CSRF required
   if (pathname === "/api/upload" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handleUpload(req);
   }
 
-  // Photos management
+  // Photos management — CSRF required
   const photosDeleteMatch = pathname.match(/^\/api\/photos\/(\d+)$/);
   if (photosDeleteMatch && method === "DELETE") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handleDeletePhoto(req, Number(photosDeleteMatch[1]));
   }
   if (pathname === "/api/photos/reorder" && method === "PUT") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handleReorderPhotos(req);
   }
   const photosPrimaryMatch = pathname.match(/^\/api\/photos\/(\d+)\/primary$/);
   if (photosPrimaryMatch && method === "PUT") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handleSetPrimary(req, Number(photosPrimaryMatch[1]));
   }
 
@@ -1867,8 +2115,10 @@ export async function handleApiRoute(
     return handleLocationLookup(req);
   }
 
-  // Grade
+  // Grade — CSRF required
   if (pathname === "/api/grade" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handleGrade(req);
   }
 
@@ -1887,14 +2137,25 @@ export async function handleApiRoute(
     return handleGetMatches(req);
   }
   if (pathname === "/api/matches/like" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handleLike(req);
   }
   if (pathname === "/api/matches/pass" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handlePass(req);
+  }
+  if (pathname === "/api/matches/unmatch" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
+    return handleUnmatch(req);
   }
 
   // Messages
   if (pathname === "/api/messages/send" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handleSendMessage(req);
   }
   if (pathname === "/api/messages/unread-count" && method === "GET") {
@@ -1911,14 +2172,20 @@ export async function handleApiRoute(
     return handleGetConnections(req);
   }
 
-  // User Safety
+  // User Safety — CSRF required
   if (pathname === "/api/users/block" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handleBlock(req);
   }
   if (pathname === "/api/users/report" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handleReport(req);
   }
   if (pathname === "/api/account/delete" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handleDeleteAccount(req);
   }
 
@@ -1927,7 +2194,14 @@ export async function handleApiRoute(
     return handleSubscriptionStatus(req);
   }
   if (pathname === "/api/subscription/activate" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handleSubscriptionActivate(req);
+  }
+  if (pathname === "/api/subscription/create-checkout" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
+    return handleCreateCheckout(req);
   }
 
   // Daily likes
@@ -1935,30 +2209,50 @@ export async function handleApiRoute(
     return handleLikesRemaining(req);
   }
 
-  // Upsell activations
+  // Upsell activations — CSRF required
   if (pathname === "/api/store/activate-re-grade" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handleActivateReGrade(req);
   }
   if (pathname === "/api/store/activate-boost" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handleActivateBoost(req);
   }
   if (pathname === "/api/store/activate-reveal-likes" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handleActivateRevealLikes(req);
   }
+  if (pathname === "/api/store/activate-like-pack" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
+    return handleActivateLikePack(req);
+  }
 
-  // Stripe webhook (unauthenticated — validated by Stripe signature)
+  // Liked Me
+  if (pathname === "/api/matches/liked-me" && method === "GET") {
+    return handleLikedMe(req);
+  }
+
+  // Stripe webhook (unauthenticated — validated by Stripe signature, no CSRF)
   if (pathname === "/api/webhooks/stripe" && method === "POST") {
     return handleStripeWebhook(req);
   }
 
-  // Push notifications
+  // Push notifications — CSRF required for subscribe/unsubscribe
   if (pathname === "/api/push/vapid-public-key" && method === "GET") {
     return handleVapidPublicKey();
   }
   if (pathname === "/api/push/subscribe" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handlePushSubscribe(req);
   }
   if (pathname === "/api/push/unsubscribe" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handlePushUnsubscribe(req);
   }
 
@@ -1967,7 +2261,14 @@ export async function handleApiRoute(
     return handleGetReferralCode(req);
   }
   if (pathname === "/api/referral/apply" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
     return handleApplyReferralCode(req);
+  }
+
+  // Waitlist — public, rate-limited but no CSRF required
+  if (pathname === "/api/waitlist/join" && method === "POST") {
+    return handleWaitlistJoin(req);
   }
 
   return null; // Not an API route

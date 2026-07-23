@@ -313,6 +313,9 @@ function Signup() {
               Log in
             </Link>
           </p>
+          <p className="mt-4 text-center text-xs text-gray-600">
+            By signing up, you agree to our AI-powered facial grading, which is experimental and subjective.
+          </p>
         </div>
       </div>
     </div>

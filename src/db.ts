@@ -93,6 +93,9 @@ export async function initTables(): Promise<void> {
   try {
     await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS percentile_city TEXT`;
   } catch { /* ignore */ }
+  try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS like_packs INTEGER DEFAULT 0`;
+  } catch { /* ignore */ }
 
   await sql()`
     CREATE TABLE IF NOT EXISTS sessions (
@@ -217,6 +220,16 @@ export async function initTables(): Promise<void> {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `;
+
+  await sql()`
+    CREATE TABLE IF NOT EXISTS waitlist (
+      id SERIAL PRIMARY KEY,
+      email TEXT UNIQUE NOT NULL,
+      zip_code TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      confirmed_at TIMESTAMPTZ
+    )
+  `;
 }
 
 // ── Types ──────────────────────────────────────────────────────
@@ -251,6 +264,7 @@ export interface User {
   last_free_regrade_at: string | null;
   percentile: number | null;
   percentile_city: string | null;
+  like_packs: number;
   created_at: string;
 }
 
@@ -721,7 +735,9 @@ export async function getUsersByGradeRange(
           )`
           : sql``
       }
-    ORDER BY ABS(grade - ${grade}) ASC${
+    ORDER BY
+      CASE WHEN boost_until > NOW() THEN 0 ELSE 1 END ASC,
+      ABS(grade - ${grade}) ASC${
       hasLocation ? sql`, distance_miles ASC` : sql``
     }, RANDOM()
   `;
@@ -747,12 +763,12 @@ function getNextMidnightUTC(): string {
 
 export async function getDailyLikesRemaining(userId: number): Promise<number> {
   const rows = await sql()`
-    SELECT daily_likes_remaining, daily_likes_reset_at, subscription_status
+    SELECT daily_likes_remaining, daily_likes_reset_at, subscription_status, like_packs
     FROM users WHERE id = ${userId}
   `;
   if (rows.length === 0) return 0;
 
-  const row = rows[0] as { daily_likes_remaining: number; daily_likes_reset_at: string | null; subscription_status: string };
+  const row = rows[0] as { daily_likes_remaining: number; daily_likes_reset_at: string | null; subscription_status: string; like_packs: number };
 
   // Subscribers always have unlimited
   if (row.subscription_status === "active") return -1;
@@ -760,14 +776,14 @@ export async function getDailyLikesRemaining(userId: number): Promise<number> {
   const now = new Date();
   const resetAt = row.daily_likes_reset_at ? new Date(row.daily_likes_reset_at) : null;
 
-  // If reset time has passed (or no reset time set), reset to 10
+  // If reset time has passed (or no reset time set), reset to 3
   if (!resetAt || now >= resetAt) {
     const nextMidnight = getNextMidnightUTC();
     await sql()`
-      UPDATE users SET daily_likes_remaining = 10, daily_likes_reset_at = ${nextMidnight}
+      UPDATE users SET daily_likes_remaining = 3, daily_likes_reset_at = ${nextMidnight}
       WHERE id = ${userId}
     `;
-    return 10;
+    return 3;
   }
 
   return row.daily_likes_remaining;
@@ -775,12 +791,12 @@ export async function getDailyLikesRemaining(userId: number): Promise<number> {
 
 export async function useDailyLike(userId: number): Promise<number> {
   const rows = await sql()`
-    SELECT daily_likes_remaining, daily_likes_reset_at, subscription_status
+    SELECT daily_likes_remaining, daily_likes_reset_at, subscription_status, like_packs
     FROM users WHERE id = ${userId}
   `;
   if (rows.length === 0) return 0;
 
-  const row = rows[0] as { daily_likes_remaining: number; daily_likes_reset_at: string | null; subscription_status: string };
+  const row = rows[0] as { daily_likes_remaining: number; daily_likes_reset_at: string | null; subscription_status: string; like_packs: number };
 
   // Subscribers always have unlimited
   if (row.subscription_status === "active") return -1;
@@ -788,18 +804,27 @@ export async function useDailyLike(userId: number): Promise<number> {
   const now = new Date();
   const resetAt = row.daily_likes_reset_at ? new Date(row.daily_likes_reset_at) : null;
 
-  // If reset time has passed (or no reset time set), reset to 10 then decrement
+  // If reset time has passed (or no reset time set), reset to 3 then decrement
   if (!resetAt || now >= resetAt) {
     const nextMidnight = getNextMidnightUTC();
     await sql()`
-      UPDATE users SET daily_likes_remaining = 9, daily_likes_reset_at = ${nextMidnight}
+      UPDATE users SET daily_likes_remaining = 2, daily_likes_reset_at = ${nextMidnight}
       WHERE id = ${userId}
     `;
-    return 9;
+    return 2;
   }
 
-  // Already at 0 — don't decrement below 0
-  if (row.daily_likes_remaining <= 0) return 0;
+  // Already at 0 — try to consume from like_packs
+  if (row.daily_likes_remaining <= 0) {
+    if (row.like_packs > 0) {
+      await sql()`
+        UPDATE users SET like_packs = like_packs - 1
+        WHERE id = ${userId} AND like_packs > 0
+      `;
+      return -99; // sentinel: consumed from pack, has more packs
+    }
+    return 0;
+  }
 
   // Decrement
   const updated = await sql()`
@@ -831,6 +856,46 @@ export async function getLike(likerId: number, likedId: number): Promise<Like | 
     SELECT * FROM likes WHERE liker_id = ${likerId} AND liked_id = ${likedId}
   `;
   return rows.length > 0 ? (rows[0] as unknown as Like) : null;
+}
+
+export async function getLikers(
+  userId: number,
+): Promise<MatchUser[]> {
+  const rows = await sql()`
+    SELECT
+      u.id, u.display_name, u.age, u.gender, u.bio, u.photo_path, u.grade,
+      COALESCE(
+        (SELECT json_agg(json_build_object(
+          'id', up.id,
+          'user_id', up.user_id,
+          'photo_path', up.photo_path,
+          'sort_order', up.sort_order,
+          'is_primary', up.is_primary,
+          'created_at', up.created_at
+        ) ORDER BY up.sort_order ASC)
+        FROM user_photos up WHERE up.user_id = u.id),
+        '[]'::json
+      ) AS photos_json
+    FROM likes l
+    JOIN users u ON u.id = l.liker_id
+    WHERE l.liked_id = ${userId}
+      AND l.action = 'like'
+      AND NOT EXISTS (
+        SELECT 1 FROM likes l2
+        WHERE l2.liker_id = ${userId} AND l2.liked_id = u.id AND l2.action = 'like'
+      )
+    ORDER BY l.created_at DESC
+  `;
+  return (rows as any[]).map((r: any) => {
+    const { photos_json, ...rest } = r;
+    let photos: UserPhoto[] = [];
+    if (photos_json) {
+      try {
+        photos = typeof photos_json === 'string' ? JSON.parse(photos_json) : photos_json;
+      } catch { /* ignore */ }
+    }
+    return { ...rest, photos } as unknown as MatchUser;
+  });
 }
 
 // ── Matches ──────────────────────────────────────────────────
@@ -980,6 +1045,24 @@ export async function isBlocked(userId: number, otherUserId: number): Promise<bo
   return rows.length > 0;
 }
 
+// ── Unmatching ──────────────────────────────────────────────────
+
+export async function unmatchUser(userId: number, otherUserId: number): Promise<void> {
+  // Remove all likes between the two users in both directions
+  await sql()`
+    DELETE FROM likes
+    WHERE (liker_id = ${userId} AND liked_id = ${otherUserId})
+       OR (liker_id = ${otherUserId} AND liked_id = ${userId})
+  `;
+
+  // Delete the match row (does NOT block, unlike blockUser)
+  const [a, b] = userId < otherUserId ? [userId, otherUserId] : [otherUserId, userId];
+  await sql()`
+    DELETE FROM matches
+    WHERE user1_id = ${a} AND user2_id = ${b}
+  `;
+}
+
 export async function getBlockedUserIds(userId: number): Promise<number[]> {
   const rows = await sql()`
     SELECT blocked_id FROM blocks WHERE blocker_id = ${userId}
@@ -1100,6 +1183,19 @@ export async function revealLikes(userId: number): Promise<void> {
   await sql()`
     UPDATE users SET likes_revealed = 1 WHERE id = ${userId}
   `;
+}
+
+export async function addLikePacks(userId: number, count: number = 5): Promise<void> {
+  await sql()`
+    UPDATE users SET like_packs = like_packs + ${count} WHERE id = ${userId}
+  `;
+}
+
+export async function getLikePacksRemaining(userId: number): Promise<number> {
+  const rows = await sql()`
+    SELECT like_packs FROM users WHERE id = ${userId}
+  `;
+  return rows.length > 0 ? Number((rows[0] as { like_packs: number }).like_packs) : 0;
 }
 
 // ── Push Subscriptions ─────────────────────────────────────────
@@ -1322,5 +1418,44 @@ export async function applyReferralReward(rewardId: number): Promise<void> {
   // Mark reward as applied
   await sql()`
     UPDATE referral_rewards SET applied = true WHERE id = ${r.id}
+  `;
+}
+
+// ── Waitlist ──────────────────────────────────────────────────────
+
+export interface WaitlistEntry {
+  id: number;
+  email: string;
+  zip_code: string | null;
+  created_at: string;
+  confirmed_at: string | null;
+}
+
+export async function joinWaitlist(
+  email: string,
+  zipCode?: string,
+): Promise<WaitlistEntry | null> {
+  try {
+    const rows = await sql()`
+      INSERT INTO waitlist (email, zip_code)
+      VALUES (${email}, ${zipCode || null})
+      ON CONFLICT (email) DO NOTHING
+      RETURNING *
+    `;
+    if (rows.length > 0) {
+      return rows[0] as unknown as WaitlistEntry;
+    }
+    // Email already exists — return null (but not an error, to avoid leaking data)
+    return null;
+  } catch {
+    // Gracefully handle any DB errors
+    return null;
+  }
+}
+
+export async function confirmWaitlistEntry(email: string): Promise<void> {
+  await sql()`
+    UPDATE waitlist SET confirmed_at = NOW()
+    WHERE email = ${email}
   `;
 }

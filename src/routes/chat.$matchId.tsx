@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useAuth } from "~/auth-context";
+import { getCsrfToken } from "~/csrf-client";
 import { useRequireSubscription } from "~/subscription-guard";
 
 interface ChatMessage {
@@ -53,6 +54,7 @@ function ChatPage() {
   const [reporting, setReporting] = useState(false);
   const [reportDone, setReportDone] = useState(false);
   const [blocking, setBlocking] = useState(false);
+  const [unmatching, setUnmatching] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -130,7 +132,7 @@ function ChatPage() {
     try {
       const res = await fetch("/api/messages/send", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": getCsrfToken() || "" },
         body: JSON.stringify({ match_id: matchId, content }),
       });
       if (!res.ok) {
@@ -157,7 +159,7 @@ function ChatPage() {
     try {
       await fetch("/api/users/block", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": getCsrfToken() || "" },
         body: JSON.stringify({ user_id: otherUser.id }),
       });
       navigate({ to: "/connections" });
@@ -165,6 +167,23 @@ function ChatPage() {
       // ignore
     }
     setBlocking(false);
+    setShowMenu(false);
+  };
+
+  const handleUnmatch = async () => {
+    if (!otherUser) return;
+    setUnmatching(true);
+    try {
+      await fetch('/api/matches/unmatch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() || '' },
+        body: JSON.stringify({ matchUserId: otherUser.id }),
+      });
+      navigate({ to: '/connections' });
+    } catch {
+      // ignore
+    }
+    setUnmatching(false);
     setShowMenu(false);
   };
 
@@ -190,7 +209,7 @@ function ChatPage() {
     );
   }
 
-  if (!user || !isSubscribed) return null;
+  if (!user) return null;
 
   if (error && messages.length === 0) {
     return (
@@ -253,6 +272,16 @@ function ChatPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
                 </svg>
                 {blocking ? "Blocking..." : "Block User"}
+              </button>
+              <button
+                onClick={handleUnmatch}
+                disabled={unmatching}
+                className="flex w-full items-center gap-2 px-4 py-2 text-sm text-gray-300 transition hover:bg-gray-700 disabled:opacity-50"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                {unmatching ? "Unmatching..." : "Unmatch"}
               </button>
               <button
                 onClick={() => {
@@ -388,7 +417,7 @@ function ChatPage() {
                       try {
                         await fetch("/api/users/report", {
                           method: "POST",
-                          headers: { "Content-Type": "application/json" },
+                          headers: { "Content-Type": "application/json", "X-CSRF-Token": getCsrfToken() || "" },
                           body: JSON.stringify({ user_id: otherUser.id, reason: reportReason }),
                         });
                         setReportDone(true);

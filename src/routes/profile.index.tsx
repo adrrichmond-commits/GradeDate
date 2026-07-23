@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, useRef } from "react";
 import { useAuth } from "~/auth-context";
+import { getCsrfToken } from "~/csrf-client";
 import { useRequireSubscription, SubscriptionBanner } from "~/subscription-guard";
 
 export const Route = createFileRoute("/profile/")({
@@ -252,6 +253,7 @@ function ProfilePage() {
       formData.append("photo", file);
       const res = await fetch("/api/upload", {
         method: "POST",
+        headers: { "X-CSRF-Token": getCsrfToken() || "" },
         body: formData,
       });
       const data = await res.json();
@@ -273,6 +275,7 @@ function ProfilePage() {
     try {
       const res = await fetch(`/api/photos/${photoId}`, {
         method: "DELETE",
+      headers: { "X-CSRF-Token": getCsrfToken() || "" },
       });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
@@ -292,6 +295,7 @@ function ProfilePage() {
     try {
       const res = await fetch(`/api/photos/${photoId}/primary`, {
         method: "PUT",
+      headers: { "X-CSRF-Token": getCsrfToken() || "" },
       });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
@@ -324,7 +328,7 @@ function ProfilePage() {
     try {
       const res = await fetch("/api/location/lookup", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": getCsrfToken() || "" },
         body: JSON.stringify({ zip: trimmed }),
       });
       const data = await res.json();
@@ -346,7 +350,7 @@ function ProfilePage() {
     setGrading(true);
     setGradeError("");
     try {
-      const res = await fetch("/api/grade", { method: "POST" });
+      const res = await fetch("/api/grade", { method: "POST", headers: { "X-CSRF-Token": getCsrfToken() || "" } });
       const data = await res.json();
       if (!res.ok) {
         setGradeError(data.error || "Grading failed");
@@ -363,7 +367,7 @@ function ProfilePage() {
   const handleDeleteAccount = async () => {
     setDeleting(true);
     try {
-      await fetch("/api/account/delete", { method: "POST" });
+      await fetch("/api/account/delete", { method: "POST", headers: { "X-CSRF-Token": getCsrfToken() || "" } });
       await refetch();
       navigate({ to: "/" });
     } catch {
@@ -419,7 +423,7 @@ function ProfilePage() {
 
       const res = await fetch("/api/auth/update-profile", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": getCsrfToken() || "" },
         body: JSON.stringify(payload),
       });
 

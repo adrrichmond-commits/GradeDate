@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "~/auth-context";
 import { useRequireSubscription, SubscriptionBanner } from "~/subscription-guard";
+import { getCsrfToken } from "~/csrf-client";
 
 interface MatchPhoto {
   id: number;
@@ -52,6 +53,7 @@ function MatchesPage() {
 
   // Daily likes state
   const [likesRemaining, setLikesRemaining] = useState<number | "unlimited" | null>(null);
+  const [likePacks, setLikePacks] = useState<number>(0);
   const [showLikesLimitOverlay, setShowLikesLimitOverlay] = useState(false);
 
   // Report state
@@ -83,7 +85,7 @@ function MatchesPage() {
     );
   }
 
-  if (!user || !isSubscribed) return null;
+  if (!user) return null;
 
   const fetchMatches = useCallback(async () => {
     setFetching(true);
@@ -120,6 +122,7 @@ function MatchesPage() {
       const res = await fetch("/api/likes/remaining");
       const data = await res.json();
       setLikesRemaining(data.remaining);
+      setLikePacks(data.like_packs || 0);
     } catch {
       // ignore
     }
@@ -139,7 +142,10 @@ function MatchesPage() {
     try {
       const res = await fetch("/api/matches/like", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": getCsrfToken() || "",
+        },
         body: JSON.stringify({ liked_id: current.id }),
       });
       const data = await res.json();
@@ -194,7 +200,10 @@ function MatchesPage() {
     try {
       await fetch("/api/matches/pass", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": getCsrfToken() || "",
+        },
         body: JSON.stringify({ passed_id: current.id }),
       });
     } catch {
@@ -239,7 +248,11 @@ function MatchesPage() {
           ) : likesRemaining === 0 ? (
             <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-400 border border-amber-500/20">
               0 likes remaining —{" "}
-              <a href="/subscribe" className="underline hover:text-amber-300">Subscribe for unlimited</a>
+              {likePacks > 0 ? (
+                <span>{likePacks} extra like{likePacks !== 1 ? "s" : ""} available</span>
+              ) : (
+                <a href="/subscribe" className="underline hover:text-amber-300">Subscribe for unlimited</a>
+              )}
             </span>
           ) : (
             <span className="inline-flex items-center gap-1.5 rounded-full bg-gray-800 px-3 py-1 text-xs font-medium text-gray-400 border border-gray-700">
@@ -644,11 +657,17 @@ function MatchesPage() {
             </div>
             <h2 className="text-xl font-bold">You're out of likes!</h2>
             <p className="mt-2 text-sm text-gray-400">
-              You've used all your likes for today. Subscribe for $5.99/mo to get unlimited likes.
+              You've used all your likes for today.
+              {likePacks > 0
+                ? ` You have ${likePacks} extra like${likePacks !== 1 ? "s" : ""} available — keep swiping!`
+                : " Subscribe for $5.99/mo to get unlimited likes, or buy a like pack from the store."}
             </p>
             <div className="mt-6 flex flex-col gap-3">
               <a href="/subscribe" className="btn-primary justify-center">
                 Subscribe for $5.99/mo
+              </a>
+              <a href="/store" className="btn-secondary justify-center">
+                Buy Like Packs
               </a>
               <button
                 onClick={() => setShowLikesLimitOverlay(false)}
@@ -711,7 +730,10 @@ function MatchesPage() {
                       try {
                         await fetch("/api/users/report", {
                           method: "POST",
-                          headers: { "Content-Type": "application/json" },
+                          headers: {
+                            "Content-Type": "application/json",
+                            "X-CSRF-Token": getCsrfToken() || "",
+                          },
                           body: JSON.stringify({ user_id: current.id, reason: reportReason }),
                         });
                         setReportDone(true);

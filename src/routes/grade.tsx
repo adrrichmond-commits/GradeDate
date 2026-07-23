@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "~/auth-context";
+import { getCsrfToken } from "~/csrf-client";
 
 export const Route = createFileRoute("/grade")({
   component: GradePage,
@@ -19,8 +20,20 @@ function GradePage() {
   const [gradingMethod, setGradingMethod] = useState<string | null>(null);
   // Store the photo_path returned by upload for anonymous grading
   const [uploadedPhotoPath, setUploadedPhotoPath] = useState<string | null>(null);
+  // Track whether we need CSRF token (anonymous users)
+  const csrfFetched = useRef(false);
 
   const isSubscribed = user?.subscription_status === "active";
+
+  // For anonymous users, fetch a CSRF token on mount so upload/grade POSTs work
+  useEffect(() => {
+    if (!authLoading && !user && !csrfFetched.current) {
+      csrfFetched.current = true;
+      fetch("/api/csrf").catch(() => {
+        // Silently fail — the POST will fail with a 403 if CSRF is missing
+      });
+    }
+  }, [authLoading, user]);
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -45,6 +58,7 @@ function GradePage() {
       // Step 1: Upload
       const uploadRes = await fetch("/api/upload", {
         method: "POST",
+        headers: { "X-CSRF-Token": getCsrfToken() || "" },
         body: formData,
       });
 
@@ -73,7 +87,7 @@ function GradePage() {
 
       const gradeRes = await fetch("/api/grade", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": getCsrfToken() || "" },
         body: JSON.stringify(gradeBody),
       });
 
@@ -119,6 +133,56 @@ function GradePage() {
     if (g >= 3)
       return "Everyone's got their type — own it and find your people.";
     return "Confidence is everything. Real connections happen here.";
+  };
+
+  const handleShare = async () => {
+    if (grade === null) return;
+    const shareText = `I'm a ${grade}/10 on GradeDate. Find your level at gradedate.app`;
+    const shareData = {
+      title: "My GradeDate Match Level",
+      text: shareText,
+      url: "https://gradedate.app/grade",
+    };
+
+    // Try Web Share API first (mobile)
+    if (navigator.share) {
+      try {
+        await navigator.share(shareData);
+        return;
+      } catch {
+        // User cancelled or share failed — fall through to clipboard
+      }
+    }
+
+    // Fallback: copy to clipboard
+    try {
+      await navigator.clipboard.writeText(shareText);
+      // Brief visual feedback
+      const el = document.getElementById("share-feedback");
+      if (el) {
+        el.classList.remove("opacity-0");
+        setTimeout(() => el.classList.add("opacity-0"), 2000);
+      }
+    } catch {
+      // Clipboard failed — show the text for manual copy
+      const el = document.getElementById("share-fallback-text");
+      if (el) el.classList.remove("hidden");
+    }
+  };
+
+  const handleCopyGrade = async () => {
+    if (grade === null) return;
+    const text = `I'm a ${grade}/10 on GradeDate. Find your level at gradedate.app`;
+    try {
+      await navigator.clipboard.writeText(text);
+      const el = document.getElementById("copy-feedback");
+      if (el) {
+        el.classList.remove("opacity-0");
+        setTimeout(() => el.classList.add("opacity-0"), 2000);
+      }
+    } catch {
+      // do nothing
+    }
   };
 
   return (
@@ -290,20 +354,28 @@ function GradePage() {
                   />
                 )}
                 <div className="text-center">
+                  <div className="text-xs font-semibold uppercase tracking-widest text-gray-500">
+                    Your Match Level
+                  </div>
                   <div className="animate-[scaleIn_0.6s_ease-out] text-7xl font-black tracking-tighter text-rose-400">
-                    {grade}
+                    {grade}<span className="text-3xl text-gray-500">/10</span>
                   </div>
-                  <div className="mt-1 text-sm font-medium text-gray-500">
-                    out of 10
-                    {gradingMethod === "mock" && (
-                      <span className="ml-1 text-xs text-gray-600">(mock)</span>
-                    )}
-                  </div>
+                  {gradingMethod === "mock" && (
+                    <div className="mt-1 text-xs text-gray-600">(mock)</div>
+                  )}
                   {analysis && (
                     <p className="mt-2 text-sm italic text-gray-400">
                       "{analysis}"
                     </p>
                   )}
+                  <p className="mt-2 text-xs text-gray-500">
+                    This is used only to find looks-compatible matches.
+                    It is never shared with other users.
+                  </p>
+                  <p className="mt-1 text-xs text-gray-600">
+                    AI-generated estimate for entertainment purposes.
+                    Results may vary.
+                  </p>
                 </div>
 
                 <div className="flex w-full max-w-xs gap-0.5">
@@ -323,6 +395,114 @@ function GradePage() {
                   {getMessage(grade)}
                 </p>
 
+                {/* ── Shareable Grade Card ────────────────────── */}
+                <div className="w-full">
+                  <div className="mb-2 text-center text-xs font-semibold uppercase tracking-wider text-gray-500">
+                    Share Your Match Level
+                  </div>
+
+                  {/* The grade card — styled for screenshot appeal */}
+                  <div
+                    id="grade-card"
+                    className="relative overflow-hidden rounded-2xl border border-rose-500/30 bg-gray-950 p-6 text-center shadow-2xl"
+                    style={{
+                      background: "radial-gradient(ellipse at 50% 0%, rgba(244,63,94,0.12) 0%, rgba(3,7,18,1) 60%)",
+                    }}
+                  >
+                    {/* Logo area */}
+                    <div className="mb-4 flex items-center justify-center gap-2">
+                      <svg
+                        width="24"
+                        height="24"
+                        viewBox="0 0 48 48"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                        aria-hidden="true"
+                      >
+                        <defs>
+                          <linearGradient id="gclg" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+                            <stop offset="0%" stopColor="#f43f5e" />
+                            <stop offset="100%" stopColor="#f59e0b" />
+                          </linearGradient>
+                        </defs>
+                        <circle cx="24" cy="24" r="23" fill="none" stroke="url(#gclg)" strokeWidth="1.5" opacity="0.3" />
+                        <path
+                          d="M24 35C24 35 8 27 8 17.5c0-4.14 3.36-7.5 7.5-7.5 2.48 0 4.66 1.2 6 3.07L24 15l2.5-1.93c1.34-1.87 3.52-3.07 6-3.07 4.14 0 7.5 3.36 7.5 7.5C40 27 24 35 24 35z"
+                          fill="url(#gclg)"
+                          opacity="0.9"
+                        />
+                        <text x="24" y="26.5" textAnchor="middle" fill="#030712" fontFamily="Inter, sans-serif" fontSize="10" fontWeight="900">10</text>
+                      </svg>
+                      <span className="text-lg font-bold tracking-tight">
+                        <span className="text-rose-500">Grade</span>
+                        <span className="text-white">Date</span>
+                      </span>
+                    </div>
+
+                    {/* Grade number */}
+                    <div className="my-3">
+                      <div className="text-xs font-semibold uppercase tracking-widest text-gray-500">
+                        My Match Level
+                      </div>
+                      <div className="text-8xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-rose-400 to-rose-600">
+                        {grade}
+                        <span className="text-3xl text-gray-600">/10</span>
+                      </div>
+                    </div>
+
+                    {/* Tagline */}
+                    <p className="mt-2 text-xs text-gray-500">
+                      Find your level at gradedate.app
+                    </p>
+
+                    {/* Decorative corner glows */}
+                    <div className="pointer-events-none absolute -top-8 -right-8 h-24 w-24 rounded-full bg-rose-500/10 blur-2xl" />
+                    <div className="pointer-events-none absolute -bottom-8 -left-8 h-24 w-24 rounded-full bg-purple-500/10 blur-2xl" />
+                  </div>
+
+                  {/* Action buttons */}
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      onClick={handleShare}
+                      className="flex flex-1 items-center justify-center gap-2 rounded-full border border-gray-600 bg-gray-800/60 px-4 py-2.5 text-sm font-medium text-gray-200 transition hover:border-gray-400 hover:text-white hover:bg-gray-700/60"
+                    >
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z" />
+                      </svg>
+                      Share
+                    </button>
+                    <button
+                      onClick={handleCopyGrade}
+                      className="flex flex-1 items-center justify-center gap-2 rounded-full border border-gray-600 bg-gray-800/60 px-4 py-2.5 text-sm font-medium text-gray-200 transition hover:border-gray-400 hover:text-white hover:bg-gray-700/60"
+                    >
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" />
+                      </svg>
+                      Copy Grade
+                    </button>
+                  </div>
+
+                  {/* Feedback indicators */}
+                  <p
+                    id="share-feedback"
+                    className="mt-2 text-center text-xs text-green-400 opacity-0 transition-opacity duration-200"
+                  >
+                    Copied to clipboard!
+                  </p>
+                  <p
+                    id="copy-feedback"
+                    className="mt-2 text-center text-xs text-green-400 opacity-0 transition-opacity duration-200"
+                  >
+                    Copied!
+                  </p>
+                  <p
+                    id="share-fallback-text"
+                    className="mt-2 hidden text-center text-xs text-gray-400"
+                  >
+                    I'm a {grade}/10 on GradeDate. Find your level at gradedate.app
+                  </p>
+                </div>
+
                 {/* ── Subscriber flow: link to matches ────────── */}
                 {isSubscribed && (
                   <div className="flex gap-3">
@@ -341,15 +521,44 @@ function GradePage() {
                   </div>
                 )}
 
-                {/* ── Non-subscriber (anon or logged-in): paywall ── */}
-                {!isSubscribed && (
+                {/* ── Anonymous user: signup CTA ──────────────── */}
+                {!user && (
+                  <div className="w-full rounded-xl border border-rose-500/30 bg-gradient-to-b from-gray-900 to-gray-950 p-6 text-center shadow-lg shadow-rose-500/5">
+                    <div className="mb-3 text-sm font-medium text-gray-200">
+                      Like your grade?
+                    </div>
+                    <p className="mb-1 text-2xl font-extrabold">
+                      <span className="text-rose-400">$5.99</span>
+                      <span className="text-lg text-gray-500">/month</span>
+                    </p>
+                    <p className="mb-5 text-sm text-gray-400">
+                      Sign up to find matches at your level, chat, and connect
+                      with real people.
+                    </p>
+                    <Link
+                      to="/signup"
+                      className="inline-block w-full rounded-full bg-rose-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-rose-600/25 transition hover:bg-rose-500 hover:shadow-rose-500/30"
+                    >
+                      Sign Up to Find Your Matches
+                    </Link>
+                    <button
+                      onClick={reset}
+                      className="mt-3 text-xs text-gray-500 underline transition hover:text-gray-300"
+                    >
+                      Try a Different Photo
+                    </button>
+                  </div>
+                )}
+
+                {/* ── Non-subscriber logged-in: paywall ───────── */}
+                {user && !isSubscribed && (
                   <div className="w-full rounded-xl border border-rose-500/30 bg-gradient-to-b from-gray-900 to-gray-950 p-6 text-center shadow-lg shadow-rose-500/5">
                     <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-rose-400">
                       See Who's in Your League
                     </div>
                     <p className="mb-1 text-2xl font-extrabold">
                       <span className="text-rose-400">$5.99</span>
-                      <span className="text-gray-500 text-lg">/month</span>
+                      <span className="text-lg text-gray-500">/month</span>
                     </p>
                     <p className="mb-5 text-sm text-gray-400">
                       Subscribe to browse matches at your grade level, chat,
@@ -394,7 +603,7 @@ function GradePage() {
           {/* Footer note */}
           <p className="mt-6 text-center text-xs text-gray-600">
             Photos are screened for inappropriate content before grading.
-            Your grade is kept private — only you see it.
+            Your match level is kept private — only you see it.
           </p>
         </div>
       </main>

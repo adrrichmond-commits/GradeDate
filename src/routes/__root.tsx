@@ -9,6 +9,7 @@ import {
 import type { ReactNode } from "react";
 import { useEffect, useState, useRef } from "react";
 import { AuthProvider, useAuth } from "~/auth-context";
+import { getCsrfToken } from "~/csrf-client";
 
 import { Analytics } from "@vercel/analytics/react";
 import appCss from "~/styles/app.css?url";
@@ -255,7 +256,19 @@ function AppShell() {
                     ACTIVE
                   </span>
                 )}
-                <form action="/api/auth/logout" method="POST">
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    await fetch("/api/auth/logout", {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                        "X-CSRF-Token": getCsrfToken() || "",
+                      },
+                    });
+                    window.location.href = "/";
+                  }}
+                >
                   <button
                     type="submit"
                     className="text-sm text-gray-400 transition hover:text-white"
@@ -394,6 +407,16 @@ function RootDocument({ children }: { children: ReactNode }) {
     <html lang="en" className="dark">
       <head>
         <HeadContent />
+        <title>GradeDate — Looks-Matched Dating</title>
+        <meta name="description" content="Stop dating out of your league. GradeDate uses AI to match you with singles at your attractiveness level. Get your grade free." />
+        <meta property="og:title" content="GradeDate — Looks-Matched Dating" />
+        <meta property="og:description" content="Stop dating out of your league. AI-powered grading matches you with looks-compatible singles. Free preview." />
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content="https://gradedate.app" />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content="GradeDate — Looks-Matched Dating" />
+        <meta name="twitter:description" content="Stop dating out of your league. AI-powered grading matches you with looks-compatible singles. Free preview." />
+        <link rel="canonical" href="https://gradedate.app" />
       </head>
       <body>
         {children}
