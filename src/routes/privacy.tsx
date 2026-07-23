@@ -190,6 +190,42 @@ function PrivacyPolicy() {
               </a>
               .
             </li>
+            <li>
+              <strong className="text-white">Resend:</strong> We use Resend to send
+              transactional emails, including password reset links and waitlist confirmation
+              emails. Your email address is transmitted to Resend for delivery purposes only.
+              See{" "}
+              <a
+                href="https://resend.com/legal/privacy-policy"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-rose-400 underline hover:text-rose-300"
+              >
+                Resend&rsquo;s Privacy Policy
+              </a>
+              .
+            </li>
+            <li>
+              <strong className="text-white">ip-api.com:</strong> When you visit our landing
+              page, we may use ip-api.com to determine your approximate city from your IP
+              address. This helps us show you whether our service is available in your area.
+              This data is processed by ip-api.com and is not stored on our servers.
+            </li>
+            <li>
+              <strong className="text-white">Vercel Analytics:</strong> We use Vercel
+              Analytics to collect anonymous page view data. This helps us understand how
+              visitors use our site. Vercel Analytics does not use cookies or track
+              individual users across sites. See{" "}
+              <a
+                href="https://vercel.com/docs/analytics"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-rose-400 underline hover:text-rose-300"
+              >
+                Vercel Analytics
+              </a>
+              .
+            </li>
           </ul>
         </section>
 

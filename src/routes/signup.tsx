@@ -22,6 +22,8 @@ function Signup() {
   const [referralCode, setReferralCode] = useState(search.ref || "");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [termsError, setTermsError] = useState(false);
 
   // Generate year options (from 18 years ago back to ~100 years ago)
   const currentYear = new Date().getFullYear();
@@ -99,6 +101,12 @@ function Signup() {
 
     if (password !== confirmPassword) {
       setError("Passwords do not match");
+      return;
+    }
+
+    if (!agreedToTerms) {
+      setTermsError(true);
+      setError("You must agree to the Terms of Service and Privacy Policy");
       return;
     }
 
@@ -298,6 +306,42 @@ function Signup() {
                   🎉 You've been invited! Enter the code above to claim your free month.
                 </p>
               )}
+            </div>
+
+            <div>
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={agreedToTerms}
+                  onChange={(e) => {
+                    setAgreedToTerms(e.target.checked);
+                    if (e.target.checked) setTermsError(false);
+                  }}
+                  className={`mt-0.5 h-4 w-4 rounded border bg-gray-800 accent-rose-500 focus:ring-rose-500 ${
+                    termsError ? "border-red-500" : "border-gray-600"
+                  }`}
+                />
+                <span className={`text-sm ${termsError ? "text-red-400" : "text-gray-400"}`}>
+                  I am 18+ and agree to the{" "}
+                  <a
+                    href="/terms"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-rose-400 underline hover:text-rose-300"
+                  >
+                    Terms of Service
+                  </a>{" "}
+                  and{" "}
+                  <a
+                    href="/privacy"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-rose-400 underline hover:text-rose-300"
+                  >
+                    Privacy Policy
+                  </a>
+                </span>
+              </label>
             </div>
 
             <button
