@@ -148,6 +148,34 @@ function ReferralSection() {
   );
 }
 
+function CollapsibleCard({ title, content }: { title: string; content: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="rounded-lg border border-white/5 bg-gray-800/40 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between px-4 py-3 text-left transition hover:bg-gray-800/60"
+      >
+        <span className="text-sm font-medium text-gray-300">{title}</span>
+        <svg
+          className={`h-4 w-4 text-gray-500 transition-transform ${open ? "rotate-180" : ""}`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {open && (
+        <div className="px-4 pb-3">
+          <p className="text-sm text-gray-400 leading-relaxed">{content}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ProfilePage() {
   const navigate = useNavigate();
   const { user, loading, refetch } = useAuth();
@@ -165,6 +193,15 @@ function ProfilePage() {
   const [editCommunicationStyle, setEditCommunicationStyle] = useState("");
   const [editLifestyle, setEditLifestyle] = useState("");
   const [editDatingGoals, setEditDatingGoals] = useState("");
+  const [editCollege, setEditCollege] = useState("");
+  const [editOccupation, setEditOccupation] = useState("");
+  const [editHobbies, setEditHobbies] = useState("");
+  const [editHeight, setEditHeight] = useState("");
+  const [editPronouns, setEditPronouns] = useState("");
+  const [editIdealFirstDate, setEditIdealFirstDate] = useState("");
+  const [editGreenFlags, setEditGreenFlags] = useState("");
+  const [editRedFlags, setEditRedFlags] = useState("");
+  const [editObsessions, setEditObsessions] = useState("");
   const [editPhotos, setEditPhotos] = useState<PhotoItem[]>([]);
   const [saving, setSaving] = useState(false);
   const [uploadingIdx, setUploadingIdx] = useState<number | null>(null);
@@ -218,6 +255,15 @@ function ProfilePage() {
     setEditCommunicationStyle(user.communication_style || "");
     setEditLifestyle(user.lifestyle || "");
     setEditDatingGoals(user.dating_goals || "");
+    setEditCollege(user.college || "");
+    setEditOccupation(user.occupation || "");
+    setEditHobbies(user.hobbies || "");
+    setEditHeight(user.height || "");
+    setEditPronouns(user.pronouns || "");
+    setEditIdealFirstDate(user.ideal_first_date || "");
+    setEditGreenFlags(user.green_flags || "");
+    setEditRedFlags(user.red_flags || "");
+    setEditObsessions(user.obsessions || "");
     setEditPhotos(
       user.photos
         ? [...user.photos].sort((a, b) => {
@@ -421,6 +467,15 @@ function ProfilePage() {
         communication_style: editCommunicationStyle || null,
         lifestyle: editLifestyle || null,
         dating_goals: editDatingGoals || null,
+        college: editCollege || null,
+        occupation: editOccupation || null,
+        hobbies: editHobbies || null,
+        height: editHeight || null,
+        pronouns: editPronouns || null,
+        ideal_first_date: editIdealFirstDate || null,
+        green_flags: editGreenFlags || null,
+        red_flags: editRedFlags || null,
+        obsessions: editObsessions || null,
       };
 
       if (editLocationResult) {
@@ -918,6 +973,141 @@ function ProfilePage() {
               </select>
             </div>
 
+            {/* College */}
+            <div>
+              <label htmlFor="editCollege" className="mb-1.5 block text-sm font-medium text-gray-300">
+                College
+              </label>
+              <input
+                id="editCollege"
+                type="text"
+                value={editCollege}
+                onChange={(e) => setEditCollege(e.target.value)}
+                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-gray-100 placeholder-gray-500 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                placeholder="Where did you go to school?"
+              />
+            </div>
+
+            {/* Occupation */}
+            <div>
+              <label htmlFor="editOccupation" className="mb-1.5 block text-sm font-medium text-gray-300">
+                Occupation
+              </label>
+              <input
+                id="editOccupation"
+                type="text"
+                value={editOccupation}
+                onChange={(e) => setEditOccupation(e.target.value)}
+                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-gray-100 placeholder-gray-500 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                placeholder="What do you do?"
+              />
+            </div>
+
+            {/* Height & Pronouns row */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="editHeight" className="mb-1.5 block text-sm font-medium text-gray-300">
+                  Height
+                </label>
+                <input
+                  id="editHeight"
+                  type="text"
+                  value={editHeight}
+                  onChange={(e) => setEditHeight(e.target.value)}
+                  className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-gray-100 placeholder-gray-500 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                  placeholder="e.g. 5ft 10in"
+                />
+              </div>
+              <div>
+                <label htmlFor="editPronouns" className="mb-1.5 block text-sm font-medium text-gray-300">
+                  Pronouns
+                </label>
+                <input
+                  id="editPronouns"
+                  type="text"
+                  value={editPronouns}
+                  onChange={(e) => setEditPronouns(e.target.value)}
+                  className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-gray-100 placeholder-gray-500 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                  placeholder="e.g. he/him, she/her, they/them"
+                />
+              </div>
+            </div>
+
+            {/* Hobbies */}
+            <div>
+              <label htmlFor="editHobbies" className="mb-1.5 block text-sm font-medium text-gray-300">
+                Hobbies
+              </label>
+              <textarea
+                id="editHobbies"
+                rows={2}
+                value={editHobbies}
+                onChange={(e) => setEditHobbies(e.target.value)}
+                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-gray-100 placeholder-gray-500 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                placeholder="What do you do for fun? e.g. hiking, cooking, gaming..."
+              />
+            </div>
+
+            {/* Expanded Bio Section */}
+            <div className="rounded-lg border border-white/5 bg-gray-800/30 p-4">
+              <h3 className="mb-3 text-sm font-semibold text-gray-300">💭 Your Vibe</h3>
+
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="editIdealFirstDate" className="mb-1 block text-xs font-medium text-gray-500">
+                    Ideal First Date
+                  </label>
+                  <textarea
+                    id="editIdealFirstDate"
+                    rows={2}
+                    value={editIdealFirstDate}
+                    onChange={(e) => setEditIdealFirstDate(e.target.value)}
+                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-gray-100 placeholder-gray-500 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                    placeholder="What's your perfect first date?"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="editGreenFlags" className="mb-1 block text-xs font-medium text-gray-500">
+                    Green Flags
+                  </label>
+                  <textarea
+                    id="editGreenFlags"
+                    rows={2}
+                    value={editGreenFlags}
+                    onChange={(e) => setEditGreenFlags(e.target.value)}
+                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-gray-100 placeholder-gray-500 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                    placeholder="What green flags do you look for?"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="editRedFlags" className="mb-1 block text-xs font-medium text-gray-500">
+                    Red Flags
+                  </label>
+                  <textarea
+                    id="editRedFlags"
+                    rows={2}
+                    value={editRedFlags}
+                    onChange={(e) => setEditRedFlags(e.target.value)}
+                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-gray-100 placeholder-gray-500 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                    placeholder="Any deal-breakers?"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="editObsessions" className="mb-1 block text-xs font-medium text-gray-500">
+                    Obsessions
+                  </label>
+                  <textarea
+                    id="editObsessions"
+                    rows={2}
+                    value={editObsessions}
+                    onChange={(e) => setEditObsessions(e.target.value)}
+                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-gray-100 placeholder-gray-500 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                    placeholder="What are you obsessed with right now?"
+                  />
+                </div>
+              </div>
+            </div>
+
             {/* Location Section (Edit Mode) */}
             <div className="rounded-lg border border-white/5 bg-gray-800/30 p-4">
               <h3 className="mb-3 text-sm font-semibold text-gray-300">📍 Location</h3>
@@ -1105,6 +1295,82 @@ function ProfilePage() {
                   {user.bio || "No bio yet."}
                 </p>
               </div>
+
+              {/* Badges */}
+              {user.badges && user.badges.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {user.badges.map((badge) => (
+                    <span
+                      key={badge.id}
+                      className="inline-flex items-center gap-1 rounded-full border border-amber-500/20 bg-amber-500/5 px-3 py-1 text-xs font-medium text-amber-400"
+                      title={badge.label}
+                    >
+                      {badge.emoji} {badge.label}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Optional Field Chips */}
+              {(user.college || user.occupation || user.hobbies || user.height || user.pronouns) && (
+                <div className="flex flex-wrap gap-2">
+                  {user.college && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-gray-700 bg-gray-800/50 px-3 py-1 text-xs text-gray-300">
+                      🎓 {user.college}
+                    </span>
+                  )}
+                  {user.occupation && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-gray-700 bg-gray-800/50 px-3 py-1 text-xs text-gray-300">
+                      💼 {user.occupation}
+                    </span>
+                  )}
+                  {user.height && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-gray-700 bg-gray-800/50 px-3 py-1 text-xs text-gray-300">
+                      📏 {user.height}
+                    </span>
+                  )}
+                  {user.pronouns && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-gray-700 bg-gray-800/50 px-3 py-1 text-xs text-gray-300">
+                      🏷️ {user.pronouns}
+                    </span>
+                  )}
+                  {user.hobbies && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-gray-700 bg-gray-800/50 px-3 py-1 text-xs text-gray-300">
+                      🎯 {user.hobbies}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Expanded Bio Cards */}
+              {(user.ideal_first_date || user.green_flags || user.red_flags || user.obsessions) && (
+                <div className="space-y-3">
+                  {user.ideal_first_date && (
+                    <CollapsibleCard
+                      title="💕 Ideal First Date"
+                      content={user.ideal_first_date}
+                    />
+                  )}
+                  {user.green_flags && (
+                    <CollapsibleCard
+                      title="✅ Green Flags"
+                      content={user.green_flags}
+                    />
+                  )}
+                  {user.red_flags && (
+                    <CollapsibleCard
+                      title="🚩 Red Flags"
+                      content={user.red_flags}
+                    />
+                  )}
+                  {user.obsessions && (
+                    <CollapsibleCard
+                      title="🔥 Obsessions"
+                      content={user.obsessions}
+                    />
+                  )}
+                </div>
+              )}
 
               <div className="rounded-lg border border-white/5 bg-gray-800/40 p-4">
                 <span className="text-xs font-medium uppercase tracking-wider text-gray-500">

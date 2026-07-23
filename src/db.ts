@@ -106,6 +106,35 @@ export async function initTables(): Promise<void> {
     await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS dating_goals TEXT`;
   } catch { /* ignore */ }
 
+  // Phase 3: Rich profiles — expanded bio & optional fields
+  try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS college TEXT`;
+  } catch { /* ignore */ }
+  try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS occupation TEXT`;
+  } catch { /* ignore */ }
+  try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS hobbies TEXT`;
+  } catch { /* ignore */ }
+  try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS height TEXT`;
+  } catch { /* ignore */ }
+  try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS pronouns TEXT`;
+  } catch { /* ignore */ }
+  try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS ideal_first_date TEXT`;
+  } catch { /* ignore */ }
+  try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS green_flags TEXT`;
+  } catch { /* ignore */ }
+  try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS red_flags TEXT`;
+  } catch { /* ignore */ }
+  try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS obsessions TEXT`;
+  } catch { /* ignore */ }
+
   await sql()`
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
@@ -277,6 +306,15 @@ export interface User {
   communication_style: string | null;
   lifestyle: string | null;
   dating_goals: string | null;
+  college: string | null;
+  occupation: string | null;
+  hobbies: string | null;
+  height: string | null;
+  pronouns: string | null;
+  ideal_first_date: string | null;
+  green_flags: string | null;
+  red_flags: string | null;
+  obsessions: string | null;
   created_at: string;
 }
 
@@ -318,8 +356,24 @@ export interface MatchUser {
   communication_style?: string | null;
   lifestyle?: string | null;
   dating_goals?: string | null;
+  college?: string | null;
+  occupation?: string | null;
+  hobbies?: string | null;
+  height?: string | null;
+  pronouns?: string | null;
+  ideal_first_date?: string | null;
+  green_flags?: string | null;
+  red_flags?: string | null;
+  obsessions?: string | null;
   is_outside_range?: boolean;
   compatibility_score?: number;
+  badges?: Badge[];
+}
+
+export interface Badge {
+  id: string;
+  label: string;
+  emoji: string;
 }
 
 export interface Like {
@@ -409,6 +463,15 @@ export async function updateUserProfile(
     communication_style?: string | null;
     lifestyle?: string | null;
     dating_goals?: string | null;
+    college?: string | null;
+    occupation?: string | null;
+    hobbies?: string | null;
+    height?: string | null;
+    pronouns?: string | null;
+    ideal_first_date?: string | null;
+    green_flags?: string | null;
+    red_flags?: string | null;
+    obsessions?: string | null;
   },
 ): Promise<void> {
   await sql()`
@@ -427,6 +490,15 @@ export async function updateUserProfile(
       ${data.communication_style !== undefined ? sql()`, communication_style = ${data.communication_style}` : sql()``}
       ${data.lifestyle !== undefined ? sql()`, lifestyle = ${data.lifestyle}` : sql()``}
       ${data.dating_goals !== undefined ? sql()`, dating_goals = ${data.dating_goals}` : sql()``}
+      ${data.college !== undefined ? sql()`, college = ${data.college}` : sql()``}
+      ${data.occupation !== undefined ? sql()`, occupation = ${data.occupation}` : sql()``}
+      ${data.hobbies !== undefined ? sql()`, hobbies = ${data.hobbies}` : sql()``}
+      ${data.height !== undefined ? sql()`, height = ${data.height}` : sql()``}
+      ${data.pronouns !== undefined ? sql()`, pronouns = ${data.pronouns}` : sql()``}
+      ${data.ideal_first_date !== undefined ? sql()`, ideal_first_date = ${data.ideal_first_date}` : sql()``}
+      ${data.green_flags !== undefined ? sql()`, green_flags = ${data.green_flags}` : sql()``}
+      ${data.red_flags !== undefined ? sql()`, red_flags = ${data.red_flags}` : sql()``}
+      ${data.obsessions !== undefined ? sql()`, obsessions = ${data.obsessions}` : sql()``}
     WHERE id = ${id}
   `;
 }
@@ -707,7 +779,9 @@ export async function getUsersByGradeRange(
   const rows = await sql()`
     SELECT
       id, display_name, age, gender, bio, photo_path, grade,
-      communication_style, lifestyle, dating_goals
+      communication_style, lifestyle, dating_goals,
+      college, occupation, hobbies, height, pronouns,
+      ideal_first_date, green_flags, red_flags, obsessions
       ${
         hasLocation
           ? sql`, (6371 * acos(
@@ -816,6 +890,58 @@ export function calculateCompatibility(
   }
 
   return Math.min(100, score);
+}
+
+// ── Badges ──────────────────────────────────────────────────────
+
+/**
+ * Returns badges for a user based on their profile completeness and activity.
+ * Badges: verified, best_photo, top_rated, active_dater, conversationalist
+ */
+export async function getUserBadges(user: User): Promise<Badge[]> {
+  const badges: Badge[] = [];
+
+  // verified → has display_name and photo_path (profile is set up)
+  if (user.display_name && user.photo_path) {
+    badges.push({ id: "verified", label: "Verified", emoji: "✅" });
+  }
+
+  // best_photo → has photo_grades with is_best=true
+  const bestGrade = await getBestPhotoGrade(user.id);
+  if (bestGrade) {
+    badges.push({ id: "best_photo", label: "Best Photo Picked", emoji: "📸" });
+  }
+
+  // top_rated → percentile >= 80
+  if (user.percentile !== null && user.percentile >= 80) {
+    badges.push({ id: "top_rated", label: "Top Rated", emoji: "⭐" });
+  }
+
+  // active_dater → 10+ messages in last 7 days
+  const msgCountRows = await sql()`
+    SELECT COUNT(*)::int AS cnt
+    FROM messages
+    WHERE sender_id = ${user.id}
+      AND created_at > NOW() - INTERVAL '7 days'
+  `;
+  const msgCount = msgCountRows.length > 0 ? (msgCountRows[0] as { cnt: number }).cnt : 0;
+  if (msgCount >= 10) {
+    badges.push({ id: "active_dater", label: "Active Dater", emoji: "🔥" });
+  }
+
+  // conversationalist → avg message > 100 chars in last 7 days
+  const avgRows = await sql()`
+    SELECT AVG(LENGTH(content))::float AS avg_len
+    FROM messages
+    WHERE sender_id = ${user.id}
+      AND created_at > NOW() - INTERVAL '7 days'
+  `;
+  const avgLen = avgRows.length > 0 ? (avgRows[0] as { avg_len: number | null }).avg_len : null;
+  if (avgLen !== null && avgLen > 100) {
+    badges.push({ id: "conversationalist", label: "Conversationalist", emoji: "💬" });
+  }
+
+  return badges;
 }
 
 // ── 80/20 Matching ─────────────────────────────────────────────
@@ -1072,6 +1198,8 @@ export async function getLikers(
   const rows = await sql()`
     SELECT
       u.id, u.display_name, u.age, u.gender, u.bio, u.photo_path, u.grade,
+      u.college, u.occupation, u.hobbies, u.height, u.pronouns,
+      u.ideal_first_date, u.green_flags, u.red_flags, u.obsessions,
       COALESCE(
         (SELECT json_agg(json_build_object(
           'id', up.id,

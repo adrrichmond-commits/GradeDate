@@ -23,8 +23,18 @@ interface MatchProfile {
   communication_style?: string | null;
   lifestyle?: string | null;
   dating_goals?: string | null;
+  college?: string | null;
+  occupation?: string | null;
+  hobbies?: string | null;
+  height?: string | null;
+  pronouns?: string | null;
+  ideal_first_date?: string | null;
+  green_flags?: string | null;
+  red_flags?: string | null;
+  obsessions?: string | null;
   is_outside_range?: boolean;
   compatibility_score?: number;
+  badges?: { id: string; label: string; emoji: string }[];
 }
 
 const REPORT_REASONS = [
@@ -555,6 +565,19 @@ function MatchesPage() {
                        current.dating_goals === "new_connections" ? "🔗 New Connections" : current.dating_goals}
                     </span>
                   )}
+                </div>
+              )}
+              {/* Badge chips */}
+              {current.badges && current.badges.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {current.badges.map((badge) => (
+                    <span
+                      key={badge.id}
+                      className="rounded-full bg-amber-500/10 px-2 py-0.5 text-xs text-amber-400 border border-amber-500/20"
+                    >
+                      {badge.emoji} {badge.label}
+                    </span>
+                  ))}
                 </div>
               )}
             </div>
