@@ -53,8 +53,15 @@ import {
   applyReferralReward,
   getDailyLikesRemaining,
   useDailyLike,
+  insertPhotoGrades,
+  getPhotoGrades,
+  getBestPhotoGrade,
+  calculatePercentile,
+  updateUserPercentile,
+  updateLastFreeRegrade,
   type User,
   type UserPhoto,
+  type PhotoGrade,
 } from "../src/db.ts";
 import { sendPasswordResetEmail } from "../src/email.ts";
 import { lookupZip } from "../src/zipcode.ts";
@@ -316,69 +323,86 @@ async function handleUpload(req: Request): Promise<Response> {
     return json({ error: "Invalid form data" }, 400);
   }
 
-  const file = formData.get("photo") as File | null;
-  if (!file) {
+  // Accept multiple files under the "photo" key (or "photos")
+  const files: File[] = [];
+  for (const [key, value] of formData.entries()) {
+    if ((key === "photo" || key === "photos") && value instanceof File) {
+      files.push(value);
+    }
+  }
+
+  if (files.length === 0) {
     return json({ error: "No photo file provided" }, 400);
   }
 
+  if (files.length > 5) {
+    return json({ error: "Maximum 5 photos per upload" }, 400);
+  }
+
   const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
-  if (!ALLOWED_TYPES.includes(file.type)) {
-    return json({ error: "Only JPEG, PNG, and WebP images are allowed" }, 400);
+  for (const file of files) {
+    if (!ALLOWED_TYPES.includes(file.type)) {
+      return json({ error: "Only JPEG, PNG, and WebP images are allowed" }, 400);
+    }
   }
 
   const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
-  if (file.size > MAX_FILE_SIZE) {
-    return json({ error: "Photo must be under 10 MB" }, 400);
+  for (const file of files) {
+    if (file.size > MAX_FILE_SIZE) {
+      return json({ error: "Photo must be under 10 MB" }, 400);
+    }
   }
 
-  const ext = file.name.split(".").pop() || "jpg";
+  const uploadResults: { id?: number; photo_path: string; sort_order?: number; is_primary?: boolean }[] = [];
 
-  const buffer = await file.arrayBuffer();
+  for (const file of files) {
+    const ext = file.name.split(".").pop() || "jpg";
+    const buffer = await file.arrayBuffer();
+
+    if (user) {
+      // Authenticated user — check photo count
+      const photoCount = await getUserPhotoCount(user.id);
+      if (photoCount >= 6) {
+        return json({ error: "Maximum 6 photos allowed. Please delete one first." }, 400);
+      }
+
+      const filename = `${user.id}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
+      const filePath = path.join(uploadsDir(), filename);
+      writeFileSync(filePath, new Uint8Array(buffer));
+
+      const sortOrder = photoCount + uploadResults.length;
+      const photo = await addUserPhoto(user.id, `/uploads/${filename}`, sortOrder);
+
+      if (photoCount === 0 && uploadResults.length === 0) {
+        await setPrimaryPhoto(user.id, photo.id);
+      }
+
+      if (!user.photo_path) {
+        await updateUserProfile(user.id, {
+          display_name: user.display_name || "",
+          age: user.age || 0,
+          gender: user.gender || "",
+          looking_for: user.looking_for || "everyone",
+          bio: user.bio || "",
+          photo_path: `/uploads/${filename}`,
+        });
+      }
+
+      uploadResults.push({ id: photo.id, photo_path: photo.photo_path, sort_order: photo.sort_order, is_primary: photo.is_primary });
+    } else {
+      // Anonymous free preview — save to temp file
+      const anonId = crypto.randomUUID();
+      const filename = `anon_${anonId}.${ext}`;
+      const anonPath = path.join(uploadsDir(), filename);
+      writeFileSync(anonPath, new Uint8Array(buffer));
+      uploadResults.push({ photo_path: `/uploads/${filename}` });
+    }
+  }
 
   if (user) {
-    // Authenticated user — check photo count
-    const photoCount = await getUserPhotoCount(user.id);
-    if (photoCount >= 6) {
-      return json({ error: "Maximum 6 photos allowed. Please delete one first." }, 400);
-    }
-
-    const filename = `${user.id}_${Date.now()}.${ext}`;
-    const filePath = path.join(uploadsDir(), filename);
-    writeFileSync(filePath, new Uint8Array(buffer));
-
-    // Determine sort order (after existing photos)
-    const sortOrder = photoCount;
-
-    // Insert into user_photos
-    const photo = await addUserPhoto(user.id, `/uploads/${filename}`, sortOrder);
-
-    // If this is the first photo, set it as primary
-    if (photoCount === 0) {
-      await setPrimaryPhoto(user.id, photo.id);
-    }
-
-    // Ensure users.photo_path is set for backwards compatibility
-    if (!user.photo_path) {
-      await updateUserProfile(user.id, {
-        display_name: user.display_name || "",
-        age: user.age || 0,
-        gender: user.gender || "",
-        looking_for: user.looking_for || "everyone",
-        bio: user.bio || "",
-        photo_path: `/uploads/${filename}`,
-      });
-    }
-
-    return json({ photo: { id: photo.id, photo_path: photo.photo_path, sort_order: photo.sort_order, is_primary: photo.is_primary } });
+    return json({ photos: uploadResults });
   }
-
-  // Anonymous free preview — save to temp file with random UUID
-  const anonId = crypto.randomUUID();
-  const filename = `anon_${anonId}.${ext}`;
-  const anonPath = path.join(uploadsDir(), filename);
-  writeFileSync(anonPath, new Uint8Array(buffer));
-
-  return json({ photo_path: `/uploads/${filename}` });
+  return json({ photo_paths: uploadResults.map(r => r.photo_path) });
 }
 
 async function handleUpdateProfile(req: Request): Promise<Response> {
@@ -715,6 +739,252 @@ async function handleGrade(req: Request): Promise<Response> {
     grade,
     ...(analysis ? { analysis } : {}),
     grading_method: usedAI ? "ai" : "mock",
+  });
+}
+
+// ── Multi-Photo Grading (Rebrand) ─────────────────────────────
+
+async function gradePhotoWithAI(photoPath: string): Promise<{ grade: number; feedback: string }> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error("OPENAI_API_KEY not configured");
+  }
+
+  const dir = uploadsDir();
+  const filename = path.basename(photoPath);
+  const filePath = path.join(dir, filename);
+
+  let buffer: Buffer;
+  try {
+    buffer = readFileSync(filePath);
+  } catch {
+    throw new Error(`Photo file not found: ${filePath}`);
+  }
+
+  const base64Image = buffer.toString("base64");
+  const mimeType =
+    filename.endsWith(".png") ? "image/png" :
+    filename.endsWith(".webp") ? "image/webp" :
+    "image/jpeg";
+
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content:
+            "Grade this photo 1-10 and give ONE short actionable tip. Examples: 'Smile with teeth', 'Use outdoor lighting', 'Crop closer to face', 'Shoot from above eye level'. Return ONLY JSON: {\"grade\": number, \"feedback\": string}",
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "Grade this photo 1-10 and give one short actionable tip.",
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:${mimeType};base64,${base64Image}`,
+                detail: "low",
+              },
+            },
+          ],
+        },
+      ],
+      max_tokens: 100,
+      temperature: 0.3,
+    }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text().catch(() => "");
+    throw new Error(`OpenAI API error ${response.status}: ${errText}`);
+  }
+
+  const data = (await response.json()) as {
+    choices: Array<{ message: { content: string } }>;
+  };
+
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) {
+    throw new Error("Empty response from OpenAI");
+  }
+
+  const jsonMatch = content.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    throw new Error(`Could not parse grade from OpenAI response: ${content}`);
+  }
+
+  const parsed = JSON.parse(jsonMatch[0]);
+  const grade = Math.max(1, Math.min(10, Math.round(Number(parsed.grade) || 5)));
+  const feedback = String(parsed.feedback || "");
+
+  return { grade, feedback };
+}
+
+async function handleGradePhotos(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+
+  const body = await req.json().catch(() => null);
+  if (!body?.photo_paths || !Array.isArray(body.photo_paths)) {
+    return json({ error: "photo_paths array is required (1-5 photos)" }, 400);
+  }
+
+  const photoPaths: string[] = body.photo_paths;
+  if (photoPaths.length < 1 || photoPaths.length > 5) {
+    return json({ error: "Provide 1-5 photo paths" }, 400);
+  }
+
+  // Free tier check: if not subscribed, check last_free_regrade_at
+  if (user.subscription_status !== "active") {
+    const now = new Date();
+    const lastFree = user.last_free_regrade_at ? new Date(user.last_free_regrade_at) : null;
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+
+    if (lastFree && (now.getTime() - lastFree.getTime()) < sevenDaysMs) {
+      const daysLeft = Math.ceil(7 - (now.getTime() - lastFree.getTime()) / (24 * 60 * 60 * 1000));
+      return json({
+        error: `Free regrade used this week. ${daysLeft} day(s) until your next free regrade, or upgrade for unlimited.`,
+        code: "FREE_REGRADE_USED",
+        days_remaining: daysLeft,
+      }, 402);
+    }
+  }
+
+  // NSFW check all photos first
+  for (const photoPath of photoPaths) {
+    const nsfwResult = await nsfwCheck(photoPath);
+    if (nsfwResult === "NSFW") {
+      try {
+        const dir = uploadsDir();
+        const filename = path.basename(photoPath);
+        unlinkSync(path.join(dir, filename));
+      } catch { /* ignore */ }
+
+      return json({
+        error: "One of your photos appears to contain inappropriate content. Please upload different photos.",
+        code: "NSFW",
+      }, 400);
+    }
+  }
+
+  // Grade each photo with AI
+  const grades: { photo_path: string; grade: number; feedback: string; is_best: boolean }[] = [];
+  let highestGrade = -1;
+  let highestIndex = -1;
+
+  for (let i = 0; i < photoPaths.length; i++) {
+    let grade: number;
+    let feedback: string;
+
+    try {
+      const result = await gradePhotoWithAI(photoPaths[i]);
+      grade = result.grade;
+      feedback = result.feedback;
+    } catch (err) {
+      console.error("AI grading failed for photo, using fallback:", err);
+      grade = Math.max(1, Math.min(10, Math.round(Math.random() * 5 + 3))); // 3-8 fallback
+      feedback = "Try better lighting for a clearer photo.";
+    }
+
+    if (grade > highestGrade) {
+      highestGrade = grade;
+      highestIndex = i;
+    }
+
+    grades.push({ photo_path: photoPaths[i], grade, feedback, is_best: false });
+  }
+
+  // Mark the highest-grade photo as best
+  if (highestIndex >= 0) {
+    grades[highestIndex].is_best = true;
+  }
+
+  // Save to database
+  await insertPhotoGrades(user.id, grades);
+
+  // Update user's photo_path to the best photo
+  const bestPath = grades[highestIndex]?.photo_path;
+  if (bestPath) {
+    await updateUserProfile(user.id, {
+      display_name: user.display_name || "",
+      age: user.age || 0,
+      gender: user.gender || "",
+      looking_for: user.looking_for || "everyone",
+      bio: user.bio || "",
+      photo_path: bestPath,
+    });
+  }
+
+  // Calculate percentile
+  const percentileResult = await calculatePercentile(user.id);
+
+  if (percentileResult) {
+    await updateUserPercentile(user.id, percentileResult.percentile, percentileResult.percentile_city);
+  }
+
+  // Update last_free_regrade_at for free users
+  if (user.subscription_status !== "active") {
+    await updateLastFreeRegrade(user.id);
+  }
+
+  const topLabel = percentileResult
+    ? `Top ${Math.round(100 - percentileResult.percentile)}% in ${percentileResult.percentile_city}`
+    : "Not enough users in your city for percentile ranking yet";
+
+  return json({
+    grades: grades.map(g => ({
+      photo_path: g.photo_path,
+      grade: g.grade,
+      feedback: g.feedback,
+      is_best: g.is_best,
+    })),
+    percentile: percentileResult?.percentile ?? null,
+    percentile_city: percentileResult?.percentile_city ?? null,
+    percentile_label: topLabel,
+  });
+}
+
+async function handleGetPercentile(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+
+  if (user.percentile === null) {
+    // Try to recalculate
+    const result = await calculatePercentile(user.id);
+    if (result) {
+      await updateUserPercentile(user.id, result.percentile, result.percentile_city);
+      const label = `Top ${Math.round(100 - result.percentile)}% in ${result.percentile_city}`;
+      return json({
+        percentile: result.percentile,
+        percentile_city: result.percentile_city,
+        percentile_label: label,
+      });
+    }
+    return json({
+      percentile: null,
+      percentile_city: null,
+      percentile_label: "Not enough users in your city for percentile ranking yet",
+    });
+  }
+
+  const label = `Top ${Math.round(100 - user.percentile)}% in ${user.percentile_city}`;
+  return json({
+    percentile: user.percentile,
+    percentile_city: user.percentile_city,
+    percentile_label: label,
   });
 }
 
@@ -1600,6 +1870,16 @@ export async function handleApiRoute(
   // Grade
   if (pathname === "/api/grade" && method === "POST") {
     return handleGrade(req);
+  }
+
+  // Multi-photo grading (rebrand)
+  if (pathname === "/api/grade-photos" && method === "POST") {
+    return handleGradePhotos(req);
+  }
+
+  // Percentile
+  if (pathname === "/api/percentile" && method === "GET") {
+    return handleGetPercentile(req);
   }
 
   // Matches
