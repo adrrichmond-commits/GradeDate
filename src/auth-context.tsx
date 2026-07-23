@@ -16,6 +16,9 @@ export interface SafeUser {
   regrades_available: number;
   boost_until: string | null;
   likes_revealed: number;
+  last_free_regrade_at: string | null;
+  percentile: number | null;
+  percentile_city: string | null;
   created_at: string;
   latitude?: number;
   longitude?: number;

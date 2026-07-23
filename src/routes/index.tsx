@@ -461,27 +461,19 @@ function Home() {
               className="block bg-gradient-to-r from-white via-rose-100 to-white bg-clip-text text-transparent animate-[shimmer_4s_ease-in-out_infinite]"
               style={{ backgroundSize: "200% auto" }}
             >
-              Stop dating
+              Build a better
             </span>
             <span
               className="block bg-gradient-to-r from-white via-rose-100 to-white bg-clip-text text-transparent animate-[shimmer_4s_ease-in-out_infinite]"
               style={{ backgroundSize: "200% auto", animationDelay: "0.15s" }}
             >
-              out of your
-            </span>
-            <span
-              className="block bg-gradient-to-r from-rose-400 via-amber-400 to-rose-400 bg-clip-text text-transparent animate-[shimmer_3s_ease-in-out_infinite]"
-              style={{ backgroundSize: "200% auto", animationDelay: "0.3s" }}
-            >
-              league.
+              dating profile.
             </span>
           </h1>
 
           {/* Subhead */}
           <p className="mx-auto mt-8 max-w-xl text-center text-lg leading-relaxed text-gray-400 sm:text-xl">
-            No more shooting too high or settling for less. GradeDate uses AI to
-            match you exclusively with singles at your attractiveness level —
-            so every match has real potential.
+            Upload up to 5 photos, get AI-powered feedback, and see how you compare in Austin.
           </p>
 
           {/* CTA Button — changes based on geo */}
@@ -669,7 +661,7 @@ function Home() {
             How It Works
           </h2>
           <p className="mb-16 text-center text-gray-400">
-            Four simple steps to find your looks-match
+            Four simple steps to level up your profile
           </p>
 
           <div className="relative grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
@@ -694,8 +686,8 @@ function Home() {
                   </svg>
                 ),
                 step: "1",
-                title: "Submit a Selfie",
-                desc: "Snap a clear photo. Our AI analyzes your facial features — symmetry, proportions, and overall attractiveness.",
+                title: "Upload 5 Photos",
+                desc: "Snap your best shots. Our AI analyzes each one — lighting, angles, composition, and overall quality.",
               },
               {
                 icon: (
@@ -714,8 +706,8 @@ function Home() {
                   </svg>
                 ),
                 step: "2",
-                title: "Get Your Grade",
-                desc: "Receive your private 1–10 score. Transparent, objective, and visible only to you.",
+                title: "AI Grades Each with Tips",
+                desc: "Get a 1–10 score and actionable feedback on every photo. Smile more, change the lighting, crop closer — practical advice.",
               },
               {
                 icon: (
@@ -734,8 +726,8 @@ function Home() {
                   </svg>
                 ),
                 step: "3",
-                title: "See Your Matches",
-                desc: "Browse a curated feed of singles at your grade — or one adjacent. Every profile is a real possibility.",
+                title: "Find Your Best Profile Pic",
+                desc: "We pick your strongest photo and rank the rest. Put your best face forward on every dating app.",
               },
               {
                 icon: (
@@ -754,8 +746,8 @@ function Home() {
                   </svg>
                 ),
                 step: "4",
-                title: "Chat & Connect",
-                desc: "Message your matches, build real chemistry, and plan the date. No games, just genuine connection.",
+                title: "See How You Rank",
+                desc: "Get your percentile in Austin — know exactly where you stand. Private, personal, and only visible to you.",
               },
             ].map((item) => (
               <div key={item.step} className="card-hover group relative p-6">
@@ -795,17 +787,17 @@ function Home() {
             {/* Left column: copy */}
             <div>
               <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-rose-500/20 bg-rose-500/10 px-4 py-1.5 text-xs font-semibold text-rose-400">
-                ✓ Free · Anonymous · Instant
+                ✓ Free · Anonymous · AI-Powered
               </div>
               <h2 className="mb-4 text-3xl font-bold sm:text-4xl">
-                See Your Grade —{" "}
+                See Your Best Photos —{" "}
                 <span className="bg-gradient-to-r from-rose-400 via-amber-400 to-rose-400 bg-clip-text text-transparent">
                   Free
                 </span>
               </h2>
               <p className="mb-6 max-w-md text-lg leading-relaxed text-gray-400">
-                Curious where you stand? Upload a selfie and get an instant
-                preview of your grade — no sign-up, no credit card, completely
+                Curious which photos work best? Upload up to 5 selfies and get
+                an instant AI grade on each — no sign-up, no credit card, completely
                 anonymous.
               </p>
 
@@ -955,11 +947,10 @@ function Home() {
         <div className="mx-auto max-w-2xl text-center">
           <div className="card border-purple-500/20 bg-gradient-to-br from-purple-500/5 to-rose-500/5 p-12">
             <h2 className="mb-4 text-3xl font-bold sm:text-4xl">
-              Ready to date at your level?
+              Ready to build a better dating profile?
             </h2>
             <p className="mb-8 text-gray-400">
-              Stop wasting swipes on people out of your league. Get graded, get
-              matched, get dating.
+              Upload your best photos, get AI feedback, and see how you compare. Stop guessing — start knowing.
             </p>
             <Link
               to="/grade"
