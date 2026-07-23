@@ -253,7 +253,7 @@ function SubscribePage() {
             {[
               "Unlimited grade-matched profiles",
               "Chat with your matches",
-              "Re-grade once per month",
+              "Unlimited regrades",
               "No ads, ever",
               "Cancel anytime",
             ].map((item) => (
