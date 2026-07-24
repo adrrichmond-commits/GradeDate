@@ -438,22 +438,6 @@ function Home() {
         />
 
         <div className="relative z-10 mx-auto max-w-3xl text-center">
-          {/* Trust Bar */}
-          <div className="mb-10 inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/[0.04] px-5 py-2 backdrop-blur-sm">
-            <div className="flex -space-x-2">
-              {["#f43f5e", "#f59e0b", "#8b5cf6", "#0ea5e9"].map((c, i) => (
-                <div
-                  key={i}
-                  className="h-8 w-8 rounded-full border-2 border-gray-950"
-                  style={{ backgroundColor: c }}
-                />
-              ))}
-            </div>
-            <span className="text-sm text-gray-400">
-              <span className="font-semibold text-white">2,400+</span> singles
-              graded this week
-            </span>
-          </div>
 
           {/* Headline */}
           <h1 className="text-center text-5xl font-extrabold leading-[1.1] tracking-tight sm:text-7xl md:text-8xl">
@@ -551,64 +535,8 @@ function Home() {
                 $5.99/month after. No commitment. Cancel anytime.
               </p>
             )}
-            <div className="flex items-center gap-1">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <svg
-                  key={i}
-                  className="h-4 w-4 text-amber-400"
-                  fill="currentColor"
-                  viewBox="0 0 20 20"
-                >
-                  <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                </svg>
-              ))}
-              <span className="ml-1 text-gray-500">
-                4.8 from 1,200+ reviews
-              </span>
-            </div>
           </div>
 
-          {/* Floating Grade Cards */}
-          <div className="mt-16 grid max-w-2xl grid-cols-1 gap-4 sm:grid-cols-3">
-            {[
-              {
-                grade: 8,
-                quote: "We found our match in 3 days",
-                name: "Tom & Rachel",
-                gradient: "from-rose-500 to-rose-600",
-              },
-              {
-                grade: 6,
-                quote: "No more guessing if they'll reply",
-                name: "Marcus",
-                gradient: "from-violet-500 to-violet-600",
-              },
-              {
-                grade: 9,
-                quote: "Finally, an honest dating app",
-                name: "Aisha",
-                gradient: "from-amber-500 to-amber-600",
-              },
-            ].map((card, i) => (
-              <div
-                key={i}
-                className="card-hover flex items-center gap-4 p-4 animate-[cardEnter_0.5s_ease-out_both]"
-                style={{ animationDelay: `${0.4 + i * 0.1}s` }}
-              >
-                <div
-                  className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${card.gradient} text-lg font-extrabold text-white shadow-lg`}
-                >
-                  {card.grade}
-                </div>
-                <div className="min-w-0 text-left">
-                  <p className="truncate text-sm leading-snug text-gray-300">
-                    "{card.quote}"
-                  </p>
-                  <p className="mt-0.5 text-xs text-gray-500">{card.name}</p>
-                </div>
-              </div>
-            ))}
-          </div>
 
           {/* Scroll indicator */}
           <div
@@ -632,25 +560,6 @@ function Home() {
         </div>
       </section>
 
-      {/* ─────────────────────────────────────────────────────────────
-          2. STATS BAR (NEW)
-          ───────────────────────────────────────────────────────────── */}
-      <section className="border-y border-white/5 px-4 py-10">
-        <div className="mx-auto flex max-w-4xl flex-col items-center justify-center gap-8 sm:flex-row sm:gap-16">
-          {[
-            { number: "5,000+", label: "Singles graded" },
-            { number: "92%", label: "Match reply rate" },
-            { number: "$5.99", label: "Flat monthly" },
-          ].map((stat, i) => (
-            <div key={i} className="text-center">
-              <div className="text-4xl font-extrabold text-white">
-                {stat.number}
-              </div>
-              <div className="mt-1 text-sm text-gray-500">{stat.label}</div>
-            </div>
-          ))}
-        </div>
-      </section>
 
       {/* ─────────────────────────────────────────────────────────────
           3. HOW IT WORKS (updated copy)
@@ -854,91 +763,6 @@ function Home() {
         <PricingSection />
       </section>
 
-      {/* ─────────────────────────────────────────────────────────────
-          6. TESTIMONIALS (polished with grade badges + verified)
-          ───────────────────────────────────────────────────────────── */}
-      <section className="px-4 py-24">
-        <div className="mx-auto max-w-6xl">
-          <h2 className="mb-4 text-center text-3xl font-bold sm:text-4xl">
-            What People Are Saying
-          </h2>
-          <p className="mb-12 text-center text-gray-400">
-            Join thousands who found their looks-match
-          </p>
-          <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
-            {[
-              {
-                quote:
-                  "I always felt like I was wasting time on other apps. GradeDate put me in front of people who actually wanted to match with me. Game changer.",
-                name: "Sarah M.",
-                location: "Austin, TX",
-                grade: 8,
-              },
-              {
-                quote:
-                  "Honestly? It's refreshing. No more wondering if someone is out of your league. The grade system just works.",
-                name: "Marcus J.",
-                location: "Brooklyn, NY",
-                grade: 6,
-              },
-              {
-                quote:
-                  "I was skeptical about being 'graded' but it's totally private. Only you see your score. The matches have been incredible.",
-                name: "Aisha K.",
-                location: "Los Angeles, CA",
-                grade: 9,
-              },
-            ].map((t, i) => (
-              <div key={i} className="card-hover relative p-6">
-                {/* Grade badge — top right */}
-                <div className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-rose-500 to-rose-600 text-xs font-extrabold text-white shadow-md">
-                  {t.grade}
-                </div>
-
-                {/* Star rating — amber/gold */}
-                <div className="mb-4 flex">
-                  {Array.from({ length: 5 }).map((_, j) => (
-                    <svg
-                      key={j}
-                      className="h-5 w-5 text-amber-400"
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                    </svg>
-                  ))}
-                </div>
-                <blockquote className="mb-4 text-sm leading-relaxed text-gray-300">
-                  "{t.quote}"
-                </blockquote>
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-rose-500 to-purple-600 text-sm font-bold text-white">
-                    {t.name[0]}
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-1 text-sm font-semibold">
-                      {t.name}
-                      {/* Verified checkmark */}
-                      <svg
-                        className="h-4 w-4 text-sky-400"
-                        fill="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          fillRule="evenodd"
-                          d="M8.603 3.799A4.49 4.49 0 0112 2.25c1.357 0 2.573.6 3.397 1.549a4.49 4.49 0 013.498 1.307 4.491 4.491 0 011.307 3.497A4.49 4.49 0 0121.75 12a4.49 4.49 0 01-1.549 3.397 4.491 4.491 0 01-1.307 3.497 4.491 4.491 0 01-3.497 1.307A4.49 4.49 0 0112 21.75a4.49 4.49 0 01-3.397-1.549 4.49 4.49 0 01-3.498-1.306 4.491 4.491 0 01-1.307-3.498A4.49 4.49 0 012.25 12c0-1.357.6-2.573 1.549-3.397a4.49 4.49 0 011.307-3.497 4.49 4.49 0 013.497-1.307zm7.007 6.387a.75.75 0 10-1.22-.872l-3.236 4.53L9.53 12.22a.75.75 0 00-1.06 1.06l2.25 2.25a.75.75 0 001.14-.094l3.75-5.25z"
-                          clipRule="evenodd"
-                        />
-                      </svg>
-                    </div>
-                    <div className="text-xs text-gray-500">{t.location}</div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
 
       {/* ─────────────────────────────────────────────────────────────
           7. CLOSING CTA
