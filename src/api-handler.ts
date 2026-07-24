@@ -924,7 +924,7 @@ async function handleGradePhotos(req: Request): Promise<Response> {
     if (lastFree && (now.getTime() - lastFree.getTime()) < sevenDaysMs) {
       const daysLeft = Math.ceil(7 - (now.getTime() - lastFree.getTime()) / (24 * 60 * 60 * 1000));
       return json({
-        error: `Free regrade used this week. ${daysLeft} day(s) until your next free regrade, or upgrade for unlimited.`,
+        error: `Free regrade used this week. ${daysLeft} day(s) until your next free regrade, or upgrade to premium.`,
         code: "FREE_REGRADE_USED",
         days_remaining: daysLeft,
       }, 402);
@@ -1177,7 +1177,7 @@ async function handleLike(req: Request): Promise<Response> {
     const remaining = await useDailyLike(user.id);
     if (remaining === 0) {
       return json(
-        { error: "Daily like limit reached. Subscribe for unlimited likes.", code: "DAILY_LIMIT" },
+        { error: "Daily like limit reached. Subscribe for premium likes.", code: "DAILY_LIMIT" },
         402,
       );
     }

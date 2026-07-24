@@ -1119,7 +1119,7 @@ export async function getDailyLikesRemaining(userId: number): Promise<number> {
 
   const row = rows[0] as { daily_likes_remaining: number; daily_likes_reset_at: string | null; subscription_status: string; like_packs: number };
 
-  // Subscribers always have unlimited
+  // Subscribers always have premium
   if (row.subscription_status === "active") return -1;
 
   const now = new Date();
@@ -1147,7 +1147,7 @@ export async function useDailyLike(userId: number): Promise<number> {
 
   const row = rows[0] as { daily_likes_remaining: number; daily_likes_reset_at: string | null; subscription_status: string; like_packs: number };
 
-  // Subscribers always have unlimited
+  // Subscribers always have premium
   if (row.subscription_status === "active") return -1;
 
   const now = new Date();

@@ -258,7 +258,7 @@ function MatchesPage() {
         <div className="flex justify-center mb-4">
           {likesRemaining === "unlimited" ? (
             <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-500/10 px-3 py-1 text-xs font-medium text-rose-400 border border-rose-500/20">
-              Unlimited likes ❤️
+              Premium likes ❤️
             </span>
           ) : likesRemaining === 0 ? (
             <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-400 border border-amber-500/20">
@@ -266,7 +266,7 @@ function MatchesPage() {
               {likePacks > 0 ? (
                 <span>{likePacks} extra like{likePacks !== 1 ? "s" : ""} available</span>
               ) : (
-                <a href="/subscribe" className="underline hover:text-amber-300">Subscribe for unlimited</a>
+                <a href="/subscribe" className="underline hover:text-amber-300">Subscribe for premium</a>
               )}
             </span>
           ) : (
@@ -710,7 +710,7 @@ function MatchesPage() {
               You've used all your likes for today.
               {likePacks > 0
                 ? ` You have ${likePacks} extra like${likePacks !== 1 ? "s" : ""} available — keep swiping!`
-                : " Subscribe for $5.99/mo to get unlimited likes, or buy a like pack from the store."}
+                : " Subscribe for $5.99/mo to get premium likes, or buy a like pack from the store."}
             </p>
             <div className="mt-6 flex flex-col gap-3">
               <a href="/subscribe" className="btn-primary justify-center">

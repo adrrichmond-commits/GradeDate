@@ -212,7 +212,7 @@ function PricingSection() {
           </div>
 
           <div className="mb-2 text-sm font-semibold uppercase tracking-wider text-rose-400">
-            Unlimited
+            Premium
           </div>
           <div className="mb-1 flex items-baseline gap-1">
             <span className="text-5xl font-extrabold">$5.99</span>
@@ -225,8 +225,8 @@ function PricingSection() {
           <ul className="mb-8 flex-1 space-y-3">
             {[
               "Everything in Free",
-              "Unlimited likes",
-              "Unlimited regrades",
+              "Premium likes",
+              "Premium regrades",
               "No ads, ever",
             ].map((item) => (
               <li key={item} className="flex items-center gap-3 text-sm">

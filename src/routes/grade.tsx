@@ -73,7 +73,7 @@ function GradePage() {
       return;
     }
     if (isSubscribed) {
-      setFreeRegradeInfo("Unlimited regrades");
+      setFreeRegradeInfo("Premium regrades");
       return;
     }
     // Free tier
@@ -90,7 +90,7 @@ function GradePage() {
         7 - (now.getTime() - lastFree.getTime()) / (24 * 60 * 60 * 1000)
       );
       setFreeRegradeInfo(
-        `Free regrade available in ${daysLeft} day${daysLeft > 1 ? "s" : ""}. Upgrade for unlimited.`
+        `Free regrade available in ${daysLeft} day${daysLeft > 1 ? "s" : ""}. Upgrade to premium.`
       );
     } else {
       setFreeRegradeInfo("Free regrades: 1 per week. Available now");
