@@ -36,3 +36,4 @@ site.json
 # Backup files
 *.bak
 .vercel
+.env*
