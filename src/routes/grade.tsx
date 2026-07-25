@@ -306,7 +306,7 @@ function GradePage() {
 
   const handleShare = async () => {
     const shareText = percentileLabel && grade !== null
-      ? `I'm in the ${percentileLabel.toLowerCase()}. Find your percentile at gradedate.app`
+      ? `I scored ${grade}/10 — ${percentileLabel}${percentileCity ? ` in ${percentileCity}` : ""}. Craft your confidence at gradedate.app`
       : `I just got my profile graded. Find your best photos at gradedate.app`;
 
     const shareData = {
@@ -342,7 +342,7 @@ function GradePage() {
 
   const handleCopyGrade = async () => {
     const text = percentileLabel && grade !== null
-      ? `I'm in the ${percentileLabel.toLowerCase()}. Find your percentile at gradedate.app`
+      ? `I scored ${grade}/10 — ${percentileLabel}${percentileCity ? ` in ${percentileCity}` : ""}. Craft your confidence at gradedate.app`
       : `I just got my profile graded. Find your best photos at gradedate.app`;
 
     try {
