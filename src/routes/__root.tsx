@@ -231,7 +231,7 @@ function AppShell() {
   }, [user]);
 
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100 w-full max-w-full">
+    <div className="min-h-screen bg-gray-950 text-gray-100">
       {/* Navbar */}
       <nav className="fixed inset-x-0 top-0 z-50 border-b border-white/5 bg-gray-950/80 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4">
@@ -545,7 +545,7 @@ function RootDocument({ children }: { children: ReactNode }) {
         <meta name="twitter:description" content="Craft your confidence. Connect authentically. AI-powered photo feedback helps you put your best self forward and find genuine connections. Free preview." />
         <link rel="canonical" href="https://gradedate.app" />
       </head>
-      <body style="overflow-x:hidden; width:100%; max-width:100vw">
+      <body class="overflow-x-hidden w-full">
         {children}
         <Scripts />
         <Analytics />
