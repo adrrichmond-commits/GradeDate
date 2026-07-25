@@ -174,7 +174,7 @@ function PricingSection() {
           <ul className="mb-8 flex-1 space-y-3">
             {[
               "3 likes per day",
-              "Browse matches in your league",
+              "Browse compatible matches",
               "Full messaging",
             ].map((item) => (
               <li key={item} className="flex items-center gap-3 text-sm">
@@ -415,7 +415,7 @@ function Home() {
   return (
     <>
       {/* ─────────────────────────────────────────────────────────────
-          1. HERO — "Stop dating out of your league."
+          1. HERO — "Craft your confidence. Connect authentically."
           ───────────────────────────────────────────────────────────── */}
       <section className="relative flex min-h-screen items-center justify-center overflow-hidden px-4">
         {/* Dot grid background pattern */}
@@ -445,19 +445,19 @@ function Home() {
               className="block bg-gradient-to-r from-white via-rose-100 to-white bg-clip-text text-transparent animate-[shimmer_4s_ease-in-out_infinite]"
               style={{ backgroundSize: "200% auto" }}
             >
-              Build a better
+              Craft your confidence.
             </span>
             <span
               className="block bg-gradient-to-r from-white via-rose-100 to-white bg-clip-text text-transparent animate-[shimmer_4s_ease-in-out_infinite]"
               style={{ backgroundSize: "200% auto", animationDelay: "0.15s" }}
             >
-              dating profile.
+              Connect authentically.
             </span>
           </h1>
 
           {/* Subhead */}
           <p className="mx-auto mt-8 max-w-xl text-center text-lg leading-relaxed text-gray-400 sm:text-xl">
-            Upload up to 5 photos, get AI-powered feedback, and see how you compare in Austin.
+            Understand how you're perceived, build real confidence, and find someone who matches your energy.
           </p>
 
           {/* CTA Button — changes based on geo */}
@@ -528,7 +528,7 @@ function Home() {
           <div className="mt-4 flex flex-col items-center gap-1.5 text-sm">
             {isAustinMetro ? (
               <p className="text-gray-500">
-                $5.99/month. Join Austin's looks-matched dating community.
+                $5.99/month. Join Austin's confidence-first dating community.
               </p>
             ) : (
               <p className="text-gray-500">
@@ -570,7 +570,7 @@ function Home() {
             How It Works
           </h2>
           <p className="mb-16 text-center text-gray-400">
-            Four simple steps to level up your profile
+            Your journey to confidence starts here
           </p>
 
           <div className="relative grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
@@ -782,10 +782,10 @@ function Home() {
 
           <div className="card border-purple-500/20 bg-gradient-to-br from-purple-500/5 to-rose-500/5 p-12">
             <h2 className="mb-4 text-3xl font-bold sm:text-4xl">
-              Ready to build a better dating profile?
+              Ready to start your journey?
             </h2>
             <p className="mb-8 text-gray-400">
-              Upload your best photos, get AI feedback, and see how you compare. Stop guessing — start knowing.
+              Understand your look, build your confidence, and connect with people who get you. Your best matches start here.
             </p>
             <Link
               to="/grade"
