@@ -161,7 +161,7 @@ function PricingSection() {
       {/* Two side-by-side cards */}
       <div className="grid gap-6 sm:grid-cols-2">
         {/* ── Free Tier Card ── */}
-        <div className="card-hover flex flex-col border-gray-700/50 bg-gray-900/40 p-8 text-left">
+        <div className="card-hover flex flex-col border-gray-700/50 bg-gray-900/40 p-4 sm:p-8 text-left">
           <div className="mb-2 text-sm font-semibold uppercase tracking-wider text-gray-400">
             Free
           </div>
@@ -207,7 +207,7 @@ function PricingSection() {
         </div>
 
         {/* ── Paid Tier Card (more prominent) ── */}
-        <div className="card-hover relative flex flex-col border-rose-500/30 bg-gradient-to-b from-gray-900 to-gray-950 p-8 text-left shadow-lg shadow-rose-500/5 ring-1 ring-rose-500/20">
+        <div className="card-hover relative flex flex-col border-rose-500/30 bg-gradient-to-b from-gray-900 to-gray-950 p-4 sm:p-8 text-left shadow-lg shadow-rose-500/5 ring-1 ring-rose-500/20">
           {/* Best Value badge */}
           <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-gradient-to-r from-amber-500 to-rose-500 px-4 py-1 text-xs font-bold uppercase tracking-wider text-white shadow-lg">
             ★ Best Value
@@ -487,7 +487,7 @@ function Home() {
 
         {/* Rose pulse blob behind headline */}
         <div
-          className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-[600px] w-[600px] rounded-full bg-gradient-to-br from-rose-500/10 via-violet-500/05 to-transparent blur-3xl animate-pulse"
+          className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-[600px] w-[600px] max-w-[100vw] rounded-full bg-gradient-to-br from-rose-500/10 via-violet-500/05 to-transparent blur-3xl animate-pulse"
           style={{ animationDuration: "6s" }}
         />
 

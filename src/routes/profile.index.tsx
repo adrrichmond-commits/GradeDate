@@ -550,7 +550,7 @@ function ProfilePage() {
         </p>
       </div>
 
-      <div className="card p-8">
+      <div className="card p-4 sm:p-8">
         {/* ── Photo Section ── */}
         <div className="mb-8 flex flex-col items-center">
           {/* View mode: main photo + count badge */}
@@ -593,7 +593,7 @@ function ProfilePage() {
               <label className="mb-3 block text-sm font-medium text-gray-300">
                 Photos ({editPhotos.length}/6)
               </label>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {Array.from({ length: totalSlots }).map((_, i) => {
                   const photo = editPhotos[i] || null;
                   const isPlaceholder = i >= editPhotos.length;
@@ -1253,7 +1253,7 @@ function ProfilePage() {
                 </p>
               </div>
 
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="rounded-lg border border-white/5 bg-gray-800/40 p-4">
                   <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
                     Communication
