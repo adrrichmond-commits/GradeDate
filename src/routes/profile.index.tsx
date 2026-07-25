@@ -116,7 +116,7 @@ function ReferralSection() {
           Your Referral Code
         </label>
         <div className="flex gap-2">
-          <div className="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 font-mono text-sm text-amber-400">
+          <div className="flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 font-mono text-sm text-amber-400">
             {referralData.code}
           </div>
           <button
@@ -695,7 +695,7 @@ function ProfilePage() {
         {/* Grade Display — hero element (only in view mode) */}
         {!editing && user.grade !== null && (
           <div className="mb-8 text-center">
-            <div className="inline-flex flex-col items-center rounded-2xl border border-rose-500/20 bg-gradient-to-b from-rose-500/5 to-transparent px-10 py-6">
+            <div className="inline-flex flex-col items-center rounded-2xl border border-rose-500/20 bg-gradient-to-b from-rose-500/5 to-transparent px-6 sm:px-10 py-6">
               <span className="text-xs font-semibold uppercase tracking-wider text-rose-400">
                 Your Grade
               </span>
@@ -749,7 +749,7 @@ function ProfilePage() {
                 </div>
               </div>
             ) : (
-              <div className="inline-flex flex-col items-center rounded-xl border border-amber-500/30 bg-amber-500/5 px-8 py-6">
+              <div className="flex w-full flex-col items-center rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 sm:px-8 py-6">
                 <svg
                   className="mb-3 h-8 w-8 text-amber-400"
                   fill="none"
