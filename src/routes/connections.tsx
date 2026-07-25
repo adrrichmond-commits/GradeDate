@@ -11,6 +11,7 @@ interface Connection {
   last_message: string | null;
   last_message_at: string | null;
   match_created_at: string;
+  mutual_league_score?: number | null;
 }
 
 interface LikerProfile {
@@ -264,9 +265,16 @@ function ConnectionsPage() {
                           </span>
                         )}
                       </div>
-                      <p className="mt-0.5 truncate text-sm text-gray-400">
-                        {conn.last_message || "Say hello! 👋"}
-                      </p>
+                      <div className="mt-0.5 flex items-center gap-2">
+                        <p className="truncate text-sm text-gray-400">
+                          {conn.last_message || "Say hello! 👋"}
+                        </p>
+                        {conn.mutual_league_score != null && (
+                          <span className="flex-shrink-0 rounded-full bg-gradient-to-r from-rose-500/10 to-purple-500/10 px-2 py-0.5 text-xs font-medium text-rose-400 border border-rose-500/20">
+                            {conn.mutual_league_score}% league
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     <svg className="h-5 w-5 flex-shrink-0 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">

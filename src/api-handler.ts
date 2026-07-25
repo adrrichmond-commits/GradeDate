@@ -20,6 +20,8 @@ import {
   isMatch,
   getMatchById,
   getMatchesForUser,
+  calculateMutualLeagueScore,
+  updateMatchLeagueScore,
   createMessage,
   getMessages,
   getUnreadMessageCount,
@@ -63,6 +65,7 @@ import {
   getPhotoGrades,
   getBestPhotoGrade,
   calculatePercentile,
+  calculateCompatibility,
   updateUserPercentile,
   updateLastFreeRegrade,
   joinWaitlist,
@@ -1197,16 +1200,55 @@ async function handleLike(req: Request): Promise<Response> {
       matched = true;
       matchId = match.id;
 
+      // Calculate Mutual League Score
+      const otherUser = await getUserById(likedId);
+      let leagueScore: number | null = null;
+      if (otherUser) {
+        // Get photo grades for both users
+        const photoA = await getBestPhotoGrade(user.id);
+        const photoB = await getBestPhotoGrade(likedId);
+        const photoGradeA = photoA?.grade ?? user.grade ?? 5;
+        const photoGradeB = photoB?.grade ?? otherUser.grade ?? 5;
+
+        // Calculate compatibility
+        const compatScore = calculateCompatibility(
+          {
+            age: user.age,
+            communication_style: user.communication_style,
+            lifestyle: user.lifestyle,
+            dating_goals: user.dating_goals,
+          },
+          {
+            age: otherUser.age,
+            communication_style: otherUser.communication_style,
+            lifestyle: otherUser.lifestyle,
+            dating_goals: otherUser.dating_goals,
+          },
+        );
+
+        leagueScore = calculateMutualLeagueScore(
+          { grade: user.grade ?? 5, percentile: user.percentile ?? null },
+          { grade: otherUser.grade ?? 5, percentile: otherUser.percentile ?? null },
+          compatScore,
+          photoGradeA,
+          photoGradeB,
+        );
+
+        // Store the score on the match record
+        await updateMatchLeagueScore(match.id, leagueScore);
+      }
+
       // Push notifications for the new match — notify both users
+      const leagueText = leagueScore != null ? `${leagueScore}% League Match! ` : "";
       sendPushNotification(user.id, {
         title: "New Match! 💘",
-        body: "You have a new match! Start chatting now.",
+        body: `${leagueText}You have a new match! Start chatting now.`,
         url: `/chat/${match.id}`,
       }).catch((err) => console.error("Push notification failed (liker):", err));
 
       sendPushNotification(likedId, {
         title: "New Match! 💘",
-        body: "Someone just matched with you! Check it out.",
+        body: `${leagueText}Someone in your range just matched with you!`,
         url: `/chat/${match.id}`,
       }).catch((err) => console.error("Push notification failed (liked):", err));
     }
@@ -1214,6 +1256,7 @@ async function handleLike(req: Request): Promise<Response> {
 
   // Get the other user's info for the match celebration
   let otherUser = null;
+  let leagueScore: number | null = null;
   if (matched) {
     const other = await getUserById(likedId);
     if (other) {
@@ -1223,9 +1266,14 @@ async function handleLike(req: Request): Promise<Response> {
         photo_path: other.photo_path,
       };
     }
+    // Fetch the league score from the match record
+    if (matchId) {
+      const matchRecord = await getMatchById(matchId);
+      leagueScore = matchRecord?.mutual_league_score ?? null;
+    }
   }
 
-  return json({ ok: true, matched, match_id: matchId, other_user: otherUser });
+  return json({ ok: true, matched, match_id: matchId, other_user: otherUser, league_score: leagueScore });
 }
 
 async function handlePass(req: Request): Promise<Response> {
