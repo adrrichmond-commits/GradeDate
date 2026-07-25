@@ -584,11 +584,11 @@ function MatchesPage() {
           </div>
 
           {/* Action Buttons */}
-          <div className="mt-6 flex items-center justify-center gap-6">
+          <div className="mt-4 sm:mt-6 flex items-center justify-center gap-6">
             <button
               onClick={handlePass}
               disabled={animState !== null}
-              className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-red-500/40 bg-gray-900 text-red-400 transition-all duration-200 hover:scale-110 hover:border-red-400 hover:bg-red-500/10 hover:shadow-lg hover:shadow-red-500/10 disabled:opacity-50"
+              className="flex h-12 w-12 sm:h-16 sm:w-16 items-center justify-center rounded-full border-2 border-red-500/40 bg-gray-900 text-red-400 transition-all duration-200 hover:scale-110 hover:border-red-400 hover:bg-red-500/10 hover:shadow-lg hover:shadow-red-500/10 disabled:opacity-50"
               aria-label="Pass"
             >
               <svg
@@ -609,7 +609,7 @@ function MatchesPage() {
             <button
               onClick={handleLike}
               disabled={animState !== null}
-              className="flex h-20 w-20 items-center justify-center rounded-full border-2 border-rose-500/40 bg-gray-900 text-rose-400 transition-all duration-200 hover:scale-110 hover:border-rose-400 hover:bg-rose-500/10 hover:shadow-lg hover:shadow-rose-500/20 disabled:opacity-50"
+              className="flex h-14 w-14 sm:h-20 sm:w-20 items-center justify-center rounded-full border-2 border-rose-500/40 bg-gray-900 text-rose-400 transition-all duration-200 hover:scale-110 hover:border-rose-400 hover:bg-rose-500/10 hover:shadow-lg hover:shadow-rose-500/20 disabled:opacity-50"
               aria-label="Like"
             >
               <svg

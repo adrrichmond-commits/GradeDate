@@ -377,7 +377,7 @@ function GradePage() {
             </p>
           </div>
 
-          <div className="rounded-2xl border border-rose-500/20 bg-gray-900/60 p-8 backdrop-blur-sm">
+          <div className="rounded-2xl border border-rose-500/20 bg-gray-900/60 p-4 sm:p-8 backdrop-blur-sm">
             {/* ── Idle: Upload prompt ─────────────────────────── */}
             {state === "idle" && (
               <div className="flex flex-col items-center gap-4">

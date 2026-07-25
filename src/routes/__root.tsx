@@ -150,6 +150,7 @@ function AppShell() {
   const [unread, setUnread] = useState(0);
   const [cookieConsent, setCookieConsent] = useState(true);
   const [showPushPrompt, setShowPushPrompt] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Cookie helper
@@ -244,52 +245,73 @@ function AppShell() {
               <div className="h-4 w-16 animate-pulse rounded bg-gray-800" />
             ) : user ? (
               <>
-                {user.subscription_status !== "active" && (
-                  <Link
-                    to="/subscribe"
-                    className="rounded-full bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-rose-500 hover:scale-105 active:scale-95"
+                {/* ── Desktop nav (md+) ── */}
+                <div className="hidden md:flex items-center gap-4">
+                  {user.subscription_status !== "active" && (
+                    <Link
+                      to="/subscribe"
+                      className="rounded-full bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-rose-500 hover:scale-105 active:scale-95"
+                    >
+                      Subscribe
+                    </Link>
+                  )}
+                  <NavLink to="/matches">Matches</NavLink>
+                  <NavLink to="/connections">
+                    <span className="relative">
+                      Connections
+                      {unread > 0 && (
+                        <span className="absolute -right-3 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold text-white">
+                          {unread > 99 ? "99+" : unread}
+                        </span>
+                      )}
+                    </span>
+                  </NavLink>
+                  <NavLink to="/profile">Profile</NavLink>
+                  <NavLink to="/store">Store</NavLink>
+                  {user.subscription_status === "active" && (
+                    <span className="rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-semibold text-green-400">
+                      ACTIVE
+                    </span>
+                  )}
+                  <form
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      await fetch("/api/auth/logout", {
+                        method: "POST",
+                        headers: {
+                          "Content-Type": "application/json",
+                          "X-CSRF-Token": getCsrfToken() || "",
+                        },
+                      });
+                      window.location.href = "/";
+                    }}
                   >
-                    Subscribe
-                  </Link>
-                )}
-                <NavLink to="/matches">Matches</NavLink>
-                <NavLink to="/connections">
-                  <span className="relative">
-                    Connections
-                    {unread > 0 && (
-                      <span className="absolute -right-3 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold text-white">
-                        {unread > 99 ? "99+" : unread}
-                      </span>
-                    )}
-                  </span>
-                </NavLink>
-                <NavLink to="/profile">Profile</NavLink>
-                <NavLink to="/store">Store</NavLink>
-                {user.subscription_status === "active" && (
-                  <span className="rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-semibold text-green-400">
-                    ACTIVE
-                  </span>
-                )}
-                <form
-                  onSubmit={async (e) => {
-                    e.preventDefault();
-                    await fetch("/api/auth/logout", {
-                      method: "POST",
-                      headers: {
-                        "Content-Type": "application/json",
-                        "X-CSRF-Token": getCsrfToken() || "",
-                      },
-                    });
-                    window.location.href = "/";
-                  }}
+                    <button
+                      type="submit"
+                      className="text-sm text-gray-400 transition hover:text-white"
+                    >
+                      Logout
+                    </button>
+                  </form>
+                </div>
+
+                {/* ── Mobile hamburger button ── */}
+                <button
+                  type="button"
+                  className="md:hidden flex items-center justify-center h-10 w-10 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition"
+                  onClick={() => setMenuOpen((prev) => !prev)}
+                  aria-label={menuOpen ? "Close menu" : "Open menu"}
                 >
-                  <button
-                    type="submit"
-                    className="text-sm text-gray-400 transition hover:text-white"
-                  >
-                    Logout
-                  </button>
-                </form>
+                  {menuOpen ? (
+                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  ) : (
+                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                    </svg>
+                  )}
+                </button>
               </>
             ) : (
               <>
@@ -310,6 +332,85 @@ function AppShell() {
           </div>
         </div>
       </nav>
+
+      {/* ── Mobile slide-down menu panel ── */}
+      {user && menuOpen && (
+        <div className="fixed inset-x-0 top-16 z-40 border-b border-white/5 bg-gray-950/95 backdrop-blur-md md:hidden overflow-y-auto max-h-[80vh]">
+          <div className="flex flex-col gap-1 px-4 py-3">
+            {user.subscription_status !== "active" && (
+              <Link
+                to="/subscribe"
+                onClick={() => setMenuOpen(false)}
+                className="rounded-lg bg-rose-600 px-4 py-3 text-center text-sm font-semibold text-white transition hover:bg-rose-500"
+              >
+                Subscribe
+              </Link>
+            )}
+            <Link
+              to="/matches"
+              onClick={() => setMenuOpen(false)}
+              className="rounded-lg px-4 py-3 text-sm text-gray-300 transition hover:bg-gray-800 hover:text-white"
+            >
+              Matches
+            </Link>
+            <Link
+              to="/connections"
+              onClick={() => setMenuOpen(false)}
+              className="rounded-lg px-4 py-3 text-sm text-gray-300 transition hover:bg-gray-800 hover:text-white flex items-center gap-2"
+            >
+              Connections
+              {unread > 0 && (
+                <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-rose-600 px-1.5 text-[11px] font-bold text-white">
+                  {unread > 99 ? "99+" : unread}
+                </span>
+              )}
+            </Link>
+            <Link
+              to="/profile"
+              onClick={() => setMenuOpen(false)}
+              className="rounded-lg px-4 py-3 text-sm text-gray-300 transition hover:bg-gray-800 hover:text-white"
+            >
+              Profile
+            </Link>
+            <Link
+              to="/store"
+              onClick={() => setMenuOpen(false)}
+              className="rounded-lg px-4 py-3 text-sm text-gray-300 transition hover:bg-gray-800 hover:text-white"
+            >
+              Store
+            </Link>
+            {user.subscription_status === "active" && (
+              <div className="mx-4 my-1 flex items-center gap-2">
+                <span className="rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-semibold text-green-400">
+                  ACTIVE
+                </span>
+              </div>
+            )}
+            <hr className="my-1 border-white/5" />
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setMenuOpen(false);
+                await fetch("/api/auth/logout", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRF-Token": getCsrfToken() || "",
+                  },
+                });
+                window.location.href = "/";
+              }}
+            >
+              <button
+                type="submit"
+                className="w-full rounded-lg px-4 py-3 text-left text-sm text-gray-400 transition hover:bg-gray-800 hover:text-white"
+              >
+                Logout
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Page content with fade-in transition */}
       <div className="page-enter pt-16">
