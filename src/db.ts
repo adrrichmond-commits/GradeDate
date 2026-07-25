@@ -167,6 +167,8 @@ export async function initTables(): Promise<void> {
     )
   `;
 
+  await sql()`ALTER TABLE matches ADD COLUMN IF NOT EXISTS mutual_league_score INTEGER`;
+
   await sql()`
     CREATE TABLE IF NOT EXISTS messages (
       id SERIAL PRIMARY KEY,
@@ -399,6 +401,7 @@ export interface Match {
   user1_id: number;
   user2_id: number;
   created_at: string;
+  mutual_league_score?: number | null;
 }
 
 export interface MatchWithUser {
@@ -409,6 +412,7 @@ export interface MatchWithUser {
   last_message: string | null;
   last_message_at: string | null;
   match_created_at: string;
+  mutual_league_score?: number | null;
 }
 
 export interface Message {
@@ -1269,6 +1273,63 @@ export async function createMatch(user1Id: number, user2Id: number): Promise<Mat
   return existing.length > 0 ? (existing[0] as unknown as Match) : null;
 }
 
+/**
+ * Calculate Mutual League Score (0-100) between two users.
+ * Weights:
+ *   - 40%: both are within each other's percentile/grade band (the 80/20 range)
+ *   - 30%: compatibility score (via calculateCompatibility)
+ *   - 30%: photo quality alignment (similar best-photo grade levels)
+ *
+ * Never exposes individual grades — returns only the composite score.
+ */
+export function calculateMutualLeagueScore(
+  userA: { grade: number; percentile: number | null },
+  userB: { grade: number; percentile: number | null },
+  compatibilityScore: number,
+  photoGradeA: number,
+  photoGradeB: number,
+): number {
+  // ── 40%: in-range check ──────────────────────────────
+  let rangeScore = 0;
+  const rangeBand = (userA.percentile != null && userB.percentile != null) ? 5 : 1;
+  const valA = userA.percentile ?? userA.grade;
+  const valB = userB.percentile ?? userB.grade;
+
+  const aInB = Math.abs(valA - valB) <= rangeBand; // A is in B's range
+  const bInA = Math.abs(valB - valA) <= rangeBand; // B is in A's range (same math by symmetry)
+
+  // If both are in each other's range: full 40%
+  if (aInB && bInA) {
+    rangeScore = 40;
+  } else if (aInB || bInA) {
+    // One-way: partial 20%
+    rangeScore = 20;
+  }
+  // else: 0%
+
+  // ── 30%: compatibility ──────────────────────────────
+  const compatScore = (compatibilityScore / 100) * 30;
+
+  // ── 30%: photo quality alignment ────────────────────
+  // Grades are 1-10; closer = higher score
+  const photoDiff = Math.abs(photoGradeA - photoGradeB);
+  let photoScore: number;
+  if (photoDiff <= 1) photoScore = 30;
+  else if (photoDiff <= 2) photoScore = 25;
+  else if (photoDiff <= 4) photoScore = 15;
+  else if (photoDiff <= 6) photoScore = 8;
+  else photoScore = 3;
+
+  return Math.round(rangeScore + compatScore + photoScore);
+}
+
+/**
+ * Store the mutual league score on a match record.
+ */
+export async function updateMatchLeagueScore(matchId: number, score: number): Promise<void> {
+  await sql()`UPDATE matches SET mutual_league_score = ${score} WHERE id = ${matchId}`;
+}
+
 export async function getMatchById(matchId: number): Promise<Match | null> {
   const rows = await sql()`SELECT * FROM matches WHERE id = ${matchId}`;
   return rows.length > 0 ? (rows[0] as unknown as Match) : null;
@@ -1291,7 +1352,8 @@ export async function getMatchesForUser(userId: number): Promise<MatchWithUser[]
       u.photo_path,
       (SELECT msg.content FROM messages msg WHERE msg.match_id = m.id ORDER BY msg.created_at DESC LIMIT 1) AS last_message,
       (SELECT msg.created_at FROM messages msg WHERE msg.match_id = m.id ORDER BY msg.created_at DESC LIMIT 1) AS last_message_at,
-      m.created_at AS match_created_at
+      m.created_at AS match_created_at,
+      m.mutual_league_score
     FROM matches m
     JOIN users u ON u.id = CASE WHEN m.user1_id = ${userId} THEN m.user2_id ELSE m.user1_id END
     WHERE m.user1_id = ${userId} OR m.user2_id = ${userId}

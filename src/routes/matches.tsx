@@ -61,6 +61,7 @@ function MatchesPage() {
   const [matchCelebration, setMatchCelebration] = useState<{
     match_id: number;
     other_user: { id: number; display_name: string | null; photo_path: string | null } | null;
+    league_score: number | null;
   } | null>(null);
 
   // Photo carousel state
@@ -179,6 +180,7 @@ function MatchesPage() {
         setMatchCelebration({
           match_id: data.match_id,
           other_user: data.other_user,
+          league_score: data.league_score ?? null,
         });
         setTimeout(() => {
           setMatchCelebration(null);
@@ -285,7 +287,7 @@ function MatchesPage() {
         </p>
         {user.grade !== null && (
           <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-rose-500/10 px-3 py-1 text-xs text-rose-400">
-            Your grade: <span className="font-bold">{user.grade}</span>/10
+            Top {user.percentile != null ? `${Math.round(user.percentile)}%` : `${user.grade}/10`} in your area
           </div>
         )}
       </div>
@@ -650,7 +652,7 @@ function MatchesPage() {
       {/* Match Celebration Modal */}
       {matchCelebration && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-          <div className="mx-4 w-full max-w-sm animate-[bounceIn_0.5s_ease-out] rounded-2xl bg-gray-900 p-8 text-center shadow-2xl animate-[celebratePulse_2s_ease-in-out_infinite]">
+          <div className="mx-4 w-full max-w-sm animate-[bounceIn_0.5s_ease-out] rounded-2xl bg-gray-900 p-8 text-center shadow-2xl">
             <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-rose-500/20 to-amber-500/20">
               <svg
                 className="h-10 w-10 text-rose-400"
@@ -669,13 +671,36 @@ function MatchesPage() {
             <h2 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-rose-400 to-amber-400">
               It's a Match!
             </h2>
-            <p className="mt-2 text-gray-400">
+            {matchCelebration.league_score != null && (
+              <div className="mt-3">
+                <div className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-rose-500/20 to-purple-500/20 px-5 py-2 border border-rose-500/20">
+                  <span className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-rose-400 to-purple-400">
+                    {matchCelebration.league_score}%
+                  </span>
+                  <span className="text-sm font-semibold text-rose-300">League Match</span>
+                </div>
+                <p className="mt-2 text-xs text-gray-500">
+                  You're both in each other's ideal range
+                </p>
+              </div>
+            )}
+            <p className="mt-3 text-gray-400">
               You and{" "}
               <span className="font-semibold text-white">
                 {matchCelebration.other_user?.display_name || "someone"}
               </span>{" "}
               liked each other!
             </p>
+            {matchCelebration.league_score != null && (
+              <details className="mt-3 text-center">
+                <summary className="cursor-pointer text-xs text-gray-500 hover:text-gray-400 transition">
+                  Why this score?
+                </summary>
+                <p className="mt-2 text-xs text-gray-500 leading-relaxed">
+                  Your attractiveness, interests, and profile quality align exceptionally well.
+                </p>
+              </details>
+            )}
             <div className="mt-6 flex flex-col gap-3">
               <Link
                 to="/chat/$matchId"
