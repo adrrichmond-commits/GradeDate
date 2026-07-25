@@ -23,13 +23,13 @@ export const Route = createRootRoute({
       {
         name: "description",
         content:
-          "GradeDate matches you with people at your attractiveness level. Upload a selfie, get your grade, and date your looks-match. $5.99/month.",
+          "GradeDate helps you build confidence and find genuine connections. Get AI-powered photo feedback, understand your look, and connect authentically. $5.99/month.",
       },
       { property: "og:title", content: "GradeDate — Find Your Looks-Match" },
       {
         property: "og:description",
         content:
-          "We grade your selfie. You date people at your level. No more shooting out of your league.",
+          "Get honest photo feedback. Build real confidence. Connect with people who match your energy.",
       },
       { property: "og:type", content: "website" },
       { property: "og:image", content: "/og-image.png" },
@@ -40,7 +40,7 @@ export const Route = createRootRoute({
       {
         name: "twitter:description",
         content:
-          "We grade your selfie. You date people at your level. No more shooting out of your league.",
+          "Get honest photo feedback. Build real confidence. Connect with people who match your energy.",
       },
       { name: "twitter:image", content: "/og-image.png" },
     ],
@@ -434,14 +434,14 @@ function RootDocument({ children }: { children: ReactNode }) {
       <head>
         <HeadContent />
         <title>GradeDate — Looks-Matched Dating</title>
-        <meta name="description" content="Stop dating out of your league. GradeDate uses AI to match you with singles at your attractiveness level. Get your grade free." />
+        <meta name="description" content="Craft your confidence. Connect authentically. GradeDate uses AI to help you understand your look and find compatible matches. Get started free." />
         <meta property="og:title" content="GradeDate — Looks-Matched Dating" />
-        <meta property="og:description" content="Stop dating out of your league. AI-powered grading matches you with looks-compatible singles. Free preview." />
+        <meta property="og:description" content="Craft your confidence. Connect authentically. AI-powered photo feedback helps you put your best self forward and find genuine connections. Free preview." />
         <meta property="og:type" content="website" />
         <meta property="og:url" content="https://gradedate.app" />
         <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:title" content="GradeDate — Looks-Matched Dating" />
-        <meta name="twitter:description" content="Stop dating out of your league. AI-powered grading matches you with looks-compatible singles. Free preview." />
+        <meta name="twitter:description" content="Craft your confidence. Connect authentically. AI-powered photo feedback helps you put your best self forward and find genuine connections. Free preview." />
         <link rel="canonical" href="https://gradedate.app" />
       </head>
       <body>

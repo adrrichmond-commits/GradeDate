@@ -415,7 +415,7 @@ function Home() {
   return (
     <>
       {/* ─────────────────────────────────────────────────────────────
-          1. HERO — "Craft your confidence. Connect authentically."
+          1. HERO — "Craft your confidence."
           ───────────────────────────────────────────────────────────── */}
       <section className="relative flex min-h-screen items-center justify-center overflow-hidden px-4">
         {/* Dot grid background pattern */}

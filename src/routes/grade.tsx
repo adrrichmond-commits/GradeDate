@@ -298,7 +298,7 @@ function GradePage() {
     if (g >= 7)
       return "Looking sharp! You'll have plenty of great matches at your level.";
     if (g >= 5)
-      return "Solid score. Lots of compatible singles in your range.";
+      return "Solid score. Lots of compatible singles for you.";
     if (g >= 3)
       return "Everyone's got their type — own it and find your people.";
     return "Confidence is everything. Real connections happen here.";
@@ -705,7 +705,7 @@ function GradePage() {
                 {user && !isSubscribed && (
                   <div className="w-full rounded-xl border border-rose-500/30 bg-gradient-to-b from-gray-900 to-gray-950 p-6 text-center shadow-lg shadow-rose-500/5">
                     <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-rose-400">
-                      See Who's in Your League
+                      See Your Best Matches
                     </div>
                     <p className="mb-1 text-2xl font-extrabold">
                       <span className="text-rose-400">$5.99</span>
@@ -840,7 +840,7 @@ function GradePage() {
                 {user && !isSubscribed && (
                   <div className="w-full rounded-xl border border-rose-500/30 bg-gradient-to-b from-gray-900 to-gray-950 p-6 text-center shadow-lg shadow-rose-500/5">
                     <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-rose-400">
-                      See Who's in Your League
+                      See Your Best Matches
                     </div>
                     <p className="mb-1 text-2xl font-extrabold">
                       <span className="text-rose-400">$5.99</span>
