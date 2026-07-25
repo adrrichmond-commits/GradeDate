@@ -518,7 +518,7 @@ function MatchesPage() {
                 )}
                 {current.is_outside_range && (
                   <span className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2.5 py-0.5 text-xs font-medium text-amber-400 border border-amber-500/20">
-                    🌟 Outside your range
+                    🌟 New perspectives
                   </span>
                 )}
                 {current.compatibility_score != null && current.compatibility_score > 0 && (
@@ -631,7 +631,7 @@ function MatchesPage() {
           {/* Report & Counter */}
           <div className="mt-6 space-y-2">
             <p className="text-center text-xs text-gray-600">
-              {currentIdx + 1} of {matches.length} in your range
+              {currentIdx + 1} of {matches.length} compatible matches
             </p>
             <button
               onClick={() => {

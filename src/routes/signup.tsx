@@ -141,7 +141,7 @@ function Signup() {
         <div className="mb-8 text-center">
           <h1 className="text-3xl font-bold">Create Your Account</h1>
           <p className="mt-2 text-gray-400">
-            Join GradeDate and find your looks-match.
+            Join GradeDate and start your confidence journey.
           </p>
         </div>
 
