@@ -657,14 +657,14 @@ async function gradeWithAI(photoPath: string): Promise<{ grade: number; analysis
         {
           role: "system",
           content:
-            "You are an objective facial appearance rater. Analyze the given photo and rate facial appearance on a 1-10 scale (1=lowest, 10=highest). Consider facial symmetry, proportions, skin clarity, and overall attractiveness. Respond ONLY with a JSON object in this exact format: {\"grade\": <number 1-10>, \"analysis\": \"<brief one-line analysis>\"}",
+            "You are a dating profile photo coach. Analyze the given photo and rate its quality on a 1-10 scale (1=poor, 10=outstanding). Consider: lighting quality, composition and framing, how confidently the person presents themselves, overall photo appeal for a dating profile. Respond ONLY with a JSON object in this exact format: {\"grade\": <number 1-10>, \"analysis\": \"<brief one-line constructive tip>\"}",
         },
         {
           role: "user",
           content: [
             {
               type: "text",
-              text: "Rate this person's facial appearance on a 1-10 scale.",
+              text: "Rate this dating profile photo's quality on a 1-10 scale.",
             },
             {
               type: "image_url",

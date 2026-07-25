@@ -618,6 +618,13 @@ function GradePage() {
                           </p>
                         )}
                       </div>
+                      {/* Per-photo share button */}
+                      <ShareCard
+                        grade={pg.grade}
+                        percentileLabel={null}
+                        photoUrl={photos[i]?.previewUrl || pg.photo_path}
+                        compact
+                      />
                     </div>
                   ))}
                 </div>
@@ -759,12 +766,10 @@ function GradePage() {
                     </p>
                   )}
                   <p className="mt-2 text-xs text-gray-500">
-                    This is used only to find looks-compatible matches.
-                    It is never shared with other users.
+                    Your grade helps us find your best matches. It is never shown to other users.
                   </p>
-                  <p className="mt-1 text-xs text-gray-600">
-                    AI-generated estimate for entertainment purposes.
-                    Results may vary.
+                  <p className="mt-1 text-[10px] text-gray-700">
+                    AI-generated estimate. Results may vary.
                   </p>
                 </div>
 
@@ -883,28 +888,308 @@ function GradePage() {
 function ShareCard({
   grade,
   percentileLabel,
-  handleShare,
-  handleCopyGrade,
+  percentileCity,
+  photoUrl,
+  compact,
 }: {
   grade: number | null;
   percentileLabel: string | null;
-  handleShare: () => void;
-  handleCopyGrade: () => void;
+  percentileCity?: string | null;
+  photoUrl?: string;
+  compact?: boolean;
 }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [statusMsg, setStatusMsg] = useState("");
+  const [statusVisible, setStatusVisible] = useState(false);
+
   const displayGrade = grade ?? "?";
+
   const shareText =
     percentileLabel && grade !== null
-      ? `I'm in the ${percentileLabel.toLowerCase()}. Find your percentile at gradedate.app`
-      : `I just got my profile graded. Find your best photos at gradedate.app`;
+      ? `I scored ${grade}/10 — ${percentileLabel}${percentileCity ? ` in ${percentileCity}` : ""}. Craft your confidence at gradedate.app`
+      : grade !== null
+        ? `I scored ${grade}/10. Craft your confidence at gradedate.app`
+        : `Craft your confidence at gradedate.app`;
+
+  const showFeedback = (msg: string) => {
+    setStatusMsg(msg);
+    setStatusVisible(true);
+    setTimeout(() => setStatusVisible(false), 2500);
+  };
+
+  // Render the share card to an offscreen canvas and return a PNG blob
+  const renderToCanvas = async (): Promise<Blob> => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1200;
+    canvas.height = 630;
+    const ctx = canvas.getContext("2d")!;
+
+    // ── Background ──
+    const bgGrad = ctx.createLinearGradient(0, 0, 0, 630);
+    bgGrad.addColorStop(0, "#0b0b1e");
+    bgGrad.addColorStop(1, "#150a18");
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, 1200, 630);
+
+    // Top rose accent glow
+    const glow = ctx.createRadialGradient(600, 0, 0, 600, 0, 900);
+    glow.addColorStop(0, "rgba(244, 63, 94, 0.18)");
+    glow.addColorStop(0.5, "rgba(244, 63, 94, 0.04)");
+    glow.addColorStop(1, "rgba(244, 63, 94, 0)");
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, 1200, 630);
+
+    // Bottom purple accent
+    const glow2 = ctx.createRadialGradient(600, 630, 0, 600, 630, 700);
+    glow2.addColorStop(0, "rgba(168, 85, 247, 0.12)");
+    glow2.addColorStop(1, "rgba(168, 85, 247, 0)");
+    ctx.fillStyle = glow2;
+    ctx.fillRect(0, 0, 1200, 630);
+
+    // ── Photo thumbnail (left side) ──
+    if (photoUrl) {
+      try {
+        const img = await loadImage(photoUrl);
+        const photoSize = 260;
+        const photoX = 100;
+        const photoY = (630 - photoSize) / 2;
+
+        // Circular clip
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(photoX + photoSize / 2, photoY + photoSize / 2, photoSize / 2, 0, Math.PI * 2);
+        ctx.closePath();
+        ctx.clip();
+
+        // Scale to cover the circle
+        const scale = Math.max(photoSize / img.width, photoSize / img.height);
+        const sw = img.width * scale;
+        const sh = img.height * scale;
+        const sx = photoX + (photoSize - sw) / 2;
+        const sy = photoY + (photoSize - sh) / 2;
+        ctx.drawImage(img, sx, sy, sw, sh);
+
+        ctx.restore();
+
+        // Ring around photo
+        ctx.beginPath();
+        ctx.arc(photoX + photoSize / 2, photoY + photoSize / 2, photoSize / 2 + 3, 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(244, 63, 94, 0.4)";
+        ctx.lineWidth = 4;
+        ctx.stroke();
+      } catch {
+        // Draw placeholder if image fails to load
+        const cx = 230;
+        const cy = 315;
+        ctx.beginPath();
+        ctx.arc(cx, cy, 130, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(244, 63, 94, 0.1)";
+        ctx.fill();
+        ctx.strokeStyle = "rgba(244, 63, 94, 0.3)";
+        ctx.lineWidth = 3;
+        ctx.stroke();
+      }
+    } else {
+      // Placeholder circle
+      const cx = 230;
+      const cy = 315;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 130, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(244, 63, 94, 0.08)";
+      ctx.fill();
+      ctx.strokeStyle = "rgba(244, 63, 94, 0.25)";
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+
+    // ── Right side: Grade and text ──
+    const textX = 420;
+    let textY = 160;
+
+    // Grade number
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 140px Inter, system-ui, sans-serif";
+    ctx.fillText(String(displayGrade), textX, textY + 120);
+
+    // /10
+    ctx.fillStyle = "#9ca3af";
+    ctx.font = "48px Inter, system-ui, sans-serif";
+    ctx.fillText("/10", textX + 180, textY + 120);
+
+    // Percentile badge
+    if (percentileLabel) {
+      textY += 170;
+      const badgeText = percentileLabel;
+      const badgeCity = percentileCity ? ` in ${percentileCity}` : "";
+
+      // Badge background
+      const badgeW = ctx.measureText(badgeText).width + 60;
+      const badgeH = 46;
+      const badgeX = textX;
+      const badgeY = textY;
+
+      ctx.fillStyle = "rgba(244, 63, 94, 0.2)";
+      ctx.beginPath();
+      ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 23);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(244, 63, 94, 0.4)";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      ctx.fillStyle = "#f43f5e";
+      ctx.font = "bold 28px Inter, system-ui, sans-serif";
+      ctx.fillText(badgeText, badgeX + 30, badgeY + 33);
+
+      if (badgeCity) {
+        ctx.fillStyle = "rgba(255,255,255,0.6)";
+        ctx.font = "20px Inter, system-ui, sans-serif";
+        ctx.fillText(badgeCity, badgeX + 30 + ctx.measureText(badgeText).width + 10, badgeY + 33);
+      }
+    }
+
+    // Tagline
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.font = "24px Inter, system-ui, sans-serif";
+    ctx.fillText("Craft your confidence at", textX, 530);
+
+    // ── Bottom branding ──
+    ctx.fillStyle = "rgba(255,255,255,0.35)";
+    ctx.font = "bold 32px Inter, system-ui, sans-serif";
+    const brandX = 100;
+    const brandY = 590;
+
+    // Heart icon
+    ctx.fillStyle = "#f43f5e";
+    ctx.beginPath();
+    const hx = brandX;
+    const hy = brandY - 22;
+    ctx.moveTo(hx + 12, hy + 6);
+    ctx.bezierCurveTo(hx + 12, hy + 2, hx + 8, hy, hx + 4, hy);
+    ctx.bezierCurveTo(hx - 2, hy, hx - 2, hy + 8, hx + 2, hy + 14);
+    ctx.bezierCurveTo(hx + 6, hy + 18, hx + 10, hy + 20, hx + 12, hy + 22);
+    ctx.bezierCurveTo(hx + 14, hy + 20, hx + 18, hy + 18, hx + 22, hy + 14);
+    ctx.bezierCurveTo(hx + 26, hy + 8, hx + 26, hy, hx + 20, hy);
+    ctx.bezierCurveTo(hx + 16, hy, hx + 12, hy + 2, hx + 12, hy + 6);
+    ctx.fill();
+
+    ctx.fillStyle = "#f43f5e";
+    ctx.font = "bold 26px Inter, system-ui, sans-serif";
+    ctx.fillText("Grade", brandX + 34, brandY);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText("Date", brandX + 100, brandY);
+    ctx.fillStyle = "rgba(255,255,255,0.35)";
+    ctx.font = "20px Inter, system-ui, sans-serif";
+    ctx.fillText(".app", brandX + 172, brandY);
+
+    // ── Export ──
+    return new Promise((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error("Failed to generate image"));
+      }, "image/png");
+    });
+  };
+
+  const handleDownload = async () => {
+    try {
+      setStatusMsg("Generating card…");
+      setStatusVisible(true);
+      const blob = await renderToCanvas();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "gradedate-card.png";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showFeedback("Card downloaded!");
+    } catch (err) {
+      console.error("Download failed:", err);
+      showFeedback("Failed to generate card. Try again.");
+    }
+  };
+
+  const handleShareImage = async () => {
+    try {
+      setStatusMsg("Generating card…");
+      setStatusVisible(true);
+      const blob = await renderToCanvas();
+      const file = new File([blob], "gradedate-card.png", { type: "image/png" });
+
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          title: "My GradeDate Card",
+          text: shareText,
+          files: [file],
+        });
+        showFeedback("Shared!");
+      } else if (navigator.share) {
+        // Fallback: share text + URL only
+        await navigator.share({
+          title: "My GradeDate Card",
+          text: shareText,
+          url: "https://gradedate.app/grade",
+        });
+        showFeedback("Shared!");
+      } else {
+        // Clipboard fallback
+        await navigator.clipboard.writeText(shareText);
+        showFeedback("Copied to clipboard!");
+      }
+    } catch (err) {
+      // User cancelled or error - try clipboard
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setStatusVisible(false);
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(shareText);
+        showFeedback("Copied to clipboard!");
+      } catch {
+        showFeedback("Sharing not supported on this browser");
+      }
+    }
+  };
+
+  const handleCopyText = async () => {
+    try {
+      await navigator.clipboard.writeText(shareText);
+      showFeedback("Copied!");
+    } catch {
+      showFeedback("Copy failed");
+    }
+  };
+
+  if (compact) {
+    return (
+      <div className="relative inline-flex items-center gap-1">
+        <button
+          onClick={handleShareImage}
+          className="inline-flex items-center gap-1 rounded-full border border-gray-600 bg-gray-800/60 px-2.5 py-1 text-xs font-medium text-gray-300 transition hover:border-gray-400 hover:text-white hover:bg-gray-700/60"
+        >
+          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z" />
+          </svg>
+          Share
+        </button>
+        {statusVisible && (
+          <span className="absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] text-green-400">
+            {statusMsg}
+          </span>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="w-full">
       <div className="mb-2 text-center text-xs font-semibold uppercase tracking-wider text-gray-500">
-        Share Your Grade
+        Share Your Card
       </div>
 
+      {/* Visual preview card (HTML/CSS) */}
       <div
-        id="grade-card"
         className="relative overflow-hidden rounded-2xl border border-rose-500/30 bg-gray-950 p-6 text-center shadow-2xl"
         style={{
           background:
@@ -922,49 +1207,31 @@ function ShareCard({
             aria-hidden="true"
           >
             <defs>
-              <linearGradient
-                id="gclg2"
-                x1="0"
-                y1="0"
-                x2="48"
-                y2="48"
-                gradientUnits="userSpaceOnUse"
-              >
+              <linearGradient id="gclg3" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
                 <stop offset="0%" stopColor="#f43f5e" />
                 <stop offset="100%" stopColor="#f59e0b" />
               </linearGradient>
             </defs>
-            <circle
-              cx="24"
-              cy="24"
-              r="23"
-              fill="none"
-              stroke="url(#gclg2)"
-              strokeWidth="1.5"
-              opacity="0.3"
-            />
-            <path
-              d="M24 35C24 35 8 27 8 17.5c0-4.14 3.36-7.5 7.5-7.5 2.48 0 4.66 1.2 6 3.07L24 15l2.5-1.93c1.34-1.87 3.52-3.07 6-3.07 4.14 0 7.5 3.36 7.5 7.5C40 27 24 35 24 35z"
-              fill="url(#gclg2)"
-              opacity="0.9"
-            />
-            <text
-              x="24"
-              y="26.5"
-              textAnchor="middle"
-              fill="#030712"
-              fontFamily="Inter, sans-serif"
-              fontSize="10"
-              fontWeight="900"
-            >
-              10
-            </text>
+            <circle cx="24" cy="24" r="23" fill="none" stroke="url(#gclg3)" strokeWidth="1.5" opacity="0.3" />
+            <path d="M24 35C24 35 8 27 8 17.5c0-4.14 3.36-7.5 7.5-7.5 2.48 0 4.66 1.2 6 3.07L24 15l2.5-1.93c1.34-1.87 3.52-3.07 6-3.07 4.14 0 7.5 3.36 7.5 7.5C40 27 24 35 24 35z" fill="url(#gclg3)" opacity="0.9" />
+            <text x="24" y="26.5" textAnchor="middle" fill="#030712" fontFamily="Inter, sans-serif" fontSize="10" fontWeight="900">10</text>
           </svg>
           <span className="text-lg font-bold tracking-tight">
             <span className="text-rose-500">Grade</span>
             <span className="text-white">Date</span>
           </span>
         </div>
+
+        {/* Photo thumbnail in card */}
+        {photoUrl && (
+          <div className="mb-3 flex justify-center">
+            <img
+              src={photoUrl}
+              alt="Profile"
+              className="h-20 w-20 rounded-full object-cover ring-2 ring-rose-500/30"
+            />
+          </div>
+        )}
 
         {/* Grade / percentile display */}
         {percentileLabel && grade !== null ? (
@@ -974,6 +1241,13 @@ function ShareCard({
             </div>
             <div className="text-4xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-rose-400 to-rose-600">
               {percentileLabel}
+            </div>
+            {percentileCity && (
+              <div className="mt-1 text-xs text-gray-500">in {percentileCity}</div>
+            )}
+            <div className="mt-2 text-sm font-bold text-white">
+              {displayGrade}
+              <span className="text-xs text-gray-500">/10</span>
             </div>
           </div>
         ) : (
@@ -990,7 +1264,7 @@ function ShareCard({
 
         {/* Tagline */}
         <p className="mt-2 text-xs text-gray-500">
-          Find your best photos at gradedate.app
+          Craft your confidence at gradedate.app
         </p>
 
         {/* Decorative corner glows */}
@@ -1001,64 +1275,51 @@ function ShareCard({
       {/* Action buttons */}
       <div className="mt-3 flex gap-2">
         <button
-          onClick={handleShare}
+          onClick={handleShareImage}
           className="flex flex-1 items-center justify-center gap-2 rounded-full border border-gray-600 bg-gray-800/60 px-4 py-2.5 text-sm font-medium text-gray-200 transition hover:border-gray-400 hover:text-white hover:bg-gray-700/60"
         >
-          <svg
-            className="h-4 w-4"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={1.5}
-              d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z"
-            />
+          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z" />
           </svg>
           Share
         </button>
         <button
-          onClick={handleCopyGrade}
+          onClick={handleDownload}
           className="flex flex-1 items-center justify-center gap-2 rounded-full border border-gray-600 bg-gray-800/60 px-4 py-2.5 text-sm font-medium text-gray-200 transition hover:border-gray-400 hover:text-white hover:bg-gray-700/60"
         >
-          <svg
-            className="h-4 w-4"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={1.5}
-              d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184"
-            />
+          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
           </svg>
-          Copy
+          Download
+        </button>
+        <button
+          onClick={handleCopyText}
+          className="flex items-center justify-center gap-2 rounded-full border border-gray-600 bg-gray-800/60 px-3 py-2.5 text-sm font-medium text-gray-200 transition hover:border-gray-400 hover:text-white hover:bg-gray-700/60"
+          title="Copy text"
+        >
+          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" />
+          </svg>
         </button>
       </div>
 
-      {/* Feedback indicators */}
+      {/* Status feedback */}
       <p
-        id="share-feedback"
-        className="mt-2 text-center text-xs text-green-400 opacity-0 transition-opacity duration-200"
+        className={`mt-2 text-center text-xs text-green-400 transition-opacity duration-200 ${statusVisible ? "opacity-100" : "opacity-0"}`}
       >
-        Copied to clipboard!
-      </p>
-      <p
-        id="copy-feedback"
-        className="mt-2 text-center text-xs text-green-400 opacity-0 transition-opacity duration-200"
-      >
-        Copied!
-      </p>
-      <p
-        id="share-fallback-text"
-        className="mt-2 hidden text-center text-xs text-gray-400"
-      >
-        {shareText}
+        {statusMsg}
       </p>
     </div>
   );
+}
+
+// Helper: load an image from a URL (handles blob URLs and remote URLs)
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error(`Failed to load image: ${src}`));
+    img.src = src;
+  });
 }
