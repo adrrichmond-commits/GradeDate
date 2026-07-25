@@ -172,7 +172,7 @@ function StorePage() {
     <div className="mx-auto max-w-4xl px-4 py-12">
       <div className="mb-10 text-center">
         <div className="mb-3 inline-block rounded-full border border-amber-500/30 bg-amber-500/10 px-4 py-1 text-sm font-medium text-amber-400">
-          Upsell Store
+          Power Ups
         </div>
         <h1 className="text-3xl font-bold sm:text-4xl">Power Up Your Profile</h1>
         <p className="mt-3 text-gray-400 max-w-lg mx-auto">
@@ -184,7 +184,7 @@ function StorePage() {
       {user && user.subscription_status !== "active" && (
         <div className="mb-8 rounded-xl border border-amber-500/30 bg-amber-500/10 p-5 text-center">
           <p className="text-amber-400 font-semibold text-sm">
-            ⚠️ An active subscription is required for most upsells. Like packs are available to everyone!
+            ⚡ An active subscription unlocks everything. Like packs are available to everyone!
           </p>
           <Link
             to="/subscribe"
@@ -198,7 +198,7 @@ function StorePage() {
       {!user && (
         <div className="mb-8 rounded-xl border border-amber-500/30 bg-amber-500/10 p-5 text-center">
           <p className="text-amber-400 font-semibold text-sm">
-            Please log in to purchase upsells.
+            Please log in to purchase power ups.
           </p>
           <Link
             to="/login"
