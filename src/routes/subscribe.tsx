@@ -251,9 +251,9 @@ function SubscribePage() {
 
           <ul className="mb-6 space-y-2 text-left text-sm">
             {[
-              "Unlimited grade-matched profiles",
+              "Premium grade-matched profiles",
               "Chat with your matches",
-              "Unlimited regrades",
+              "Premium regrades",
               "No ads, ever",
               "Cancel anytime",
             ].map((item) => (

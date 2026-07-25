@@ -229,7 +229,7 @@ function StorePage() {
                 <div className="flex items-start gap-2 text-sm">
                   <span className="mt-0.5 text-amber-400">✓</span>
                   <div>
-                    <span className="font-medium text-white">Unlimited Regrades</span>
+                    <span className="font-medium text-white">Premium Regrades</span>
                     <p className="text-xs text-gray-500">Re-grade your photos anytime, forever</p>
                   </div>
                 </div>
