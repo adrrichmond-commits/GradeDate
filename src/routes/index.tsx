@@ -147,6 +147,8 @@ function DemoGrader() {
 // Pricing Section Component — Free + Paid side by side
 // ---------------------------------------------------------------------------
 function PricingSection() {
+  const [plan, setPlan] = useState<"monthly" | "annual">("monthly");
+
   return (
     <div className="mx-auto max-w-4xl text-center">
       <h2 className="mb-4 text-3xl font-bold sm:text-4xl">
@@ -214,13 +216,65 @@ function PricingSection() {
           <div className="mb-2 text-sm font-semibold uppercase tracking-wider text-rose-400">
             Premium
           </div>
-          <div className="mb-1 flex items-baseline gap-1">
-            <span className="text-5xl font-extrabold">$5.99</span>
-            <span className="text-gray-400">/month</span>
+
+          {/* Monthly / Annual Toggle */}
+          <div className="mb-4 inline-flex self-center rounded-full bg-gray-800 p-1 shadow-inner">
+            <button
+              onClick={() => setPlan("monthly")}
+              className={`relative rounded-full px-6 py-2 text-sm font-semibold transition-all ${
+                plan === "monthly"
+                  ? "bg-rose-600 text-white shadow-lg shadow-rose-600/25"
+                  : "text-gray-400 hover:text-gray-200"
+              }`}
+            >
+              Monthly
+            </button>
+            <button
+              onClick={() => setPlan("annual")}
+              className={`relative rounded-full px-6 py-2 text-sm font-semibold transition-all ${
+                plan === "annual"
+                  ? "bg-rose-600 text-white shadow-lg shadow-rose-600/25"
+                  : "text-gray-400 hover:text-gray-200"
+              }`}
+            >
+              Annual
+              {plan === "annual" ? (
+                <span className="ml-2 inline-block rounded-full bg-rose-400/20 px-2 py-0.5 text-xs text-rose-300">
+                  Save 30%
+                </span>
+              ) : (
+                <span className="ml-2 inline-block rounded-full bg-gray-700 px-2 py-0.5 text-xs text-gray-300">
+                  Save 30%
+                </span>
+              )}
+            </button>
           </div>
-          <p className="mb-6 text-sm text-gray-500">
-            Cancel anytime
-          </p>
+
+          {/* Price — changes based on plan */}
+          {plan === "monthly" ? (
+            <>
+              <div className="mb-1 flex items-baseline gap-1">
+                <span className="text-5xl font-extrabold">$5.99</span>
+                <span className="text-gray-400">/month</span>
+              </div>
+              <p className="mb-6 text-sm text-gray-500">
+                Cancel anytime
+              </p>
+            </>
+          ) : (
+            <>
+              <div className="mb-1 flex items-baseline gap-1">
+                <span className="text-5xl font-extrabold">$49.99</span>
+                <span className="text-gray-400">/year</span>
+              </div>
+              <p className="mb-1 text-sm font-medium text-rose-400">
+                $4.17/mo equivalent
+              </p>
+              <p className="mb-6 text-sm text-gray-500">
+                Cancel anytime
+              </p>
+            </>
+          )}
 
           <ul className="mb-8 flex-1 space-y-3">
             {[
@@ -249,10 +303,10 @@ function PricingSection() {
           </ul>
 
           <Link
-            to="/subscribe"
+            to={`/subscribe?plan=${plan}`}
             className="btn-primary w-full justify-center text-base"
           >
-            Subscribe
+            Subscribe — {plan === "monthly" ? "$5.99/month" : "$49.99/year"}
           </Link>
           <p className="mt-3 text-center text-xs text-gray-500">
             Secure payment via Stripe.
@@ -528,7 +582,7 @@ function Home() {
           <div className="mt-4 flex flex-col items-center gap-1.5 text-sm">
             {isAustinMetro ? (
               <p className="text-gray-500">
-                $5.99/month. Join Austin's confidence-first dating community.
+                $5.99/month or $49.99/year (save 30%). Join Austin's confidence-first dating community.
               </p>
             ) : (
               <p className="text-gray-500">
