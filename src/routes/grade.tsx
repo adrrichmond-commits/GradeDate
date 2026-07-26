@@ -54,7 +54,7 @@ function GradePage() {
 
   const isSubscribed = user?.subscription_status === "active";
   const isAuthenticated = !!user;
-  const maxPhotos = isAuthenticated ? 5 : 1;
+  const maxPhotos = 5; // All users can upload up to 5 photos
 
   // For anonymous users, fetch a CSRF token on mount so upload/grade POSTs work
   useEffect(() => {
@@ -371,9 +371,7 @@ function GradePage() {
               Build a Better Dating Profile
             </h1>
             <p className="mt-2 text-gray-400">
-              {isAuthenticated
-                ? "Upload up to 5 photos. Our AI grades each one and gives you actionable tips."
-                : "Upload a photo and get an AI-powered grade on a 1–10 scale."}
+              Upload up to 5 photos. Our AI grades each one and gives you actionable tips.
             </p>
           </div>
 
@@ -423,21 +421,17 @@ function GradePage() {
                     </div>
                     <span className="text-sm font-medium text-gray-300">
                       {photos.length === 0
-                        ? isAuthenticated
-                          ? "Drop up to 5 photos here"
-                          : "Drop your selfie here"
+                        ? "Drop up to 5 photos here"
                         : "Add another photo"}
                     </span>
                     <span className="text-xs text-gray-500">
-                      {isAuthenticated
-                        ? `${photos.length}/${maxPhotos} photos — JPEG, PNG, WebP`
-                        : "JPEG, PNG, WebP accepted"}
+                      {`${photos.length}/${maxPhotos} photos — JPEG, PNG, WebP`}
                     </span>
                     <input
                       ref={fileInputRef}
                       type="file"
                       accept="image/jpeg,image/png,image/webp"
-                      multiple={isAuthenticated}
+                      multiple
                       onChange={handleAddPhotos}
                       className="hidden"
                     />
