@@ -27,7 +27,7 @@ export async function initTables(): Promise<void> {
       age INTEGER,
       gender TEXT,
       bio TEXT,
-      photo_path TEXT,
+      photo_path TEXT, -- Local path (/uploads/...) or Vercel Blob URL (https://...)
       grade INTEGER,
       subscription_status TEXT DEFAULT 'inactive',
       subscription_updated_at TIMESTAMPTZ,
@@ -212,7 +212,7 @@ export async function initTables(): Promise<void> {
     CREATE TABLE IF NOT EXISTS user_photos (
       id SERIAL PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      photo_path TEXT NOT NULL,
+      photo_path TEXT NOT NULL, -- Local path (/uploads/...) or Vercel Blob URL (https://...)
       sort_order INTEGER NOT NULL DEFAULT 0,
       is_primary BOOLEAN NOT NULL DEFAULT false,
       created_at TIMESTAMPTZ DEFAULT NOW()
@@ -235,7 +235,7 @@ export async function initTables(): Promise<void> {
     CREATE TABLE IF NOT EXISTS photo_grades (
       id SERIAL PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      photo_path TEXT NOT NULL,
+      photo_path TEXT NOT NULL, -- Local path or Vercel Blob URL
       grade INTEGER NOT NULL,
       feedback TEXT NOT NULL DEFAULT '',
       is_best BOOLEAN DEFAULT false,

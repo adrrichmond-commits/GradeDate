@@ -89,6 +89,7 @@ import Stripe from "stripe";
 import { mkdirSync, existsSync, writeFileSync, readFileSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { webcrypto } from "node:crypto";
+import { storePhoto, readPhotoBuffer, deletePhoto, isExternalUrl } from "../src/blob-store.ts";
 
 // Node-compatible password hashing using Web Crypto API (available in Node 22)
 const encoder = new TextEncoder();
@@ -401,12 +402,12 @@ async function handleUpload(req: Request): Promise<Response> {
         return json({ error: "Maximum 6 photos allowed. Please delete one first." }, 400);
       }
 
-      const filename = `${user.id}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
-      const filePath = path.join(uploadsDir(), filename);
-      writeFileSync(filePath, new Uint8Array(buffer));
+      const storageFilename = `${user.id}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
+      // Store photo (uses Vercel Blob on Vercel, local filesystem otherwise)
+      const storedPath = await storePhoto(storageFilename, buffer, file.type);
 
       const sortOrder = photoCount + uploadResults.length;
-      const photo = await addUserPhoto(user.id, `/uploads/${filename}`, sortOrder);
+      const photo = await addUserPhoto(user.id, storedPath, sortOrder);
 
       if (photoCount === 0 && uploadResults.length === 0) {
         await setPrimaryPhoto(user.id, photo.id);
@@ -419,18 +420,17 @@ async function handleUpload(req: Request): Promise<Response> {
           gender: user.gender || "",
           looking_for: user.looking_for || "everyone",
           bio: user.bio || "",
-          photo_path: `/uploads/${filename}`,
+          photo_path: storedPath,
         });
       }
 
       uploadResults.push({ id: photo.id, photo_path: photo.photo_path, sort_order: photo.sort_order, is_primary: photo.is_primary });
     } else {
-      // Anonymous free preview — save to temp file
+      // Anonymous free preview — save to temp/blobs
       const anonId = crypto.randomUUID();
-      const filename = `anon_${anonId}.${ext}`;
-      const anonPath = path.join(uploadsDir(), filename);
-      writeFileSync(anonPath, new Uint8Array(buffer));
-      uploadResults.push({ photo_path: `/uploads/${filename}` });
+      const storageFilename = `anon_${anonId}.${ext}`;
+      const storedPath = await storePhoto(storageFilename, buffer, file.type);
+      uploadResults.push({ photo_path: storedPath });
     }
   }
 
@@ -553,17 +553,14 @@ async function nsfwCheck(photoPath: string): Promise<"SAFE" | "NSFW"> {
     return "SAFE";
   }
 
-  const dir = uploadsDir();
-  const filename = path.basename(photoPath);
-  const filePath = path.join(dir, filename);
-
   let buffer: Buffer;
   try {
-    buffer = readFileSync(filePath);
+    buffer = await readPhotoBuffer(photoPath);
   } catch {
     return "SAFE";
   }
 
+  const filename = path.basename(photoPath);
   const base64Image = buffer.toString("base64");
   const mimeType =
     filename.endsWith(".png") ? "image/png" :
@@ -629,16 +626,14 @@ async function gradeWithAI(photoPath: string): Promise<{ grade: number; analysis
     throw new Error("OPENAI_API_KEY not configured");
   }
 
-  // Read the photo file from disk
-  const dir = uploadsDir();
+  // Read the photo (handles both blob URLs and local files)
   const filename = path.basename(photoPath);
-  const filePath = path.join(dir, filename);
 
   let buffer: Buffer;
   try {
-    buffer = readFileSync(filePath);
+    buffer = await readPhotoBuffer(photoPath);
   } catch {
-    throw new Error(`Photo file not found: ${filePath}`);
+    throw new Error(`Photo file not found: ${photoPath}`);
   }
 
   const base64Image = buffer.toString("base64");
@@ -763,9 +758,7 @@ async function handleGrade(req: Request): Promise<Response> {
   if (nsfwResult === "NSFW") {
     // Clean up the file
     try {
-      const dir = uploadsDir();
-      const filename = path.basename(photoPath);
-      unlinkSync(path.join(dir, filename));
+      await deletePhoto(photoPath);
     } catch {
       // Best effort cleanup
     }
@@ -823,15 +816,13 @@ async function gradePhotoWithAI(photoPath: string): Promise<{ grade: number; fee
     throw new Error("OPENAI_API_KEY not configured");
   }
 
-  const dir = uploadsDir();
   const filename = path.basename(photoPath);
-  const filePath = path.join(dir, filename);
 
   let buffer: Buffer;
   try {
-    buffer = readFileSync(filePath);
+    buffer = await readPhotoBuffer(photoPath);
   } catch {
-    throw new Error(`Photo file not found: ${filePath}`);
+    throw new Error(`Photo file not found: ${photoPath}`);
   }
 
   const base64Image = buffer.toString("base64");
@@ -939,9 +930,7 @@ async function handleGradePhotos(req: Request): Promise<Response> {
     const nsfwResult = await nsfwCheck(photoPath);
     if (nsfwResult === "NSFW") {
       try {
-        const dir = uploadsDir();
-        const filename = path.basename(photoPath);
-        unlinkSync(path.join(dir, filename));
+        await deletePhoto(photoPath);
       } catch { /* ignore */ }
 
       return json({
@@ -1965,11 +1954,9 @@ async function handleDeletePhoto(req: Request, photoId: number): Promise<Respons
     }
   }
 
-  // Clean up file from disk
+  // Clean up file from storage
   try {
-    const dir = uploadsDir();
-    const filename = path.basename(photo.photo_path);
-    unlinkSync(path.join(dir, filename));
+    await deletePhoto(photo.photo_path);
   } catch {
     // Best effort cleanup
   }
