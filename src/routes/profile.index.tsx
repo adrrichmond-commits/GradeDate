@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, useRef } from "react";
 import { useAuth } from "~/auth-context";
 import { getCsrfToken } from "~/csrf-client";
+import { getPhotoUrl } from "~/photo-url";
 import { useRequireSubscription, SubscriptionBanner } from "~/subscription-guard";
 
 export const Route = createFileRoute("/profile/")({
@@ -558,7 +559,7 @@ function ProfilePage() {
             <div className="relative">
               {displayPhoto ? (
                 <img
-                  src={displayPhoto}
+                  src={getPhotoUrl(displayPhoto)}
                   alt={user.display_name || "Profile"}
                   className="h-40 w-40 rounded-full object-cover ring-3 ring-rose-500/15 ring-offset-4 ring-offset-gray-950"
                 />
@@ -645,7 +646,7 @@ function ProfilePage() {
                         </div>
                       ) : (
                         <img
-                          src={photo!.photo_path}
+                          src={getPhotoUrl(photo!.photo_path)}
                           alt={`Photo ${i + 1}`}
                           className="h-full w-full object-cover"
                         />
