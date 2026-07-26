@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "~/auth-context";
 import { getCsrfToken } from "~/csrf-client";
+import { getPhotoUrl } from "~/photo-url";
 
 export const Route = createFileRoute("/grade")({
   component: GradePage,
@@ -583,7 +584,7 @@ function GradePage() {
                     >
                       {/* Photo thumbnail */}
                       <img
-                        src={photos[i]?.previewUrl || pg.photo_path}
+                        src={photos[i]?.previewUrl || getPhotoUrl(pg.photo_path)}
                         alt={`Photo ${i + 1}`}
                         className="h-14 w-14 shrink-0 rounded-lg object-cover"
                       />
@@ -616,7 +617,7 @@ function GradePage() {
                       <ShareCard
                         grade={pg.grade}
                         percentileLabel={null}
-                        photoUrl={photos[i]?.previewUrl || pg.photo_path}
+                        photoUrl={photos[i]?.previewUrl || getPhotoUrl(pg.photo_path)}
                         compact
                       />
                     </div>

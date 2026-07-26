@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useAuth } from "~/auth-context";
 import { getCsrfToken } from "~/csrf-client";
+import { getPhotoUrl } from "~/photo-url";
 import { useRequireSubscription } from "~/subscription-guard";
 
 interface ChatMessage {
@@ -238,7 +239,7 @@ function ChatPage() {
         </Link>
         <div className="h-10 w-10 flex-shrink-0 overflow-hidden rounded-full bg-gray-800 ring-2 ring-rose-500/10 ring-offset-1 ring-offset-gray-950">
           {otherUser?.photo_path ? (
-            <img src={otherUser.photo_path} alt={otherUser.display_name || "User"} className="h-full w-full object-cover" />
+            <img src={getPhotoUrl(otherUser.photo_path)} alt={otherUser.display_name || "User"} className="h-full w-full object-cover" />
           ) : (
             <div className="flex h-full w-full items-center justify-center text-gray-600">
               <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

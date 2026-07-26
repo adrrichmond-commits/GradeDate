@@ -80,7 +80,7 @@ export async function storePhoto(
     const client = await getBlobClient();
     if (client) {
       const blob = await client.put(filename, buffer, {
-        access: "public",
+        access: "private",
         contentType,
       });
       return blob.url;
@@ -99,7 +99,11 @@ export async function storePhoto(
  */
 export async function readPhotoBuffer(photoPath: string): Promise<Buffer> {
   if (isExternalUrl(photoPath)) {
-    const response = await fetch(photoPath);
+    const fetchHeaders: Record<string, string> = {};
+    if (isVercelBlob() && process.env.BLOB_READ_WRITE_TOKEN) {
+      fetchHeaders["Authorization"] = `Bearer ${process.env.BLOB_READ_WRITE_TOKEN}`;
+    }
+    const response = await fetch(photoPath, { headers: fetchHeaders });
     if (!response.ok) {
       throw new Error(`Failed to fetch photo from URL: ${response.status}`);
     }
