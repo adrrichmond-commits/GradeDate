@@ -3,7 +3,6 @@ import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "~/auth-context";
 import { useRequireSubscription, SubscriptionBanner } from "~/subscription-guard";
 import { getCsrfToken } from "~/csrf-client";
-import { getPhotoUrl } from "~/photo-url";
 
 interface MatchPhoto {
   id: number;
@@ -421,7 +420,7 @@ function MatchesPage() {
                 return (
                   <>
                     <img
-                      src={getPhotoUrl(photoUrls[idx])}
+                      src={photoUrls[idx]}
                       alt={current.display_name || "Match"}
                       className="h-full w-full object-cover"
                     />

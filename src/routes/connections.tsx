@@ -2,7 +2,6 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "~/auth-context";
 import { getCsrfToken } from "~/csrf-client";
-import { getPhotoUrl } from "~/photo-url";
 
 interface Connection {
   match_id: number;
@@ -242,7 +241,7 @@ function ConnectionsPage() {
                     <div className="h-14 w-14 flex-shrink-0 overflow-hidden rounded-full bg-gray-800 ring-2 ring-rose-500/10 ring-offset-2 ring-offset-gray-950">
                       {conn.photo_path ? (
                         <img
-                          src={getPhotoUrl(conn.photo_path)}
+                          src={conn.photo_path}
                           alt={conn.display_name || "User"}
                           className="h-full w-full object-cover"
                         />
@@ -415,7 +414,7 @@ function ConnectionsPage() {
                   <div className="h-14 w-14 flex-shrink-0 overflow-hidden rounded-full bg-gray-800 ring-2 ring-rose-500/10 ring-offset-2 ring-offset-gray-950">
                     {liker.photo_path ? (
                       <img
-                        src={getPhotoUrl(liker.photo_path)}
+                        src={liker.photo_path}
                         alt={liker.display_name || "User"}
                         className="h-full w-full object-cover"
                       />

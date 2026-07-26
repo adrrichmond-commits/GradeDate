@@ -2198,52 +2198,6 @@ async function handleWaitlistJoin(req: Request): Promise<Response> {
   return json({ success: true });
 }
 
-// ── Photo Proxy (private blob) ─────────────────────────────────
-
-async function handlePhotoProxy(req: Request): Promise<Response> {
-  const user = await getCurrentUser(req);
-  if (!user) {
-    return json({ error: "Unauthorized" }, 401);
-  }
-
-  const url = new URL(req.url);
-  const photoUrl = url.searchParams.get("url");
-  if (!photoUrl) {
-    return json({ error: "Missing url parameter" }, 400);
-  }
-
-  // Validate that the URL points to Vercel Blob storage
-  if (!photoUrl.startsWith("https://") || !photoUrl.includes(".blob.vercel-storage.com/")) {
-    return json({ error: "Invalid photo URL" }, 400);
-  }
-
-  try {
-    const fetchHeaders: Record<string, string> = {};
-    if (process.env.BLOB_READ_WRITE_TOKEN) {
-      fetchHeaders["Authorization"] = `Bearer ${process.env.BLOB_READ_WRITE_TOKEN}`;
-    }
-
-    const response = await fetch(photoUrl, { headers: fetchHeaders });
-    if (!response.ok) {
-      return json({ error: `Failed to fetch photo: ${response.status}` }, 502);
-    }
-
-    const contentType = response.headers.get("content-type") || "image/jpeg";
-    const arrayBuffer = await response.arrayBuffer();
-
-    return new Response(arrayBuffer, {
-      status: 200,
-      headers: {
-        "Content-Type": contentType,
-        "Cache-Control": "public, max-age=3600",
-      },
-    });
-  } catch (err) {
-    console.error("[photo-proxy] Error fetching photo:", err);
-    return json({ error: "Failed to fetch photo" }, 502);
-  }
-}
-
 // ── Router ────────────────────────────────────────────────────
 
 /**
@@ -2326,11 +2280,6 @@ export async function handleApiRoute(
     const csrfErr = checkCsrf(req);
     if (csrfErr) return csrfErr;
     return handleSetPrimary(req, Number(photosPrimaryMatch[1]));
-  }
-
-  // Photo proxy — serves private blob images (auth required, GET only)
-  if (pathname === "/api/photo" && method === "GET") {
-    return handlePhotoProxy(req);
   }
 
   // Location
