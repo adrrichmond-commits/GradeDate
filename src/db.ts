@@ -910,7 +910,7 @@ export function calculateCompatibility(
 
 /**
  * Returns badges for a user based on their profile completeness and activity.
- * Badges: verified, best_photo, top_rated, active_dater, conversationalist
+ * Badges: founder, first_grade, profile_complete, austin_local, verified, best_photo, top_rated, active_dater, conversationalist
  */
 export async function getUserBadges(user: User): Promise<Badge[]> {
   const badges: Badge[] = [];
@@ -918,6 +918,21 @@ export async function getUserBadges(user: User): Promise<Badge[]> {
   // founder → permanent badge for Founders Club members
   if (user.is_founder) {
     badges.push({ id: "founder", label: "Founder", emoji: "👑" });
+  }
+
+  // first_grade — user has a grade on their profile
+  if (user.grade !== null) {
+    badges.push({ id: "first_grade", label: "First Grade", emoji: "🎯" });
+  }
+
+  // profile_complete — has name, photo, bio, and at least one expanded profile field
+  if (user.display_name && user.photo_path && user.bio && (user.hobbies || user.occupation || user.ideal_first_date || user.college)) {
+    badges.push({ id: "profile_complete", label: "Profile Complete", emoji: "✨" });
+  }
+
+  // austin_local — located in Austin
+  if (user.location_city && user.location_city.toLowerCase() === "austin") {
+    badges.push({ id: "austin_local", label: "Austin Local", emoji: "🤠" });
   }
 
   // verified → has display_name and photo_path (profile is set up)
