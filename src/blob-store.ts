@@ -1,8 +1,24 @@
 // Blob store abstraction: uses Vercel Blob on Vercel (when BLOB_READ_WRITE_TOKEN is set),
 // falls back to local filesystem for local dev.
-import { put, del } from "@vercel/blob";
+// NOTE: @vercel/blob is dynamically imported at runtime — never statically imported,
+// because it fails to load in Vercel's bundled serverless function.
 import { mkdirSync, writeFileSync, readFileSync, unlinkSync } from "node:fs";
 import path from "node:path";
+
+let _blobClient: { put: typeof import("@vercel/blob").put; del: typeof import("@vercel/blob").del } | null | undefined;
+
+async function getBlobClient() {
+  if (_blobClient !== undefined) return _blobClient;
+  try {
+    const { put, del } = await import("@vercel/blob");
+    _blobClient = { put, del };
+    return _blobClient;
+  } catch {
+    console.warn("[blob-store] @vercel/blob package could not be loaded");
+    _blobClient = null;
+    return null;
+  }
+}
 
 let _warnedMissingToken = false;
 
@@ -13,8 +29,8 @@ let _warnedMissingToken = false;
 export function isVercelBlob(): boolean {
   const token = process.env.BLOB_READ_WRITE_TOKEN;
   if (!token) {
-    if (!_warnedMissingToken && process.env.VERCEL) {
-      console.warn("[blob-store] Running on Vercel but BLOB_READ_WRITE_TOKEN is not set. Falling back to /tmp filesystem (ephemeral — photos will NOT persist across requests).");
+    if (!_warnedMissingToken) {
+      console.warn("[blob-store] BLOB_READ_WRITE_TOKEN is not set. Falling back to local filesystem.");
       _warnedMissingToken = true;
     }
     return false;
@@ -61,11 +77,15 @@ export async function storePhoto(
   contentType: string,
 ): Promise<string> {
   if (isVercelBlob()) {
-    const blob = await put(filename, buffer, {
-      access: "public",
-      contentType,
-    });
-    return blob.url;
+    const client = await getBlobClient();
+    if (client) {
+      const blob = await client.put(filename, buffer, {
+        access: "public",
+        contentType,
+      });
+      return blob.url;
+    }
+    console.warn("[blob-store] Blob client unavailable; falling back to local filesystem.");
   }
 
   // Local filesystem
@@ -100,10 +120,13 @@ export async function readPhotoBuffer(photoPath: string): Promise<Buffer> {
 export async function deletePhoto(photoPath: string): Promise<void> {
   if (isExternalUrl(photoPath)) {
     if (isVercelBlob()) {
-      try {
-        await del(photoPath);
-      } catch (err) {
-        console.error("[blob-store] Failed to delete blob:", err);
+      const client = await getBlobClient();
+      if (client) {
+        try {
+          await client.del(photoPath);
+        } catch (err) {
+          console.error("[blob-store] Failed to delete blob:", err);
+        }
       }
     }
     // If not using blob but path is external, it's not stored by us — nothing to delete
