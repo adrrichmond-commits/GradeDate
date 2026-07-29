@@ -2265,11 +2265,56 @@ async function handleUserBadges(req: Request): Promise<Response> {
 // ── Grade Card ──────────────────────────────────────────────────
 
 async function handleGradeCard(req: Request): Promise<Response> {
-  // Minimal test — no DB imports, no user data, just a bare SVG
+  // Step 2: URL parsing + DB lookup but render basic card
+  const url = new URL(req.url);
+  const userIdStr = url.searchParams.get("userId");
+  if (!userIdStr) {
+    return json({ error: "userId is required" }, 400);
+  }
+  const userId = parseInt(userIdStr, 10);
+  if (isNaN(userId)) {
+    return json({ error: "Invalid userId" }, 400);
+  }
+
+  let displayName = "Anonymous";
+  let percentileLabel = "";
+
+  try {
+    const user = await getUserById(userId);
+    if (!user) {
+      return json({ error: "User not found" }, 404);
+    }
+    displayName = user.display_name || "Anonymous";
+    if (user.percentile != null && user.percentile_city) {
+      percentileLabel = `Top ${Math.round(100 - user.percentile)}% in ${user.percentile_city}`;
+    }
+  } catch (err) {
+    console.error("grade-card DB lookup failed:", err);
+    // Fall through with defaults
+  }
+
+  const safeName = escapeXml(displayName);
+  const safePercentile = escapeXml(percentileLabel);
+
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 200 100">
-  <rect width="200" height="100" fill="#0b0b1e"/>
-  <text x="100" y="55" text-anchor="middle" fill="white" font-size="18">Hello GradeDate</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0b0b1e"/>
+      <stop offset="100%" stop-color="#150a18"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="0%" r="80%">
+      <stop offset="0%" stop-color="rgba(244,63,94,0.18)"/>
+      <stop offset="100%" stop-color="rgba(244,63,94,0)"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#glow)"/>
+  <text x="100" y="590" font-family="Inter, system-ui, sans-serif" font-size="32" font-weight="bold" fill="#f43f5e">❤ Grade</text>
+  <text x="235" y="590" font-family="Inter, system-ui, sans-serif" font-size="32" font-weight="bold" fill="#fff">Date</text>
+  <text x="425" y="590" font-family="Inter, system-ui, sans-serif" font-size="20" fill="rgba(255,255,255,0.35)">.app</text>
+  <text x="420" y="200" font-family="Inter, system-ui, sans-serif" font-size="28" font-weight="bold" fill="rgba(255,255,255,0.5)">${safeName}'s Grade</text>
+  ${safePercentile ? `<text x="420" y="260" font-family="Inter, system-ui, sans-serif" font-size="48" font-weight="bold" fill="#f43f5e">${safePercentile}</text>` : ""}
 </svg>`;
 
   return new Response(svg, {
