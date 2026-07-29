@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useMemo } from "react";
 import { useAuth } from "~/auth-context";
+import { getCsrfToken } from "~/csrf-client";
 
 export const Route = createFileRoute("/signup")({
   component: Signup,
@@ -24,6 +25,8 @@ function Signup() {
   const [submitting, setSubmitting] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [termsError, setTermsError] = useState(false);
+  const [showChoice, setShowChoice] = useState(false);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
 
   // Generate year options (from 18 years ago back to ~100 years ago)
   const currentYear = new Date().getFullYear();
@@ -78,8 +81,8 @@ function Signup() {
     return age;
   };
 
-  // Redirect if already logged in
-  if (user) {
+  // Redirect if already logged in (skip if showing choice screen)
+  if (user && !showChoice) {
     navigate({ to: "/profile" });
     return null;
   }
@@ -127,13 +130,139 @@ function Signup() {
       }
 
       await refetch();
-      navigate({ to: "/profile/setup" });
+      setShowChoice(true);
     } catch {
       setError("Network error. Please try again.");
     } finally {
       setSubmitting(false);
     }
   };
+
+  const handleContinueFree = () => {
+    navigate({ to: "/profile/setup" });
+  };
+
+  const handleBecomeFounder = async () => {
+    setCheckoutLoading(true);
+    setError("");
+    try {
+      const csrfToken = getCsrfToken();
+      const res = await fetch("/api/subscription/create-checkout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
+        },
+        body: JSON.stringify({ plan: "monthly" }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Something went wrong. Please try again.");
+        return;
+      }
+
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        setError("Could not start checkout. Please try again.");
+      }
+    } catch {
+      setError("Network error. Please try again.");
+    } finally {
+      setCheckoutLoading(false);
+    }
+  };
+
+  // ── Choice screen after successful signup ───────────────────
+  if (showChoice) {
+    return (
+      <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center px-4">
+        <div className="w-full max-w-lg">
+          <div className="mb-8 text-center">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-rose-500/10 ring-1 ring-rose-500/20">
+              <span className="text-3xl">🎉</span>
+            </div>
+            <h1 className="text-3xl font-bold">You're in!</h1>
+            <p className="mt-2 text-gray-400">
+              Your account is ready. Choose how you want to start.
+            </p>
+          </div>
+
+          {error && (
+            <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-center text-sm text-red-400">
+              {error}
+            </div>
+          )}
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            {/* Continue Free */}
+            <button
+              onClick={handleContinueFree}
+              className="rounded-2xl border border-gray-600 bg-gray-900/60 p-6 text-left backdrop-blur-sm transition-all duration-200 hover:border-gray-400 hover:bg-gray-800/80"
+            >
+              <p className="text-lg font-semibold text-gray-200">
+                Continue Free
+              </p>
+              <p className="mt-2 text-sm leading-relaxed text-gray-400">
+                Set up your profile, get graded, and start matching at no cost.
+              </p>
+              <p className="mt-4 text-xs text-gray-500">
+                You can always upgrade later
+              </p>
+            </button>
+
+            {/* Become Founder */}
+            <button
+              onClick={handleBecomeFounder}
+              disabled={checkoutLoading}
+              className="relative overflow-hidden rounded-2xl border border-amber-500/30 bg-gradient-to-br from-amber-500/20 via-amber-600/10 to-amber-500/5 p-6 text-left shadow-lg shadow-amber-500/10 backdrop-blur-sm transition-all duration-200 hover:border-amber-400/50 hover:shadow-amber-500/20 hover:scale-[1.02] disabled:opacity-70 disabled:cursor-wait"
+            >
+              {/* Shimmer overlay */}
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent animate-[shimmer_2s_ease-in-out_infinite]" />
+              <div className="relative">
+                <div className="mb-2 inline-block rounded-full border border-amber-400/40 bg-amber-500/15 px-3 py-0.5 text-xs font-semibold text-amber-400">
+                  ⭐ FOUNDERS CLUB
+                </div>
+                <p className="mt-2 text-lg font-bold text-amber-300">
+                  Become Founder{" "}
+                  <span className="text-base font-semibold text-amber-400">$5.99</span>
+                </p>
+                <ul className="mt-3 space-y-1.5 text-sm text-amber-200/80">
+                  <li className="flex items-start gap-2">
+                    <span className="mt-0.5 shrink-0 text-amber-400">🔒</span>
+                    Lifetime price lock at $5.99/mo
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="mt-0.5 shrink-0 text-amber-400">🏅</span>
+                    Numbered founding member badge
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="mt-0.5 shrink-0 text-amber-400">🚀</span>
+                    Premium likes, regrades & boosts
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="mt-0.5 shrink-0 text-amber-400">👀</span>
+                    See who liked you first
+                  </li>
+                </ul>
+                {checkoutLoading && (
+                  <p className="mt-4 text-center text-sm text-amber-400/70">
+                    Redirecting to secure checkout...
+                  </p>
+                )}
+              </div>
+            </button>
+          </div>
+
+          <p className="mt-6 text-center text-xs text-gray-600">
+            Only 1,000 Founder spots available. Cancel anytime — but your price lock
+            is yours forever as long as you stay subscribed.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center px-4">
