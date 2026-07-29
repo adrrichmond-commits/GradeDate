@@ -81,6 +81,7 @@ import {
   type UserPhoto,
   type PhotoGrade,
   type Badge,
+  type PersistedBadge,
 } from "../src/db.ts";
 import { sendPasswordResetEmail } from "../src/email.ts";
 import { sendWaitlistConfirmation } from "../src/email.ts";
@@ -2279,7 +2280,14 @@ async function handleGradeCard(req: Request): Promise<Response> {
     return json({ error: "User not found" }, 404);
   }
 
-  const gradeCard = await getUserPersistedBadges(user.id);
+  // Fetch persisted badges (may fail if table doesn't exist yet — graceful fallback)
+  let gradeCard: PersistedBadge[] = [];
+  try {
+    gradeCard = await getUserPersistedBadges(user.id);
+  } catch {
+    // Table might not exist yet on first deploy — continue without badges
+  }
+
   const displayName = user.display_name || "Anonymous";
 
   let percentileLabel = "";
