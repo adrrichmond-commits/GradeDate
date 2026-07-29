@@ -544,16 +544,13 @@ function FoundersClubSection() {
         {/* Headline */}
         <h2 className="mb-3 text-3xl font-extrabold tracking-tight sm:text-4xl md:text-5xl">
           <span className="bg-gradient-to-r from-amber-300 via-amber-400 to-yellow-400 bg-clip-text text-transparent">
-            Become a Founding Member
+            Become one of the First 1,000 Founders.
           </span>
         </h2>
 
         {/* Sub-headline */}
-        <p className="mx-auto mb-3 max-w-lg text-lg text-gray-300 sm:text-xl">
-          Help shape the future of GradeDate while locking in lifetime Founder benefits.
-        </p>
-        <p className="mx-auto mb-8 max-w-md text-sm text-gray-500">
-          First 1,000 subscribers get a numbered founding member badge, lifetime price lock at $5.99/month, and exclusive early-access perks.
+        <p className="mx-auto mb-8 max-w-lg text-lg text-gray-300 sm:text-xl">
+          Help shape the future of dating while locking in lifetime Founder benefits.
         </p>
 
         {/* Counter */}
@@ -564,20 +561,15 @@ function FoundersClubSection() {
             <div className="flex flex-col items-center gap-2">
               {/* Progress bar */}
               <div className="w-full max-w-sm">
-                <div className="mb-3 flex items-center justify-between text-sm">
-                  <span className="font-semibold text-gray-300">
-                    {used !== null ? (
-                      <span className="tabular-nums">
-                        <span className="text-2xl font-extrabold text-amber-400">{used}</span>
-                        <span className="text-gray-500"> / 1,000</span>
-                      </span>
-                    ) : (
-                      <span className="text-gray-500">Loading...</span>
-                    )}
-                  </span>
-                  <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
-                    Founders Claimed
-                  </span>
+                <div className="mb-3 text-center">
+                  {used !== null ? (
+                    <p className="tabular-nums text-lg font-semibold text-gray-300">
+                      <span className="text-3xl font-extrabold text-amber-400">{used}</span>
+                      <span className="text-gray-500"> / 1,000 Founders Claimed</span>
+                    </p>
+                  ) : (
+                    <p className="text-gray-500">Loading...</p>
+                  )}
                 </div>
                 {/* Progress track */}
                 <div className="h-3 w-full overflow-hidden rounded-full bg-gray-800/80 ring-1 ring-white/5">
