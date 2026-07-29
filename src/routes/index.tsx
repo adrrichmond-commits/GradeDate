@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 export const Route = createFileRoute("/")({
   component: Home,
@@ -461,6 +461,236 @@ function WaitlistSection() {
 }
 
 // ---------------------------------------------------------------------------
+// Founders Club Section Component
+// ---------------------------------------------------------------------------
+function FoundersClubSection() {
+  const [remaining, setRemaining] = useState<number | null>(null);
+  const [error, setError] = useState(false);
+
+  const fetchSpots = useCallback(() => {
+    let cancelled = false;
+    fetch("/api/founder-spots-remaining")
+      .then((res) => {
+        if (!res.ok) throw new Error("Failed to fetch");
+        return res.json();
+      })
+      .then((data: { remaining: number; total: number }) => {
+        if (!cancelled) {
+          setRemaining(data.remaining);
+          setError(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setError(true);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    const cleanup = fetchSpots();
+    const interval = setInterval(fetchSpots, 30_000);
+    return () => {
+      cleanup();
+      clearInterval(interval);
+    };
+  }, [fetchSpots]);
+
+  const used = remaining !== null ? 1000 - remaining : null;
+  const spotsGone = remaining !== null && remaining <= 0;
+
+  return (
+    <section className="relative overflow-hidden px-4 py-24">
+      {/* Rich premium background */}
+      <div className="pointer-events-none absolute inset-0">
+        {/* Dark gradient base */}
+        <div className="absolute inset-0 bg-gradient-to-b from-gray-950 via-gray-950/95 to-gray-950" />
+        {/* Gold/amber radial glow */}
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-[700px] w-[700px] rounded-full bg-gradient-to-br from-amber-500/[0.06] via-amber-500/[0.03] to-transparent blur-3xl" />
+        {/* Subtle rose accent */}
+        <div className="absolute right-0 top-0 h-[400px] w-[400px] rounded-full bg-gradient-to-br from-rose-500/[0.04] to-transparent blur-3xl" />
+        {/* Dot pattern */}
+        <div
+          className="absolute inset-0 opacity-[0.12]"
+          style={{
+            backgroundImage:
+              "radial-gradient(circle, rgba(245,158,11,0.25) 1px, transparent 1px)",
+            backgroundSize: "24px 24px",
+          }}
+        />
+        {/* Animated line ornament at top */}
+        <div className="absolute left-1/2 top-0 h-px w-64 -translate-x-1/2 bg-gradient-to-r from-transparent via-amber-500/30 to-transparent" />
+      </div>
+
+      <div className="relative z-10 mx-auto max-w-3xl text-center">
+        {/* Crown icon */}
+        <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-500/20 via-amber-400/15 to-yellow-500/20 ring-1 ring-amber-500/30 shadow-lg shadow-amber-500/5">
+          <svg
+            className="h-8 w-8 text-amber-400"
+            fill="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path d="M11.38 2.019a.75.75 0 011.24 0l2.69 4.302 4.97-1.307a.75.75 0 01.93.703l-.03 5.09 3.92 3.256a.75.75 0 01-.14 1.197l-4.56 2.29.33 5.082a.75.75 0 01-1.03.74L12 19.93l-4.7 2.322a.75.75 0 01-1.03-.74l.33-5.082-4.56-2.29a.75.75 0 01-.14-1.197l3.92-3.256-.03-5.09a.75.75 0 01.93-.703l4.97 1.307 2.69-4.302z" />
+          </svg>
+        </div>
+
+        {/* Badge */}
+        <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-amber-500/25 bg-amber-500/10 px-4 py-1.5">
+          <span className="flex h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
+          <span className="text-xs font-semibold uppercase tracking-widest text-amber-400">
+            Exclusive · Limited
+          </span>
+        </div>
+
+        {/* Headline */}
+        <h2 className="mb-3 text-3xl font-extrabold tracking-tight sm:text-4xl md:text-5xl">
+          <span className="bg-gradient-to-r from-amber-300 via-amber-400 to-yellow-400 bg-clip-text text-transparent">
+            Become a Founding Member
+          </span>
+        </h2>
+
+        {/* Sub-headline */}
+        <p className="mx-auto mb-3 max-w-lg text-lg text-gray-300 sm:text-xl">
+          Help shape the future of GradeDate while locking in lifetime Founder benefits.
+        </p>
+        <p className="mx-auto mb-8 max-w-md text-sm text-gray-500">
+          First 1,000 subscribers get a numbered founding member badge, lifetime price lock at $5.99/month, and exclusive early-access perks.
+        </p>
+
+        {/* Counter */}
+        <div className="mb-10">
+          {error ? (
+            <p className="text-sm text-gray-500">Unable to load founder count. Check back soon.</p>
+          ) : (
+            <div className="flex flex-col items-center gap-2">
+              {/* Progress bar */}
+              <div className="w-full max-w-sm">
+                <div className="mb-3 flex items-center justify-between text-sm">
+                  <span className="font-semibold text-gray-300">
+                    {used !== null ? (
+                      <span className="tabular-nums">
+                        <span className="text-2xl font-extrabold text-amber-400">{used}</span>
+                        <span className="text-gray-500"> / 1,000</span>
+                      </span>
+                    ) : (
+                      <span className="text-gray-500">Loading...</span>
+                    )}
+                  </span>
+                  <span className="text-xs font-medium uppercase tracking-wider text-gray-500">
+                    Founders Claimed
+                  </span>
+                </div>
+                {/* Progress track */}
+                <div className="h-3 w-full overflow-hidden rounded-full bg-gray-800/80 ring-1 ring-white/5">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-400 shadow-[0_0_12px_rgba(245,158,11,0.3)] transition-all duration-700 ease-out"
+                    style={{
+                      width: used !== null ? `${Math.max(1, (used / 1000) * 100)}%` : "0%",
+                    }}
+                  />
+                </div>
+                {/* Tick marks */}
+                <div className="mt-1.5 flex justify-between px-0.5 text-[10px] text-gray-600">
+                  <span>0</span>
+                  <span>250</span>
+                  <span>500</span>
+                  <span>750</span>
+                  <span>1,000</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* CTA — changes if spots are gone */}
+        {spotsGone ? (
+          <div className="flex flex-col items-center gap-3">
+            <div className="rounded-full border border-gray-700 bg-gray-800/50 px-6 py-4 text-gray-400">
+              <span className="font-semibold text-gray-300">Founders Club is full</span>
+              {" — "}Subscribe to join the waitlist for the next wave
+            </div>
+            <Link
+              to="/subscribe"
+              className="btn-secondary inline-flex items-center gap-2 px-8 py-4 text-base"
+            >
+              Join Waitlist
+            </Link>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center gap-4">
+            <Link
+              to="/subscribe"
+              className="inline-flex items-center gap-3 rounded-full bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-500 px-8 py-4 text-base font-bold text-gray-950 shadow-xl shadow-amber-500/25 transition-all duration-300 hover:scale-105 hover:shadow-amber-500/40 active:scale-95"
+            >
+              <svg
+                className="h-5 w-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M5 13l4 4L19 7"
+                />
+              </svg>
+              Claim Your Founder Spot
+            </Link>
+            <p className="text-xs text-gray-500">
+              $5.99/month · Lifetime price lock · Cancel anytime
+            </p>
+          </div>
+        )}
+
+        {/* Perks row */}
+        <div className="mt-12 grid gap-4 sm:grid-cols-3">
+          {[
+            {
+              icon: (
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              ),
+              title: "Lifetime Price Lock",
+              desc: "$5.99/month forever, even as prices rise",
+            },
+            {
+              icon: (
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
+                </svg>
+              ),
+              title: "Founding Member Badge",
+              desc: "Numbered badge showing you were here first",
+            },
+            {
+              icon: (
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.59 14.37a6 6 0 01-5.84 7.38v-4.8m5.84-2.58a14.98 14.98 0 006.16-12.12A14.98 14.98 0 009.631 8.41m5.96 5.96a14.926 14.926 0 01-5.841 2.58m-.119-8.54a6 6 0 00-7.381 5.84h4.8m2.581-5.84a14.927 14.927 0 00-2.58 5.84m2.699 2.7c-.103.021-.207.041-.311.06a15.09 15.09 0 01-2.448-2.448 14.9 14.9 0 01.06-.312m-2.24 2.39a4.493 4.493 0 00-1.757 4.306 4.493 4.493 0 004.306-1.758M16.5 9a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" />
+                </svg>
+              ),
+              title: "Early Access",
+              desc: "Test new features before anyone else",
+            },
+          ].map((perk) => (
+            <div
+              key={perk.title}
+              className="flex flex-col items-center gap-2 rounded-xl border border-amber-500/10 bg-amber-500/[0.03] p-5 backdrop-blur-sm"
+            >
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/10 text-amber-400">
+                {perk.icon}
+              </div>
+              <span className="text-sm font-semibold text-gray-200">{perk.title}</span>
+              <span className="text-xs text-gray-500">{perk.desc}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Home Page
 // ---------------------------------------------------------------------------
 function Home() {
@@ -737,6 +967,11 @@ function Home() {
           (Hidden for Austin metro visitors — they get the full signup flow)
           ───────────────────────────────────────────────────────────── */}
       {!isAustinMetro && <WaitlistSection />}
+
+      {/* ─────────────────────────────────────────────────────────────
+          3.6. FOUNDERS CLUB
+          ───────────────────────────────────────────────────────────── */}
+      <FoundersClubSection />
 
       {/* ─────────────────────────────────────────────────────────────
           4. FREE PREVIEW GRADING (ELEVATED — above pricing)
