@@ -71,6 +71,8 @@ import {
   joinWaitlist,
   getUserBadges,
   getFounderCount,
+  getFounderSpotsRemaining,
+  assignFounderNumber,
   setFounder,
   type User,
   type UserPhoto,
@@ -90,6 +92,17 @@ import { mkdirSync, existsSync, writeFileSync, readFileSync, unlinkSync } from "
 import path from "node:path";
 import { webcrypto } from "node:crypto";
 import { storePhoto, readPhotoBuffer, deletePhoto, isExternalUrl } from "../src/blob-store.ts";
+
+// ── Stripe constants ──────────────────────────────────────────
+
+/**
+ * Stripe Price ID for the GradeDate Premium monthly subscription ($5.99/mo).
+ * Created via scripts/create-stripe-product.ts. Update if recreating the product.
+ * Also used as the default for Founders Club checkout.
+ */
+const PREMIUM_PRICE_ID = "price_1TvzqyGuEElH7kaiCi3hjt8b";
+
+// ── Node-compatible password hashing ───────────────────────────
 
 // Node-compatible password hashing using Web Crypto API (available in Node 22)
 const encoder = new TextEncoder();
@@ -1574,16 +1587,17 @@ async function handleCreateCheckout(req: Request): Promise<Response> {
     return json({ error: "Stripe is not configured" }, 500);
   }
 
+  // Use PREMIUM_PRICE_ID for monthly; annual uses a separate price ID
   const priceId =
     body.plan === "annual"
       ? "price_1Tvzh8GuEElH7kaizZdfy7s9"
-      : "price_1TvzqyGuEElH7kaiCi3hjt8b";
+      : PREMIUM_PRICE_ID;
 
   const session = await stripe.checkout.sessions.create({
     mode: "subscription",
     line_items: [{ price: priceId, quantity: 1 }],
-    success_url: "https://gradedate.app/subscribe?success=true",
-    cancel_url: "https://gradedate.app/subscribe?canceled=true",
+    success_url: `https://gradedate.app/subscribe/success?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: "https://gradedate.app/subscribe",
     client_reference_id: String(user.id),
     customer_email: user.email,
     metadata: { user_id: String(user.id) },
@@ -1803,6 +1817,21 @@ async function handleStripeWebhook(req: Request): Promise<Response> {
           await updateSubscriptionStatus(user.id, "active");
           console.log(
             `Subscription activated for user ${user.id} (${customerEmail}) — no Stripe IDs stored`,
+          );
+        }
+
+        // Founders Club: assign sequential founder_number if spots remain
+        const spotsRemaining = await getFounderSpotsRemaining();
+        if (spotsRemaining.remaining > 0) {
+          const founderNum = await assignFounderNumber(user.id);
+          if (founderNum !== null) {
+            console.log(
+              `🎉 Founders Club #${founderNum} assigned to user ${user.id} (${customerEmail}) — ${spotsRemaining.remaining - 1} spots remaining`,
+            );
+          }
+        } else {
+          console.log(
+            `Founders Club full — user ${user.id} subscribed but no founder spot available`,
           );
         }
 
@@ -2148,8 +2177,8 @@ async function handleFoundersCheckout(req: Request): Promise<Response> {
     return json({ error: "Stripe is not configured" }, 500);
   }
 
-  // Founders Club product price ID — placeholder, change in Stripe dashboard
-  const foundersPriceId = process.env.FOUNDERS_CLUB_PRICE_ID || "price_placeholder";
+  // Founders Club product price ID — uses the same monthly subscription price
+  const foundersPriceId = process.env.FOUNDERS_CLUB_PRICE_ID || PREMIUM_PRICE_ID;
 
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
@@ -2170,6 +2199,11 @@ async function handleFoundersCheckout(req: Request): Promise<Response> {
 async function handleFoundersCount(_req: Request): Promise<Response> {
   const count = await getFounderCount();
   return json({ count, remaining: Math.max(0, 1000 - count) });
+}
+
+async function handleFounderSpotsRemaining(_req: Request): Promise<Response> {
+  const { remaining, total } = await getFounderSpotsRemaining();
+  return json({ remaining, total });
 }
 
 // ── Waitlist ────────────────────────────────────────────────────
@@ -2421,6 +2455,9 @@ export async function handleApiRoute(
   }
   if (pathname === "/api/founders/count" && method === "GET") {
     return handleFoundersCount(req);
+  }
+  if (pathname === "/api/founder-spots-remaining" && method === "GET") {
+    return handleFounderSpotsRemaining(req);
   }
 
   // Liked Me

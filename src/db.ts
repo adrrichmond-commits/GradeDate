@@ -145,6 +145,12 @@ export async function initTables(): Promise<void> {
   try {
     await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_founder BOOLEAN DEFAULT false`;
   } catch { /* ignore */ }
+  try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS founder_number INTEGER UNIQUE`;
+  } catch { /* ignore */ }
+  try {
+    await sql()`CREATE INDEX IF NOT EXISTS idx_users_founder_number ON users(founder_number)`;
+  } catch { /* ignore */ }
 
   await sql()`
     CREATE TABLE IF NOT EXISTS sessions (
@@ -335,6 +341,7 @@ export interface User {
   red_flags: string | null;
   obsessions: string | null;
   is_founder: boolean;
+  founder_number: number | null;
   created_at: string;
 }
 
@@ -1850,6 +1857,42 @@ export async function getFounderCount(): Promise<number> {
     SELECT COUNT(*)::int AS cnt FROM users WHERE is_founder = true
   `;
   return rows.length > 0 ? (rows[0] as { cnt: number }).cnt : 0;
+}
+
+export async function getFounderSpotsRemaining(): Promise<{ remaining: number; total: number }> {
+  const count = await getFounderCount();
+  const remaining = Math.max(0, 1000 - count);
+  return { remaining, total: 1000 };
+}
+
+/**
+ * Assign the next sequential founder_number to a user.
+ * Returns the assigned number, or null if all 1000 spots are taken.
+ */
+export async function assignFounderNumber(userId: number): Promise<number | null> {
+  // Check current count using a single atomic operation via SELECT FOR UPDATE
+  // We use a transaction to ensure atomicity
+  const rows = await sql()`
+    SELECT COALESCE(MAX(founder_number), 0) AS max_num FROM users WHERE founder_number IS NOT NULL
+  `;
+  const nextNum = (rows[0] as { max_num: number }).max_num + 1;
+
+  if (nextNum > 1000) {
+    return null; // All spots taken
+  }
+
+  // Assign the number
+  const updated = await sql()`
+    UPDATE users SET founder_number = ${nextNum}, is_founder = true, regrades_available = 999999
+    WHERE id = ${userId} AND founder_number IS NULL
+    RETURNING founder_number
+  `;
+
+  if (updated.length === 0) {
+    return null; // User already has a number or doesn't exist
+  }
+
+  return (updated[0] as { founder_number: number }).founder_number;
 }
 
 export async function setFounder(userId: number): Promise<void> {
