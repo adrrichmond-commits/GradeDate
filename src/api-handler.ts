@@ -2265,7 +2265,6 @@ async function handleUserBadges(req: Request): Promise<Response> {
 // ── Grade Card ──────────────────────────────────────────────────
 
 async function handleGradeCard(req: Request): Promise<Response> {
-  // Step 3: Full handler with badges, with defensive try/catch around badges
   const url = new URL(req.url);
   const userIdStr = url.searchParams.get("userId");
   if (!userIdStr) {
@@ -2290,7 +2289,7 @@ async function handleGradeCard(req: Request): Promise<Response> {
       percentileLabel = `Top ${Math.round(100 - user.percentile)}% in ${user.percentile_city}`;
     }
 
-    // Badges — separate try/catch so badge failure doesn't kill the card
+    // Badges — nested try/catch so badge DB failure never kills the card
     try {
       const persisted = await getUserPersistedBadges(user.id);
       const badgeDefs: Record<string, { emoji: string; name: string }> = {
@@ -2303,13 +2302,11 @@ async function handleGradeCard(req: Request): Promise<Response> {
         const def = badgeDefs[b.badge_type] || { emoji: "🏆", name: b.badge_type };
         return `<text x="24" y="36" font-size="20">${escapeXml(def.emoji)} ${escapeXml(b.details || def.name)}</text>`;
       }).join("\n");
-    } catch (badgeErr) {
-      console.error("grade-card badges failed:", badgeErr);
-      // Continue without badges
+    } catch {
+      // Table might not exist yet — continue without badges
     }
-  } catch (err) {
-    console.error("grade-card DB lookup failed:", err);
-    // Fall through with defaults
+  } catch {
+    // Fall through to basic card without any user data
   }
 
   const safeName = escapeXml(displayName);
@@ -2334,7 +2331,8 @@ async function handleGradeCard(req: Request): Promise<Response> {
   <text x="425" y="590" font-family="Inter, system-ui, sans-serif" font-size="20" fill="rgba(255,255,255,0.35)">.app</text>
   <text x="420" y="200" font-family="Inter, system-ui, sans-serif" font-size="28" font-weight="bold" fill="rgba(255,255,255,0.5)">${safeName}'s Grade</text>
   ${safePercentile ? `<text x="420" y="260" font-family="Inter, system-ui, sans-serif" font-size="48" font-weight="bold" fill="#f43f5e">${safePercentile}</text>` : ""}
-  ${badgeSvg ? `<text x="420" y="${safePercentile ? "320" : "280"}" font-family="Inter, system-ui, sans-serif" font-size="22" fill="rgba(255,255,255,0.45)">Badges</text><g transform="translate(420, ${safePercentile ? "340" : "300"})">${badgeSvg}</g>` : ""}
+  <text x="420" y="${safePercentile ? "320" : "280"}" font-family="Inter, system-ui, sans-serif" font-size="22" fill="rgba(255,255,255,0.45)">Badges</text>
+  ${badgeSvg ? `<g transform="translate(420, ${safePercentile ? "340" : "300"})">${badgeSvg}</g>` : ""}
 </svg>`;
 
   return new Response(svg, {
@@ -2342,6 +2340,7 @@ async function handleGradeCard(req: Request): Promise<Response> {
     headers: {
       "Content-Type": "image/svg+xml",
       "Cache-Control": "public, max-age=3600, s-maxage=86400",
+      "CDN-Cache-Control": "public, max-age=86400",
     },
   });
 }
