@@ -5,22 +5,23 @@ import { getPushSubscriptions, deletePushSubscription } from "./db";
 // Generate new keys with: npx web-push generate-vapid-keys
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY;
 const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY;
+const pushEnabled = !!(VAPID_PRIVATE_KEY && VAPID_PUBLIC_KEY);
 
-if (!VAPID_PRIVATE_KEY || !VAPID_PUBLIC_KEY) {
-  throw new Error(
-    "VAPID_PRIVATE_KEY and VAPID_PUBLIC_KEY environment variables are required for push notifications. " +
+if (!pushEnabled) {
+  console.warn(
+    "Push notifications disabled: VAPID_PRIVATE_KEY and VAPID_PUBLIC_KEY environment variables are missing. " +
     "Generate new keys with: npx web-push generate-vapid-keys"
+  );
+} else {
+  // Set VAPID details once
+  webPush.setVapidDetails(
+    "mailto:support@gradedate.app",
+    VAPID_PUBLIC_KEY!,
+    VAPID_PRIVATE_KEY!,
   );
 }
 
-export { VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY };
-
-// Set VAPID details once
-webPush.setVapidDetails(
-  "mailto:support@gradedate.app",
-  VAPID_PUBLIC_KEY,
-  VAPID_PRIVATE_KEY,
-);
+export { VAPID_PUBLIC_KEY, pushEnabled };
 
 export interface PushPayload {
   title: string;
@@ -31,11 +32,14 @@ export interface PushPayload {
 /**
  * Send a push notification to all subscribed devices of a user.
  * Removes any invalid (410 Gone) subscriptions automatically.
+ * Returns early (no-op) if push is not enabled.
  */
 export async function sendPushNotification(
   userId: number,
   payload: PushPayload,
 ): Promise<void> {
+  if (!pushEnabled) return;
+
   const subscriptions = await getPushSubscriptions(userId);
 
   if (subscriptions.length === 0) return;

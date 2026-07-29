@@ -83,7 +83,7 @@ import { lookupZip } from "../src/zipcode.ts";
 import { checkAuthRateLimit, checkStrictRateLimit, checkRateLimit } from "../src/rate-limit.ts";
 import { getApproximateLocation } from "../src/geo.ts";
 import { filterMessage } from "../src/profanity.ts";
-import { VAPID_PUBLIC_KEY, sendPushNotification } from "../src/push.ts";
+import { VAPID_PUBLIC_KEY, sendPushNotification, pushEnabled } from "../src/push.ts";
 import { generateCsrfToken, setCsrfCookie, verifyCsrfToken, getCsrfTokenFromRequest, CSRF_COOKIE } from "../src/csrf.ts";
 import Stripe from "stripe";
 import { mkdirSync, existsSync, writeFileSync, readFileSync, unlinkSync } from "node:fs";
@@ -2031,10 +2031,14 @@ async function handleLocationLookup(req: Request): Promise<Response> {
 // ── Push Notifications ──────────────────────────────────────
 
 function handleVapidPublicKey(): Response {
-  return json({ publicKey: VAPID_PUBLIC_KEY });
+  return json({ publicKey: pushEnabled ? VAPID_PUBLIC_KEY : null });
 }
 
 async function handlePushSubscribe(req: Request): Promise<Response> {
+  if (!pushEnabled) {
+    return json({ error: "Push notifications are not configured on this server" }, 503);
+  }
+
   const user = await getCurrentUser(req);
   if (!user) {
     return json({ error: "Unauthorized" }, 401);
@@ -2056,6 +2060,10 @@ async function handlePushSubscribe(req: Request): Promise<Response> {
 }
 
 async function handlePushUnsubscribe(req: Request): Promise<Response> {
+  if (!pushEnabled) {
+    return json({ error: "Push notifications are not configured on this server" }, 503);
+  }
+
   const user = await getCurrentUser(req);
   if (!user) {
     return json({ error: "Unauthorized" }, 401);
