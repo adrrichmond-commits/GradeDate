@@ -2265,7 +2265,7 @@ async function handleUserBadges(req: Request): Promise<Response> {
 // ── Grade Card ──────────────────────────────────────────────────
 
 async function handleGradeCard(req: Request): Promise<Response> {
-  // Step 2: URL parsing + DB lookup but render basic card
+  // Step 3: Full handler with badges, with defensive try/catch around badges
   const url = new URL(req.url);
   const userIdStr = url.searchParams.get("userId");
   if (!userIdStr) {
@@ -2278,6 +2278,7 @@ async function handleGradeCard(req: Request): Promise<Response> {
 
   let displayName = "Anonymous";
   let percentileLabel = "";
+  let badgeSvg = "";
 
   try {
     const user = await getUserById(userId);
@@ -2287,6 +2288,24 @@ async function handleGradeCard(req: Request): Promise<Response> {
     displayName = user.display_name || "Anonymous";
     if (user.percentile != null && user.percentile_city) {
       percentileLabel = `Top ${Math.round(100 - user.percentile)}% in ${user.percentile_city}`;
+    }
+
+    // Badges — separate try/catch so badge failure doesn't kill the card
+    try {
+      const persisted = await getUserPersistedBadges(user.id);
+      const badgeDefs: Record<string, { emoji: string; name: string }> = {
+        first_grade: { emoji: "🎯", name: "First Grade" },
+        profile_complete: { emoji: "✨", name: "Profile Complete" },
+        austin_local: { emoji: "🤠", name: "Austin Local" },
+        founding_member: { emoji: "🏅", name: "Founding Member" },
+      };
+      badgeSvg = persisted.slice(0, 4).map((b) => {
+        const def = badgeDefs[b.badge_type] || { emoji: "🏆", name: b.badge_type };
+        return `<text x="24" y="36" font-size="20">${escapeXml(def.emoji)} ${escapeXml(b.details || def.name)}</text>`;
+      }).join("\n");
+    } catch (badgeErr) {
+      console.error("grade-card badges failed:", badgeErr);
+      // Continue without badges
     }
   } catch (err) {
     console.error("grade-card DB lookup failed:", err);
@@ -2315,6 +2334,7 @@ async function handleGradeCard(req: Request): Promise<Response> {
   <text x="425" y="590" font-family="Inter, system-ui, sans-serif" font-size="20" fill="rgba(255,255,255,0.35)">.app</text>
   <text x="420" y="200" font-family="Inter, system-ui, sans-serif" font-size="28" font-weight="bold" fill="rgba(255,255,255,0.5)">${safeName}'s Grade</text>
   ${safePercentile ? `<text x="420" y="260" font-family="Inter, system-ui, sans-serif" font-size="48" font-weight="bold" fill="#f43f5e">${safePercentile}</text>` : ""}
+  ${badgeSvg ? `<text x="420" y="${safePercentile ? "320" : "280"}" font-family="Inter, system-ui, sans-serif" font-size="22" fill="rgba(255,255,255,0.45)">Badges</text><g transform="translate(420, ${safePercentile ? "340" : "300"})">${badgeSvg}</g>` : ""}
 </svg>`;
 
   return new Response(svg, {
