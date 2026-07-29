@@ -2265,47 +2265,54 @@ async function handleUserBadges(req: Request): Promise<Response> {
 // ── Grade Card ──────────────────────────────────────────────────
 
 async function handleGradeCard(req: Request): Promise<Response> {
-  const url = new URL(req.url);
-  const userIdStr = url.searchParams.get("userId");
-  if (!userIdStr) {
-    return json({ error: "userId is required" }, 400);
-  }
-  const userId = parseInt(userIdStr, 10);
-  if (isNaN(userId)) {
-    return json({ error: "Invalid userId" }, 400);
-  }
-
-  const user = await getUserById(userId);
-  if (!user) {
-    return json({ error: "User not found" }, 404);
-  }
-
-  // Fetch persisted badges (may fail if table doesn't exist yet — graceful fallback)
-  let gradeCard: PersistedBadge[] = [];
-  try {
-    gradeCard = await getUserPersistedBadges(user.id);
-  } catch {
-    // Table might not exist yet on first deploy — continue without badges
-  }
-
-  const displayName = user.display_name || "Anonymous";
-
+  let displayName = "Anonymous";
   let percentileLabel = "";
-  if (user.percentile != null && user.percentile_city) {
-    percentileLabel = `Top ${Math.round(100 - user.percentile)}% in ${user.percentile_city}`;
+  let badgeSvg = "";
+
+  try {
+    const url = new URL(req.url);
+    const userIdStr = url.searchParams.get("userId");
+    if (!userIdStr) {
+      return json({ error: "userId is required" }, 400);
+    }
+    const userId = parseInt(userIdStr, 10);
+    if (isNaN(userId)) {
+      return json({ error: "Invalid userId" }, 400);
+    }
+
+    const user = await getUserById(userId);
+    if (!user) {
+      return json({ error: "User not found" }, 404);
+    }
+
+    displayName = user.display_name || "Anonymous";
+
+    if (user.percentile != null && user.percentile_city) {
+      percentileLabel = `Top ${Math.round(100 - user.percentile)}% in ${user.percentile_city}`;
+    }
+
+    // Fetch persisted badges (may fail if table doesn't exist yet — graceful fallback)
+    try {
+      const persisted = await getUserPersistedBadges(user.id);
+      const badgeDefs: Record<string, { emoji: string; name: string }> = {
+        first_grade: { emoji: "🎯", name: "First Grade" },
+        profile_complete: { emoji: "✨", name: "Profile Complete" },
+        austin_local: { emoji: "🤠", name: "Austin Local" },
+        founding_member: { emoji: "🏅", name: "Founding Member" },
+      };
+      badgeSvg = persisted.slice(0, 4).map((b) => {
+        const def = badgeDefs[b.badge_type] || { emoji: "🏆", name: b.badge_type };
+        return `<text x="24" y="36" font-size="20">${escapeXml(def.emoji)} ${escapeXml(b.details || def.name)}</text>`;
+      }).join("\n");
+    } catch {
+      // Table might not exist yet — continue without badges
+    }
+  } catch {
+    // Fall through to basic card without any user data
   }
 
-  const badgeDefs: Record<string, { emoji: string; name: string }> = {
-    first_grade: { emoji: "🎯", name: "First Grade" },
-    profile_complete: { emoji: "✨", name: "Profile Complete" },
-    austin_local: { emoji: "🤠", name: "Austin Local" },
-    founding_member: { emoji: "🏅", name: "Founding Member" },
-  };
-
-  const badgeSvg = gradeCard.slice(0, 4).map((b) => {
-    const def = badgeDefs[b.badge_type] || { emoji: "🏆", name: b.badge_type };
-    return `<text x="24" y="36" font-size="20">${def.emoji} ${b.details || def.name}</text>`;
-  }).join("\n");
+  const safeName = escapeXml(displayName);
+  const safePercentile = escapeXml(percentileLabel);
 
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
@@ -2326,11 +2333,11 @@ async function handleGradeCard(req: Request): Promise<Response> {
   <text x="235" y="590" font-family="Inter, system-ui, sans-serif" font-size="32" font-weight="bold" fill="#fff">Date</text>
   <text x="425" y="590" font-family="Inter, system-ui, sans-serif" font-size="20" fill="rgba(255,255,255,0.35)">.app</text>
   <!-- Grade section -->
-  <text x="420" y="200" font-family="Inter, system-ui, sans-serif" font-size="28" font-weight="bold" fill="rgba(255,255,255,0.5)">${escapeXml(displayName)}'s Grade</text>
-  ${percentileLabel ? `<text x="420" y="260" font-family="Inter, system-ui, sans-serif" font-size="48" font-weight="bold" fill="#f43f5e">${escapeXml(percentileLabel)}</text>` : ""}
+  <text x="420" y="200" font-family="Inter, system-ui, sans-serif" font-size="28" font-weight="bold" fill="rgba(255,255,255,0.5)">${safeName}'s Grade</text>
+  ${safePercentile ? `<text x="420" y="260" font-family="Inter, system-ui, sans-serif" font-size="48" font-weight="bold" fill="#f43f5e">${safePercentile}</text>` : ""}
   <!-- Badges -->
-  <text x="420" y="${percentileLabel ? "320" : "280"}" font-family="Inter, system-ui, sans-serif" font-size="22" fill="rgba(255,255,255,0.45)">Badges</text>
-  ${badgeSvg ? `<g transform="translate(420, ${percentileLabel ? "340" : "300"})">${badgeSvg}</g>` : ""}
+  <text x="420" y="${safePercentile ? "320" : "280"}" font-family="Inter, system-ui, sans-serif" font-size="22" fill="rgba(255,255,255,0.45)">Badges</text>
+  ${badgeSvg ? `<g transform="translate(420, ${safePercentile ? "340" : "300"})">${badgeSvg}</g>` : ""}
 </svg>`;
 
   return new Response(svg, {
