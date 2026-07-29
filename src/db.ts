@@ -10,7 +10,15 @@ function sql(): NeonQueryFunction<false, false> {
         "DATABASE_URL is not set. Please connect a Neon database first.",
       );
     }
-    _sql = neon(process.env.DATABASE_URL);
+    const url = process.env.DATABASE_URL;
+    if (!url.startsWith("postgresql://") && !url.startsWith("postgres://")) {
+      throw new Error(
+        "DATABASE_URL is not a valid PostgreSQL connection string. " +
+        "It must start with 'postgresql://' or 'postgres://'. " +
+        "Got: " + url.substring(0, 60) + (url.length > 60 ? "..." : ""),
+      );
+    }
+    _sql = neon(url);
   }
   return _sql;
 }

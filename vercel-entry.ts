@@ -59,8 +59,13 @@ const toWebRequest = (req: IncomingMessage): Request => {
 
 // Ensure database tables exist on cold start
 if (process.env.DATABASE_URL) {
-  await initTables();
-  console.log("Database tables initialized");
+  try {
+    await initTables();
+    console.log("Database tables initialized");
+  } catch (err) {
+    console.error("Failed to initialize database tables:", err);
+    // Don't crash — the site can serve static/SSR content without a DB
+  }
 }
 
 async function streamResponse(
