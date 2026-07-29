@@ -293,6 +293,20 @@ export async function initTables(): Promise<void> {
       confirmed_at TIMESTAMPTZ
     )
   `;
+
+  await sql()`
+    CREATE TABLE IF NOT EXISTS user_badges (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      badge_type TEXT NOT NULL,
+      details TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(user_id, badge_type)
+    )
+  `;
+  try {
+    await sql()`CREATE INDEX IF NOT EXISTS idx_user_badges_user_id ON user_badges(user_id)`;
+  } catch { /* ignore */ }
 }
 
 // ── Types ──────────────────────────────────────────────────────
@@ -923,6 +937,96 @@ export function calculateCompatibility(
 
 // ── Badges ──────────────────────────────────────────────────────
 
+export interface PersistedBadge {
+  id: number;
+  user_id: number;
+  badge_type: string;
+  details: string | null;
+  created_at: string;
+}
+
+/**
+ * Award a badge to a user. Returns true if newly awarded, false if already had it.
+ */
+export async function awardBadge(
+  userId: number,
+  badgeType: string,
+  details?: string | null,
+): Promise<boolean> {
+  const rows = await sql()`
+    INSERT INTO user_badges (user_id, badge_type, details)
+    VALUES (${userId}, ${badgeType}, ${details ?? null})
+    ON CONFLICT (user_id, badge_type) DO NOTHING
+    RETURNING id
+  `;
+  return rows.length > 0;
+}
+
+/**
+ * Get all persisted badges for a user.
+ */
+export async function getUserPersistedBadges(userId: number): Promise<PersistedBadge[]> {
+  const rows = await sql()`
+    SELECT * FROM user_badges
+    WHERE user_id = ${userId}
+    ORDER BY created_at ASC
+  `;
+  return rows as unknown as PersistedBadge[];
+}
+
+/**
+ * Runs all badge checks for a user and awards any newly earned badges.
+ * Returns the set of badge types awarded in this call.
+ */
+export async function checkAndAwardBadges(userId: number): Promise<string[]> {
+  const user = await getUserById(userId);
+  if (!user) return [];
+
+  const awarded: string[] = [];
+
+  // --- first_grade: has at least one photo_grades record ---
+  const gradeCheck = await sql()`
+    SELECT COUNT(*)::int AS cnt FROM photo_grades WHERE user_id = ${userId}
+  `;
+  const gradeCount = gradeCheck.length > 0 ? (gradeCheck[0] as { cnt: number }).cnt : 0;
+  if (gradeCount > 0) {
+    const ok = await awardBadge(userId, "first_grade");
+    if (ok) awarded.push("first_grade");
+  }
+
+  // --- profile_complete: has photo, bio, display_name, age, gender ---
+  if (
+    user.photo_path &&
+    user.bio &&
+    user.display_name &&
+    user.age != null &&
+    user.gender
+  ) {
+    const ok = await awardBadge(userId, "profile_complete");
+    if (ok) awarded.push("profile_complete");
+  }
+
+  // --- austin_local: location is Austin, TX ---
+  if (
+    user.location_city &&
+    user.location_state &&
+    user.location_city.toLowerCase() === "austin" &&
+    user.location_state.toUpperCase() === "TX"
+  ) {
+    const ok = await awardBadge(userId, "austin_local");
+    if (ok) awarded.push("austin_local");
+  }
+
+  // --- founding_member: has founder_number set ---
+  if (user.founder_number != null) {
+    const details = `Founding Member #${user.founder_number}`;
+    const ok = await awardBadge(userId, "founding_member", details);
+    if (ok) awarded.push("founding_member");
+  }
+
+  return awarded;
+}
+
 /**
  * Returns badges for a user based on their profile completeness and activity.
  * Badges: verified, best_photo, top_rated, active_dater, conversationalist
@@ -973,6 +1077,29 @@ export async function getUserBadges(user: User): Promise<Badge[]> {
   const avgLen = avgRows.length > 0 ? (avgRows[0] as { avg_len: number | null }).avg_len : null;
   if (avgLen !== null && avgLen > 100) {
     badges.push({ id: "conversationalist", label: "Conversationalist", emoji: "💬" });
+  }
+
+  // Also include any persisted badges not otherwise covered
+  const persisted = await getUserPersistedBadges(user.id);
+  const persistedIds = new Set(persisted.map((b) => b.badge_type));
+  const existingIds = new Set(badges.map((b) => b.id));
+
+  const badgeDisplay: Record<string, { label: string; emoji: string }> = {
+    first_grade: { label: "First Grade", emoji: "🎯" },
+    profile_complete: { label: "Profile Complete", emoji: "✨" },
+    austin_local: { label: "Austin Local", emoji: "🤠" },
+    founding_member: { label: "Founding Member", emoji: "🏅" },
+  };
+
+  for (const pb of persisted) {
+    if (!existingIds.has(pb.badge_type)) {
+      const display = badgeDisplay[pb.badge_type] || { label: pb.badge_type, emoji: "🏆" };
+      let label = display.label;
+      if (pb.badge_type === "founding_member" && pb.details) {
+        label = pb.details;
+      }
+      badges.push({ id: pb.badge_type, label, emoji: display.emoji });
+    }
   }
 
   return badges;
@@ -1892,7 +2019,10 @@ export async function assignFounderNumber(userId: number): Promise<number | null
     return null; // User already has a number or doesn't exist
   }
 
-  return (updated[0] as { founder_number: number }).founder_number;
+  const founderNumber = (updated[0] as { founder_number: number }).founder_number;
+  await awardBadge(userId, "founding_member", `Founding Member #${founderNumber}`);
+
+  return founderNumber;
 }
 
 export async function setFounder(userId: number): Promise<void> {

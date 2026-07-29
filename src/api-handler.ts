@@ -70,6 +70,9 @@ import {
   updateLastFreeRegrade,
   joinWaitlist,
   getUserBadges,
+  getUserPersistedBadges,
+  awardBadge,
+  checkAndAwardBadges,
   getFounderCount,
   getFounderSpotsRemaining,
   assignFounderNumber,
@@ -542,6 +545,9 @@ async function handleUpdateProfile(req: Request): Promise<Response> {
     ...(obsessions !== undefined ? { obsessions: obsessions ? String(obsessions) : null } : {}),
   });
 
+  // Check and award newly earned badges after profile update
+  await checkAndAwardBadges(user.id);
+
   return json({ ok: true });
 }
 
@@ -812,6 +818,7 @@ async function handleGrade(req: Request): Promise<Response> {
   // Save grade to profile for authenticated users only
   if (user) {
     await updateUserGrade(user.id, grade);
+    await checkAndAwardBadges(user.id);
   }
 
   return json({
@@ -1012,6 +1019,9 @@ async function handleGradePhotos(req: Request): Promise<Response> {
   if (user.subscription_status !== "active") {
     await updateLastFreeRegrade(user.id);
   }
+
+  // Check and award newly earned badges
+  await checkAndAwardBadges(user.id);
 
   const topLabel = percentileResult
     ? `Top ${Math.round(100 - percentileResult.percentile)}% in ${percentileResult.percentile_city}`
@@ -2240,6 +2250,100 @@ async function handleWaitlistJoin(req: Request): Promise<Response> {
   return json({ success: true });
 }
 
+// ── Badges ─────────────────────────────────────────────────────
+
+async function handleUserBadges(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+  const badges = await getUserPersistedBadges(user.id);
+  return json({ badges });
+}
+
+// ── Grade Card ──────────────────────────────────────────────────
+
+async function handleGradeCard(req: Request): Promise<Response> {
+  const url = new URL(req.url);
+  const userIdStr = url.searchParams.get("userId");
+  if (!userIdStr) {
+    return json({ error: "userId is required" }, 400);
+  }
+  const userId = parseInt(userIdStr, 10);
+  if (isNaN(userId)) {
+    return json({ error: "Invalid userId" }, 400);
+  }
+
+  const user = await getUserById(userId);
+  if (!user) {
+    return json({ error: "User not found" }, 404);
+  }
+
+  const gradeCard = await getUserPersistedBadges(user.id);
+  const displayName = user.display_name || "Anonymous";
+
+  let percentileLabel = "";
+  if (user.percentile != null && user.percentile_city) {
+    percentileLabel = `Top ${Math.round(100 - user.percentile)}% in ${user.percentile_city}`;
+  }
+
+  const badgeDefs: Record<string, { emoji: string; name: string }> = {
+    first_grade: { emoji: "🎯", name: "First Grade" },
+    profile_complete: { emoji: "✨", name: "Profile Complete" },
+    austin_local: { emoji: "🤠", name: "Austin Local" },
+    founding_member: { emoji: "🏅", name: "Founding Member" },
+  };
+
+  const badgeSvg = gradeCard.slice(0, 4).map((b) => {
+    const def = badgeDefs[b.badge_type] || { emoji: "🏆", name: b.badge_type };
+    return `<text x="24" y="36" font-size="20">${def.emoji} ${b.details || def.name}</text>`;
+  }).join("\n");
+
+  const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0b0b1e"/>
+      <stop offset="100%" stop-color="#150a18"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="0%" r="80%">
+      <stop offset="0%" stop-color="rgba(244,63,94,0.18)"/>
+      <stop offset="100%" stop-color="rgba(244,63,94,0)"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#glow)"/>
+  <!-- Brand -->
+  <text x="100" y="590" font-family="Inter, system-ui, sans-serif" font-size="32" font-weight="bold" fill="#f43f5e">❤ Grade</text>
+  <text x="235" y="590" font-family="Inter, system-ui, sans-serif" font-size="32" font-weight="bold" fill="#fff">Date</text>
+  <text x="425" y="590" font-family="Inter, system-ui, sans-serif" font-size="20" fill="rgba(255,255,255,0.35)">.app</text>
+  <!-- Grade section -->
+  <text x="420" y="200" font-family="Inter, system-ui, sans-serif" font-size="28" font-weight="bold" fill="rgba(255,255,255,0.5)">${escapeXml(displayName)}'s Grade</text>
+  ${percentileLabel ? `<text x="420" y="260" font-family="Inter, system-ui, sans-serif" font-size="48" font-weight="bold" fill="#f43f5e">${escapeXml(percentileLabel)}</text>` : ""}
+  <!-- Badges -->
+  <text x="420" y="${percentileLabel ? "320" : "280"}" font-family="Inter, system-ui, sans-serif" font-size="22" fill="rgba(255,255,255,0.45)">Badges</text>
+  ${badgeSvg ? `<g transform="translate(420, ${percentileLabel ? "340" : "300"})">${badgeSvg}</g>` : ""}
+</svg>`;
+
+  return new Response(svg, {
+    status: 200,
+    headers: {
+      "Content-Type": "image/svg+xml",
+      "Cache-Control": "public, max-age=3600, s-maxage=86400",
+      "CDN-Cache-Control": "public, max-age=86400",
+    },
+  });
+}
+
+function escapeXml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
 // ── Router ────────────────────────────────────────────────────
 
 /**
@@ -2346,6 +2450,16 @@ export async function handleApiRoute(
   // Percentile
   if (pathname === "/api/percentile" && method === "GET") {
     return handleGetPercentile(req);
+  }
+
+  // Badges — requires auth
+  if (pathname === "/api/user-badges" && method === "GET") {
+    return handleUserBadges(req);
+  }
+
+  // Grade card — public, no auth required (for sharing)
+  if (pathname === "/api/grade-card" && method === "GET") {
+    return handleGradeCard(req);
   }
 
   // Matches
