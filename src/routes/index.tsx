@@ -733,7 +733,7 @@ function Home() {
 
           {/* Subhead */}
           <p className="mx-auto mt-8 max-w-xl text-center text-lg leading-relaxed text-gray-400 sm:text-xl">
-            Understand how you're perceived, build real confidence, and find someone who matches your energy.
+            Optimize your profile, discover your strengths, and meet people who appreciate the real you.
           </p>
 
           {/* CTA Button — changes based on geo */}
