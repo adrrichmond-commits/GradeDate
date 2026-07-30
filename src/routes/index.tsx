@@ -836,6 +836,11 @@ function Home() {
         </div>
       </section>
 
+      {/* ─────────────────────────────────────────────────────────────
+          2. FOUNDERS CLUB — hook them early
+          ───────────────────────────────────────────────────────────── */}
+      {!isAustinMetro && <WaitlistSection />}
+      <FoundersClubSection />
 
       {/* ─────────────────────────────────────────────────────────────
           3. HOW IT WORKS (updated copy)
@@ -953,17 +958,6 @@ function Home() {
           </div>
         </div>
       </section>
-
-      {/* ─────────────────────────────────────────────────────────────
-          3.5. WAITLIST — "Get notified when singles join your area"
-          (Hidden for Austin metro visitors — they get the full signup flow)
-          ───────────────────────────────────────────────────────────── */}
-      {!isAustinMetro && <WaitlistSection />}
-
-      {/* ─────────────────────────────────────────────────────────────
-          3.6. FOUNDERS CLUB
-          ───────────────────────────────────────────────────────────── */}
-      <FoundersClubSection />
 
       {/* ─────────────────────────────────────────────────────────────
           4. FREE PREVIEW GRADING (ELEVATED — above pricing)
