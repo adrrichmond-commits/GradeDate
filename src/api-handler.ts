@@ -2333,6 +2333,7 @@ async function handleGradeCard(req: Request): Promise<Response> {
 
   const safeName = escapeXml(displayName);
   const safePercentile = escapeXml(percentileLabel);
+  const wantPng = url.searchParams.get("format") === "png";
 
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
@@ -2356,6 +2357,25 @@ async function handleGradeCard(req: Request): Promise<Response> {
   <text x="420" y="${safePercentile ? "320" : "280"}" font-family="Inter, system-ui, sans-serif" font-size="22" fill="rgba(255,255,255,0.45)">Badges</text>
   ${badgeSvg ? `<g transform="translate(420, ${safePercentile ? "340" : "300"})">${badgeSvg}</g>` : ""}
 </svg>`;
+
+  // ── PNG conversion (?format=png) ──────────────────────────
+  if (wantPng) {
+    try {
+      const sharp = (await import("sharp")).default;
+      const buf = await sharp(Buffer.from(svg)).png().toBuffer();
+      return new Response(buf, {
+        status: 200,
+        headers: {
+          "Content-Type": "image/png",
+          "Cache-Control": "public, max-age=3600, s-maxage=86400",
+          "CDN-Cache-Control": "public, max-age=86400",
+          "Content-Length": String(buf.length),
+        },
+      });
+    } catch (e) {
+      console.error("PNG conversion failed:", e);
+    }
+  }
 
   return new Response(svg, {
     status: 200,
