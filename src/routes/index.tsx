@@ -1048,7 +1048,7 @@ function Home() {
           <div className="mb-8 inline-flex items-center gap-2 rounded-full border border-amber-500/20 bg-amber-500/10 px-4 py-2">
             <span>👑</span>
             <span className="text-sm text-amber-400">
-              <Link to="/store" className="font-semibold underline hover:text-amber-300">
+              <Link to="/signup" className="font-semibold underline hover:text-amber-300">
                 Join the Founders Club
               </Link>
               {" "}— first 1000 members get lifetime benefits
