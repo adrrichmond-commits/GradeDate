@@ -222,10 +222,10 @@ function Signup() {
               <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent animate-[shimmer_2s_ease-in-out_infinite]" />
               <div className="relative">
                 <div className="mb-2 inline-block rounded-full border border-amber-400/40 bg-amber-500/15 px-3 py-0.5 text-xs font-semibold text-amber-400">
-                  ⭐ FOUNDERS CLUB
+                  ⭐ FOUNDERS CLUB · ONLY 1,000 SPOTS
                 </div>
                 <p className="mt-2 text-lg font-bold text-amber-300">
-                  Become Founder{" "}
+                  Become a Founder{" "}
                   <span className="text-base font-semibold text-amber-400">$5.99</span>
                 </p>
                 <ul className="mt-3 space-y-1.5 text-sm text-amber-200/80">
@@ -256,8 +256,7 @@ function Signup() {
           </div>
 
           <p className="mt-6 text-center text-xs text-gray-600">
-            Only 1,000 Founder spots available. Cancel anytime — but your price lock
-            is yours forever as long as you stay subscribed.
+            Only 1,000 Founder spots will ever exist. Once they're claimed, the Founders Club closes forever. Cancel anytime — but your price lock is yours forever as long as you stay subscribed.
           </p>
         </div>
       </div>

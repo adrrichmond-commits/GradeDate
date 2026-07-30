@@ -537,20 +537,20 @@ function FoundersClubSection() {
         <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-amber-500/25 bg-amber-500/10 px-4 py-1.5">
           <span className="flex h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
           <span className="text-xs font-semibold uppercase tracking-widest text-amber-400">
-            Exclusive · Limited
+            Only 1,000 Spots · Forever
           </span>
         </div>
 
         {/* Headline */}
         <h2 className="mb-3 text-3xl font-extrabold tracking-tight sm:text-4xl md:text-5xl">
           <span className="bg-gradient-to-r from-amber-300 via-amber-400 to-yellow-400 bg-clip-text text-transparent">
-            Become one of the First 1,000 Founders.
+            Only 1,000 Founders. Ever.
           </span>
         </h2>
 
         {/* Sub-headline */}
         <p className="mx-auto mb-8 max-w-lg text-lg text-gray-300 sm:text-xl">
-          Help shape the future of dating while locking in lifetime Founder benefits.
+          Once these spots are claimed, the Founders Club closes forever. Lock in lifetime benefits while you still can.
         </p>
 
         {/* Counter */}
@@ -565,12 +565,18 @@ function FoundersClubSection() {
                   {used !== null ? (
                     <p className="tabular-nums text-lg font-semibold text-gray-300">
                       <span className="text-3xl font-extrabold text-amber-400">{used}</span>
-                      <span className="text-gray-500"> / 1,000 Founders Claimed</span>
+                      <span className="text-gray-500"> / 1,000 Spots Claimed</span>
                     </p>
                   ) : (
                     <p className="text-gray-500">Loading...</p>
                   )}
                 </div>
+                {/* Spots remaining urgency line */}
+                {remaining !== null && remaining > 0 && (
+                  <p className="mt-1 text-sm font-medium text-amber-300/80">
+                    Only <span className="tabular-nums font-bold text-amber-300">{remaining}</span> spot{remaining === 1 ? "" : "s"} remain. Once they're gone, the club closes forever.
+                  </p>
+                )}
                 {/* Progress track */}
                 <div className="h-3 w-full overflow-hidden rounded-full bg-gray-800/80 ring-1 ring-white/5">
                   <div
@@ -626,7 +632,7 @@ function FoundersClubSection() {
                   d="M5 13l4 4L19 7"
                 />
               </svg>
-              Claim Your Founder Spot
+              Claim Your Spot Before It's Gone
             </Link>
             <p className="text-xs text-gray-500">
               $5.99/month · Lifetime price lock · Cancel anytime
@@ -652,8 +658,8 @@ function FoundersClubSection() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
                 </svg>
               ),
-              title: "Founding Member Badge",
-              desc: "Numbered badge showing you were here first",
+              title: "Permanent Founder Badge",
+              desc: "Numbered #1–#1000. Yours forever.",
             },
             {
               icon: (
@@ -1051,7 +1057,7 @@ function Home() {
               <Link to="/signup" className="font-semibold underline hover:text-amber-300">
                 Join the Founders Club
               </Link>
-              {" "}— first 1000 members get lifetime benefits
+              {" "}— only 1,000 spots will ever exist. Claim yours before the club closes.
             </span>
           </div>
 
