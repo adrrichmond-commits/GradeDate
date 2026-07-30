@@ -2298,16 +2298,31 @@ async function handleGradeCard(req: Request): Promise<Response> {
 
     // Badges — nested try/catch so badge DB failure never kills the card
     try {
+      // Dynamic badges (Layer B: founder, verified, best_photo, top_rated, active_dater, conversationalist)
+      const dynamic = await getUserBadges(user);
+      // Persisted badges (Layer A: first_grade, profile_complete, austin_local, founding_member)
       const persisted = await getUserPersistedBadges(user.id);
+      const dynamicIds = new Set(dynamic.map((b) => b.id));
       const badgeDefs: Record<string, { emoji: string; name: string }> = {
         first_grade: { emoji: "🎯", name: "First Grade" },
         profile_complete: { emoji: "✨", name: "Profile Complete" },
         austin_local: { emoji: "🤠", name: "Austin Local" },
         founding_member: { emoji: "🏅", name: "Founding Member" },
       };
-      badgeSvg = persisted.slice(0, 4).map((b) => {
-        const def = badgeDefs[b.badge_type] || { emoji: "🏆", name: b.badge_type };
-        return `<text x="24" y="36" font-size="20">${escapeXml(def.emoji)} ${escapeXml(b.details || def.name)}</text>`;
+
+      // Merge: dynamic badges first, then persisted that aren't already covered
+      const merged: { emoji: string; label: string }[] = [
+        ...dynamic.map((b) => ({ emoji: b.emoji, label: b.label })),
+        ...persisted
+          .filter((b) => !dynamicIds.has(b.badge_type))
+          .map((b) => {
+            const def = badgeDefs[b.badge_type] || { emoji: "🏆", name: b.badge_type };
+            return { emoji: def.emoji, label: b.details || def.name };
+          }),
+      ];
+
+      badgeSvg = merged.slice(0, 6).map((b) => {
+        return `<text x="24" y="36" font-size="20">${escapeXml(b.emoji)} ${escapeXml(b.label)}</text>`;
       }).join("\n");
     } catch {
       // Table might not exist yet — continue without badges
