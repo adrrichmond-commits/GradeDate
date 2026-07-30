@@ -1811,10 +1811,17 @@ async function handleStripeWebhook(req: Request): Promise<Response> {
 
         // Check if this is a Founders Club purchase
         if (session.metadata?.product === "founders_club") {
-          await setFounder(user.id);
-          console.log(
-            `Founders Club activated for user ${user.id} (${customerEmail})`,
-          );
+          const founderNum = await assignFounderNumber(user.id);
+          if (founderNum !== null) {
+            console.log(
+              `🎉 Founders Club #${founderNum} assigned to user ${user.id} (${customerEmail})`,
+            );
+          } else {
+            await setFounder(user.id);
+            console.log(
+              `Founders Club activated for user ${user.id} (${customerEmail}) — no founder spot available`,
+            );
+          }
           break;
         }
 
