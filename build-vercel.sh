@@ -13,6 +13,8 @@ rm -f .vercel/output/static/index.html
 mkdir -p .vercel/output/functions/render.func/node_modules
 cp -R node_modules/sharp .vercel/output/functions/render.func/node_modules/sharp
 cp -R node_modules/@img .vercel/output/functions/render.func/node_modules/@img 2>/dev/null || true
+cp -R node_modules/detect-libc .vercel/output/functions/render.func/node_modules/detect-libc
+cp -R node_modules/semver .vercel/output/functions/render.func/node_modules/semver
 echo "[3/3] bundle"
 bun build vercel-entry.ts --target node \
   --external @vercel/blob \

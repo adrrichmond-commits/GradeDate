@@ -2372,8 +2372,18 @@ async function handleGradeCard(req: Request): Promise<Response> {
           "Content-Length": String(buf.length),
         },
       });
-    } catch (e) {
-      console.error("PNG conversion failed:", e);
+    } catch (e: any) {
+      console.error("PNG conversion failed:", e?.message || e);
+      // Return error as SVG with error message for debugging
+      const errSvg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#0b0b1e"/>
+  <text x="100" y="315" font-family="monospace" font-size="20" fill="#f43f5e">PNG Error: ${escapeXml(String(e?.message || e))}</text>
+</svg>`;
+      return new Response(errSvg, {
+        status: 500,
+        headers: { "Content-Type": "image/svg+xml" },
+      });
     }
   }
 
