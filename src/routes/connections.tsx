@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useModalAccessibility } from "~/modal-accessibility";
 import { useAuth } from "~/auth-context";
 import { getCsrfToken } from "~/csrf-client";
+import { resolveLikeBackResult } from "~/like-back";
 
 interface Connection {
   match_id: number;
@@ -55,6 +56,10 @@ function ConnectionsPage() {
     message?: string;
   } | null>(null);
   const [fetchingLiked, setFetchingLiked] = useState(false);
+  const [likingBackId, setLikingBackId] = useState<number | null>(null);
+  const [likeBackError, setLikeBackError] = useState<{ id: number; message: string } | null>(null);
+  const [matchedBack, setMatchedBack] = useState<{ matchId: number; name: string } | null>(null);
+  const [likedBackSuccess, setLikedBackSuccess] = useState<string | null>(null);
 
   // Safety modals
   const [menuConn, setMenuConn] = useState<Connection | LikerProfile | null>(null);
@@ -127,6 +132,42 @@ function ConnectionsPage() {
       fetchLikedMe();
     }
   }, [user]);
+
+  const handleLikeBack = async (liker: LikerProfile) => {
+    if (likingBackId !== null) return;
+    setLikingBackId(liker.id);
+    setLikeBackError(null);
+    try {
+      const res = await fetch("/api/matches/like", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": getCsrfToken() || "",
+        },
+        body: JSON.stringify({ liked_id: liker.id }),
+      });
+      const data = await res.json().catch(() => null);
+      const result = resolveLikeBackResult(res.ok, data);
+      if (result.kind === "error") {
+        setLikeBackError({ id: liker.id, message: result.message });
+        return;
+      }
+      setLikedMeData((previous) => previous ? {
+        ...previous,
+        likers: previous.likers?.filter((entry) => entry.id !== liker.id),
+      } : previous);
+      if (result.kind === "matched") {
+        setMatchedBack({ matchId: result.matchId, name: liker.display_name || "someone" });
+      } else {
+        setLikedBackSuccess(liker.display_name || "Profile");
+        window.setTimeout(() => setLikedBackSuccess(null), 2500);
+      }
+    } catch {
+      setLikeBackError({ id: liker.id, message: "Network error. Please try again." });
+    } finally {
+      setLikingBackId(null);
+    }
+  };
 
   function formatTime(ts: string | null): string {
     if (!ts) return "";
@@ -442,17 +483,46 @@ function ConnectionsPage() {
                     </p>
                   </div>
 
-                  <Link
-                    to="/matches"
-                    className="flex-shrink-0 rounded-full bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-500"
-                  >
-                    Like Back
-                  </Link>
+                  <div className="flex flex-shrink-0 flex-col items-end gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleLikeBack(liker)}
+                      disabled={likingBackId !== null}
+                      aria-busy={likingBackId === liker.id}
+                      className="rounded-full bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-500 disabled:cursor-wait disabled:opacity-60"
+                    >
+                      {likingBackId === liker.id ? "Liking…" : "Like Back"}
+                    </button>
+                    {likeBackError?.id === liker.id && (
+                      <p role="alert" className="max-w-32 text-right text-xs text-red-400">
+                        {likeBackError.message} <button type="button" className="underline" onClick={() => handleLikeBack(liker)}>Retry</button>
+                      </p>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
           )}
         </>
+      )}
+
+      {likedBackSuccess && (
+        <div role="status" className="fixed bottom-6 left-1/2 z-40 -translate-x-1/2 rounded-full bg-emerald-500/90 px-5 py-3 text-sm font-medium text-white shadow-lg">
+          Liked {likedBackSuccess} back!
+        </div>
+      )}
+
+      {matchedBack && (
+        <div role="dialog" aria-modal="true" aria-labelledby="liked-back-match-title" className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-2xl bg-gray-900 p-8 text-center shadow-2xl">
+            <h2 id="liked-back-match-title" className="text-3xl font-black text-rose-400">It&apos;s a Match!</h2>
+            <p className="mt-3 text-gray-400">You and <span className="font-semibold text-white">{matchedBack.name}</span> liked each other.</p>
+            <div className="mt-6 flex flex-col gap-3">
+              <Link to="/chat/$matchId" params={{ matchId: String(matchedBack.matchId) }} onClick={() => setMatchedBack(null)} className="btn-primary justify-center">Open chat</Link>
+              <button type="button" onClick={() => setMatchedBack(null)} className="btn-secondary justify-center">Keep browsing</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Report Modal */}
