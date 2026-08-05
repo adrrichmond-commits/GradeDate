@@ -583,7 +583,7 @@ function GradePage() {
                     {photos.map((photo, i) => (
                       <img
                         key={i}
-                        src={photo.previewUrl}
+                        src={resolveGradePhotoSrc(photo.dataUrl, photo.previewUrl, photo.photoPath)}
                         alt={`Photo ${i + 1}`}
                         className="h-16 w-16 rounded-lg object-cover ring-2 ring-rose-500/15"
                       />
@@ -603,7 +603,7 @@ function GradePage() {
                     {photos.map((photo, i) => (
                       <img
                         key={i}
-                        src={photo.previewUrl}
+                        src={resolveGradePhotoSrc(photo.dataUrl, photo.previewUrl, photo.photoPath)}
                         alt={`Photo ${i + 1}`}
                         className="h-16 w-16 rounded-lg object-cover ring-2 ring-rose-500/15"
                       />
@@ -701,7 +701,7 @@ function GradePage() {
                     >
                       {/* Photo thumbnail (durable source: data URL > blob preview > path) */}
                       <ResultPhoto
-                        src={resolveGradePhotoSrc(photos[i]?.dataUrl, photos[i]?.previewUrl, pg.photo_path)}
+                        src={resolveGradePhotoSrc(pg.dataUrl, pg.previewUrl, pg.photo_path)}
                         alt={`Photo ${i + 1}`}
                       />
                       <div className="min-w-0 flex-1">
@@ -733,7 +733,7 @@ function GradePage() {
                       <ShareCard
                         grade={pg.grade}
                         percentileLabel={null}
-                        photoUrl={resolveGradePhotoSrc(photos[i]?.dataUrl, photos[i]?.previewUrl, pg.photo_path)}
+                        photoUrl={resolveGradePhotoSrc(pg.dataUrl, pg.previewUrl, pg.photo_path)}
                         compact
                       />
                     </div>
