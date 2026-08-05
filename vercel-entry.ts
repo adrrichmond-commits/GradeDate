@@ -14,6 +14,13 @@ import handler from "./dist/server/server.js";
 import { initTables } from "./src/db.ts";
 import { handleApiRoute } from "./src/api-handler.ts";
 import { seoResponse, shouldNoIndex } from "./src/seo.ts";
+import {
+  EVENTS,
+  logError,
+  logInfo,
+  logWarn,
+  redactPath,
+} from "./src/observability.ts";
 
 const SECURITY_HEADERS: Record<string, string> = {
   "X-Content-Type-Options": "nosniff",
@@ -37,7 +44,7 @@ const fetchHandler = handler as {
   fetch: (request: Request) => Response | Promise<Response>;
 };
 
-const toWebRequest = (req: IncomingMessage): Request => {
+const toWebRequest = (req: IncomingMessage, requestId: string): Request => {
   const host = req.headers.host ?? "localhost";
   const proto =
     (req.headers["x-forwarded-proto"] as string | undefined) ?? "https";
@@ -47,6 +54,7 @@ const toWebRequest = (req: IncomingMessage): Request => {
     if (Array.isArray(value)) for (const v of value) headers.append(key, v);
     else if (value != null) headers.set(key, value);
   }
+  headers.set("x-request-id", requestId);
   const method = req.method ?? "GET";
   const hasBody = method !== "GET" && method !== "HEAD";
   return new Request(url, {
@@ -62,9 +70,9 @@ const toWebRequest = (req: IncomingMessage): Request => {
 if (process.env.DATABASE_URL) {
   try {
     await initTables();
-    console.log("Database tables initialized");
+    logInfo(EVENTS.VERCEL_DB_INIT_OK, {});
   } catch (err) {
-    console.error("Failed to initialize database tables:", err);
+    logError(EVENTS.VERCEL_DB_INIT_FAILED, { err });
     // Don't crash — the site can serve static/SSR content without a DB
   }
 }
@@ -73,6 +81,7 @@ async function streamResponse(
   webRes: Response,
   res: ServerResponse,
   pathname: string,
+  requestId: string,
 ): Promise<void> {
   res.statusCode = webRes.status;
   webRes.headers.forEach((value, key) => res.setHeader(key, value));
@@ -81,6 +90,7 @@ async function streamResponse(
   for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
     if (!webRes.headers.has(key)) res.setHeader(key, value);
   }
+  res.setHeader("x-request-id", requestId);
   if (webRes.body) {
     const reader = webRes.body.getReader();
     for (;;) {
@@ -96,34 +106,69 @@ export default async function vercelHandler(
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
+  const startedAt = performance.now();
+  const requestId = crypto.randomUUID();
+  let route = "ssr";
+  let status = 200;
   try {
-    const webReq = toWebRequest(req);
+    const webReq = toWebRequest(req, requestId);
     const { pathname } = new URL(webReq.url);
+    const coarsePath = redactPath(pathname);
 
     const seo = seoResponse(webReq);
-    if (seo) return streamResponse(seo, res, pathname);
+    if (seo) {
+      route = "seo";
+      status = seo.status;
+      return streamResponse(seo, res, pathname, requestId);
+    }
 
     // 1. Route API requests to the API handler
     if (pathname.startsWith("/api/")) {
       const apiRes = await handleApiRoute(webReq);
       if (apiRes) {
-        return streamResponse(apiRes, res, pathname);
+        route = "api";
+        status = apiRes.status;
+        return streamResponse(apiRes, res, pathname, requestId);
       }
       // If the API handler returns null (unknown route), fall through to SSR
     }
 
     // 2. SSR handler for everything else
     const webRes = await fetchHandler.fetch(webReq);
-    return streamResponse(webRes, res, pathname);
+    route = "ssr";
+    status = webRes.status;
+    return streamResponse(webRes, res, pathname, requestId);
   } catch (error) {
     // Log the detail server-side (captured by the host's function logs); never
     // return a stack trace to the public visitor of the site.
-    console.error("[team-site] request failed", error);
+    route = "error";
+    status = 500;
+    logError(EVENTS.REQUEST_FAILED, {
+      request_id: requestId,
+      method: req.method,
+      path: redactPath(req.url ?? "/"),
+      duration_ms: Math.round(performance.now() - startedAt),
+      err: error,
+    });
     res.statusCode = 500;
     for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
       res.setHeader(key, value);
     }
     res.setHeader("content-type", "text/plain");
+    res.setHeader("x-request-id", requestId);
     res.end("Internal Server Error");
+    return;
+  } finally {
+    // Completions (including the error path above) get a structured log line.
+    if (status !== 0) {
+      logInfo(EVENTS.REQUEST_COMPLETE, {
+        request_id: requestId,
+        method: req.method,
+        path: redactPath(req.url ?? "/"),
+        route,
+        status,
+        duration_ms: Math.round(performance.now() - startedAt),
+      });
+    }
   }
 }

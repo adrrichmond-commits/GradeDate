@@ -16,6 +16,13 @@ import { sweepExpiredAnonUploads } from "./src/anon-upload-retention.ts";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { seoResponse, shouldNoIndex } from "./src/seo.ts";
+import {
+  EVENTS,
+  logError,
+  logInfo,
+  logWarn,
+  redactPath,
+} from "./src/observability.ts";
 
 // ── Security Headers ─────────────────────────────────────────
 const SECURITY_HEADERS: Record<string, string> = {
@@ -36,12 +43,13 @@ const SECURITY_HEADERS: Record<string, string> = {
     "form-action 'self'",
 };
 
-function applySecurityHeaders(response: Response, pathname?: string): Response {
+function applySecurityHeaders(response: Response, pathname: string, requestId: string): Response {
   const headers = new Headers(response.headers);
   for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
     if (!headers.has(key)) headers.set(key, value);
   }
-  if (pathname && shouldNoIndex(pathname)) headers.set("X-Robots-Tag", "noindex, nofollow");
+  if (shouldNoIndex(pathname)) headers.set("X-Robots-Tag", "noindex, nofollow");
+  if (!headers.has("x-request-id")) headers.set("x-request-id", requestId);
   return new Response(response.body, {
     status: response.status,
     headers,
@@ -73,16 +81,28 @@ const freePort =
 // synchronously, so without this a raced publish would die while the shell already
 // reported success.
 
+// Runtime startup flags: which providers are configured (presence only — never values).
+function startupFlags(): Record<string, boolean> {
+  return {
+    database: Boolean(process.env.DATABASE_URL),
+    blob_storage: Boolean(process.env.BLOB_READ_WRITE_TOKEN),
+    stripe: Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET),
+    email: Boolean(process.env.RESEND_API_KEY),
+    push: Boolean(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY),
+    ai_grading: Boolean(process.env.OPENAI_API_KEY),
+  };
+}
+
 // Initialize database tables
 if (process.env.DATABASE_URL) {
   try {
     await initTables();
-    console.log("Database tables initialized");
+    logInfo(EVENTS.SERVER_DB_INIT_OK, {});
   } catch (err) {
-    console.warn("Database initialization failed — continuing without database:", (err as Error).message);
+    logWarn(EVENTS.SERVER_DB_INIT_FAILED, { err });
   }
 } else {
-  console.warn("DATABASE_URL not set — database features will not work");
+  logWarn(EVENTS.SERVER_DB_UNCONFIGURED, {});
 }
 
 for (let attempt = 1; ; attempt++) {
@@ -92,35 +112,69 @@ for (let attempt = 1; ; attempt++) {
       port: PORT,
       hostname: HOST,
       async fetch(req) {
-        const { pathname } = new URL(req.url);
+        const startedAt = performance.now();
+        const requestId = crypto.randomUUID();
+        // Propagate the request id downstream so handlers can correlate their
+        // business events with this request.
+        const reqWithId = new Request(req, {
+          headers: new Headers([...req.headers.entries(), ["x-request-id", requestId]]),
+        });
+        const { pathname } = new URL(reqWithId.url);
+        const coarsePath = redactPath(pathname);
 
-        const seo = seoResponse(req);
-        if (seo) return applySecurityHeaders(seo, pathname);
+        const finish = (response: Response, route: string): Response => {
+          const out = applySecurityHeaders(response, pathname, requestId);
+          logInfo(EVENTS.REQUEST_COMPLETE, {
+            request_id: requestId,
+            method: reqWithId.method,
+            path: coarsePath,
+            route,
+            status: out.status,
+            duration_ms: Math.round(performance.now() - startedAt),
+          });
+          return out;
+        };
 
-        // 1. Serve uploaded files
-        if (pathname.startsWith("/uploads/")) {
-          const filePath = path.join(UPLOADS_DIR, pathname.slice("/uploads/".length));
-          if (existsSync(filePath)) {
-            const file = Bun.file(filePath);
-            return applySecurityHeaders(new Response(file), pathname);
+        try {
+          const seo = seoResponse(reqWithId);
+          if (seo) return finish(seo, "seo");
+
+          // 1. Serve uploaded files
+          if (pathname.startsWith("/uploads/")) {
+            const filePath = path.join(UPLOADS_DIR, pathname.slice("/uploads/".length));
+            if (existsSync(filePath)) {
+              const file = Bun.file(filePath);
+              return finish(new Response(file), "static");
+            }
+            return finish(new Response("Not found", { status: 404 }), "404");
           }
-          return applySecurityHeaders(new Response("Not found", { status: 404 }), pathname);
+
+          // 2. API routes
+          const apiResponse = await handleApiRoute(reqWithId);
+          if (apiResponse) return finish(apiResponse, "api");
+
+          // 3. Static client assets
+          if (pathname !== "/") {
+            const file = Bun.file(CLIENT_DIR + pathname);
+            if (await file.exists()) return finish(new Response(file), "static");
+          }
+
+          // 4. SSR handler
+          const ssr = await (
+            handler as { fetch: (r: Request) => Response | Promise<Response> }
+          ).fetch(reqWithId);
+          return finish(ssr, "ssr");
+        } catch (err) {
+          logError(EVENTS.REQUEST_FAILED, {
+            request_id: requestId,
+            method: reqWithId.method,
+            path: coarsePath,
+            duration_ms: Math.round(performance.now() - startedAt),
+            err,
+          });
+          // Generic error body — never leak internals to the visitor.
+          return finish(new Response("Internal Server Error", { status: 500 }), "error");
         }
-
-        // 2. API routes
-        const apiResponse = await handleApiRoute(req);
-        if (apiResponse) return applySecurityHeaders(apiResponse, pathname);
-
-        // 3. Static client assets
-        if (pathname !== "/") {
-          const file = Bun.file(CLIENT_DIR + pathname);
-          if (await file.exists()) return applySecurityHeaders(new Response(file), pathname);
-        }
-
-        // 4. SSR handler
-        return applySecurityHeaders(await (
-          handler as { fetch: (r: Request) => Response | Promise<Response> }
-        ).fetch(req), pathname);
       },
     });
     break;
@@ -130,6 +184,7 @@ for (let attempt = 1; ; attempt++) {
   }
 }
 
+logInfo(EVENTS.SERVER_STARTED, { port: PORT, host: HOST, ...startupFlags() });
 console.log(`team-site serving on http://${HOST}:${String(PORT)}`);
 
 // Anonymous upload retention: sweep expired anon_* uploads (abandoned before
@@ -138,7 +193,7 @@ console.log(`team-site serving on http://${HOST}:${String(PORT)}`);
 const ANON_SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const runAnonSweep = () => {
   sweepExpiredAnonUploads().catch((err) => {
-    console.error("[serve] Anonymous upload sweep failed:", err);
+    logError(EVENTS.SERVER_ANON_SWEEP_FAILED, { err });
   });
 };
 runAnonSweep();

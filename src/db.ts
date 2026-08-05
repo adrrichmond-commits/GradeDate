@@ -33,6 +33,33 @@ function sql(): NeonQueryFunction<false, false> {
 
 // ── Schema initialization ──────────────────────────────────────
 
+/**
+ * Minimal database readiness check for /api/ready.
+ *
+ * Deliberately does NOT reuse the shared `sql()` singleton: it must never
+ * poison the cached connection with a test/health probe URL, and it must
+ * return coarse results only — no connection strings, error text, or other
+ * details that could leak configuration. Reason values are stable strings.
+ */
+export interface DatabaseReadyResult {
+  ok: boolean;
+  reason?: "not_configured" | "invalid_config" | "query_failed";
+}
+
+export async function checkDatabaseReady(): Promise<DatabaseReadyResult> {
+  const url = process.env.DATABASE_URL;
+  if (!url) return { ok: false, reason: "not_configured" };
+  if (!url.startsWith("postgresql://") && !url.startsWith("postgres://")) {
+    return { ok: false, reason: "invalid_config" };
+  }
+  try {
+    await neon(url)`SELECT 1`;
+    return { ok: true };
+  } catch {
+    return { ok: false, reason: "query_failed" };
+  }
+}
+
 export async function initTables(): Promise<void> {
   await sql()`
     CREATE TABLE IF NOT EXISTS users (

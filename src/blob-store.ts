@@ -4,6 +4,7 @@
 // because it fails to load in Vercel's bundled serverless function.
 import { mkdirSync, writeFileSync, readFileSync, unlinkSync } from "node:fs";
 import path from "node:path";
+import { EVENTS, logWarn } from "./observability";
 
 let _blobClient: { put: typeof import("@vercel/blob").put; del: typeof import("@vercel/blob").del } | null | undefined;
 
@@ -14,7 +15,7 @@ async function getBlobClient() {
     _blobClient = { put, del };
     return _blobClient;
   } catch {
-    console.warn("[blob-store] @vercel/blob package could not be loaded");
+    logWarn(EVENTS.BLOB_STORE_PROVIDER_MISSING, {});
     _blobClient = null;
     return null;
   }
@@ -30,7 +31,7 @@ export function isVercelBlob(): boolean {
   const token = process.env.BLOB_READ_WRITE_TOKEN;
   if (!token) {
     if (!_warnedMissingToken) {
-      console.warn("[blob-store] BLOB_READ_WRITE_TOKEN is not set. Falling back to local filesystem.");
+      logWarn(EVENTS.BLOB_STORE_TOKEN_MISSING, {});
       _warnedMissingToken = true;
     }
     return false;
@@ -86,7 +87,7 @@ export async function storePhoto(
       });
       return blob.url;
     }
-    console.warn("[blob-store] Blob client unavailable; falling back to local filesystem.");
+    logWarn(EVENTS.BLOB_STORE_CLIENT_UNAVAILABLE, {});
   }
 
   // Local filesystem
@@ -126,7 +127,7 @@ export async function deletePhoto(photoPath: string): Promise<void> {
         try {
           await client.del(photoPath);
         } catch (err) {
-          console.error("[blob-store] Failed to delete blob:", err);
+          logWarn(EVENTS.BLOB_STORE_DELETE_FAILED, { err, target: "blob" });
         }
       }
     }
@@ -140,7 +141,7 @@ export async function deletePhoto(photoPath: string): Promise<void> {
     const filename = path.basename(photoPath);
     unlinkSync(path.join(dir, filename));
   } catch (err) {
-    console.error("[blob-store] Failed to delete local file:", err);
+    logWarn(EVENTS.BLOB_STORE_DELETE_FAILED, { err, target: "local" });
   }
 }
 
@@ -162,7 +163,7 @@ export async function listBlobs(prefix: string): Promise<{ url: string; uploaded
     const mod = await import("@vercel/blob");
     listFn = mod.list as typeof listFn;
   } catch {
-    console.warn("[blob-store] @vercel/blob package could not be loaded");
+    logWarn(EVENTS.BLOB_STORE_PROVIDER_MISSING, {});
     return [];
   }
   if (!listFn) return [];
