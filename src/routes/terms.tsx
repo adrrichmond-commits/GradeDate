@@ -13,7 +13,7 @@ function TermsOfService() {
           Terms of Service
         </h1>
         <p className="text-gray-400">
-          Last updated: July 20, 2026
+          Last updated: August 5, 2026
         </p>
       </div>
 
@@ -121,9 +121,19 @@ function TermsOfService() {
           <h2 className="mb-3 text-xl font-bold text-white">7. Subscription and Payment</h2>
           <ul className="list-disc space-y-2 pl-6 leading-relaxed">
             <li>
-              GradeDate costs{" "}
-              <strong className="text-white">$5.99 per month</strong>. Premium is optional; free accounts can browse and use the free tier. A paid subscription is
-              required to access the Service.
+              GradeDate offers a free tier and an optional{" "}
+              <strong className="text-white">Premium</strong> subscription.
+              Free accounts receive{" "}
+              <strong className="text-white">3 likes per day</strong>,{" "}
+              <strong className="text-white">1 free regrade per week</strong>,
+              and can browse compatible profiles and message their matches at
+              no cost. A paid subscription is not required to use the Service.
+            </li>
+            <li>
+              Premium costs{" "}
+              <strong className="text-white">$5.99 per month</strong> and adds
+              premium likes, premium regrades, profile boosts, and seeing who
+              liked you. All features remain subject to these Terms.
             </li>
             <li>
               Payments are processed securely through{" "}
