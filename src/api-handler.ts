@@ -1,4 +1,5 @@
 import type { Server } from "bun";
+import { deriveCoachingTips } from "./coaching";
 import {
   createUser,
   getUserByEmail,
@@ -993,6 +994,9 @@ async function handleGradePhotos(req: Request): Promise<Response> {
     grades[highestIndex].is_best = true;
   }
 
+  // Derive deterministic coaching tips from returned feedback + photo count
+  const coaching = deriveCoachingTips(grades.map((g) => g.feedback), photoPaths.length);
+
   // Save to database
   await insertPhotoGrades(user.id, grades);
 
@@ -1038,6 +1042,7 @@ async function handleGradePhotos(req: Request): Promise<Response> {
     percentile: percentileResult?.percentile ?? null,
     percentile_city: percentileResult?.percentile_city ?? null,
     percentile_label: topLabel,
+    coaching,
   });
 }
 
