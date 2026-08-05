@@ -56,7 +56,8 @@ function getUploadsDir(): string {
 }
 
 let _uploadsDir: string | null = null;
-function uploadsDir(): string {
+/** Get the local uploads directory, creating it if needed. */
+export function uploadsDir(): string {
   if (_uploadsDir) return _uploadsDir;
   _uploadsDir = getUploadsDir();
   try {
@@ -141,4 +142,43 @@ export async function deletePhoto(photoPath: string): Promise<void> {
   } catch (err) {
     console.error("[blob-store] Failed to delete local file:", err);
   }
+}
+
+/**
+ * List blobs whose pathname starts with `prefix` (e.g. "anon_"), returning
+ * their URL and upload time. Uses @vercel/blob's list() with pagination;
+ * returns [] when blob storage is not configured. Used by the anonymous
+ * upload TTL sweep — callers must still double-check the name prefix before
+ * deleting, because list() matches by pathname prefix only.
+ */
+export async function listBlobs(prefix: string): Promise<{ url: string; uploadedAt: Date }[]> {
+  if (!isVercelBlob()) return [];
+  let listFn: ((opts: { prefix: string; limit?: number; cursor?: string }) => Promise<{
+    blobs: { url: string; pathname: string; uploadedAt: string | Date }[];
+    hasMore: boolean;
+    cursor?: string;
+  }>) | null = null;
+  try {
+    const mod = await import("@vercel/blob");
+    listFn = mod.list as typeof listFn;
+  } catch {
+    console.warn("[blob-store] @vercel/blob package could not be loaded");
+    return [];
+  }
+  if (!listFn) return [];
+  const results: { url: string; uploadedAt: Date }[] = [];
+  let cursor: string | undefined;
+  for (;;) {
+    const page = await listFn({ prefix, limit: 1000, ...(cursor ? { cursor } : {}) });
+    for (const blob of page.blobs) {
+      results.push({
+        url: blob.url,
+        uploadedAt: blob.uploadedAt instanceof Date ? blob.uploadedAt : new Date(blob.uploadedAt),
+      });
+    }
+    if (!page.hasMore) break;
+    cursor = page.cursor;
+    if (!cursor) break;
+  }
+  return results;
 }

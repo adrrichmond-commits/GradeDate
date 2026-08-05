@@ -36,4 +36,7 @@ site.json
 # Backup files
 *.bak
 .vercel
+# Env files are ignored, but the placeholder TEMPLATES are tracked.
 .env*
+!.env.example
+!.env.local.example
