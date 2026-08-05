@@ -2,6 +2,11 @@ import type { Server } from "bun";
 import { deriveCoachingTips } from "./coaching";
 import { topPercentLabel } from "./percentile";
 import {
+  foundersCheckoutUrls,
+  storeUpsellCheckoutUrls,
+  subscriptionCheckoutUrls,
+} from "./stripe-redirects";
+import {
   createUser,
   getUserByEmail,
   getUserById,
@@ -1615,8 +1620,10 @@ async function handleCreateCheckout(req: Request): Promise<Response> {
   const session = await stripe.checkout.sessions.create({
     mode: "subscription",
     line_items: [{ price: priceId, quantity: 1 }],
-    success_url: `https://gradedate.app/subscribe/success?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: "https://gradedate.app/subscribe",
+    // Return URLs come from the current origin and land on the real /subscribe
+    // route, which renders ?success=true / ?canceled=true. Fulfillment is
+    // webhook-based; the return URL is only UX.
+    ...subscriptionCheckoutUrls(req.url),
     client_reference_id: String(user.id),
     customer_email: user.email,
     metadata: { user_id: String(user.id) },
@@ -1644,8 +1651,7 @@ async function handleUpsellCheckout(req: Request): Promise<Response> {
   if (!stripe || !price) return json({ error: "This purchase is not configured yet" }, 503);
   const session = await stripe.checkout.sessions.create({
     mode: "payment", line_items: [{ price, quantity: 1 }],
-    success_url: `${new URL(req.url).origin}/store?payment=success&product=${encodeURIComponent(product)}&session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${new URL(req.url).origin}/store?payment=cancelled`,
+    ...storeUpsellCheckoutUrls(req.url, product),
     client_reference_id: String(user.id), customer_email: user.email,
     metadata: { user_id: String(user.id), product },
   });
@@ -2218,8 +2224,10 @@ async function handleFoundersCheckout(req: Request): Promise<Response> {
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
     line_items: [{ price: foundersPriceId, quantity: 1 }],
-    success_url: "https://gradedate.app/store?founders=success",
-    cancel_url: "https://gradedate.app/store?founders=canceled",
+    // Return URLs come from the current origin and land on /store, which
+    // renders ?founders=success / ?founders=canceled. The webhook (metadata
+    // product === "founders_club") performs actual founder assignment.
+    ...foundersCheckoutUrls(req.url),
     client_reference_id: String(user.id),
     customer_email: user.email,
     metadata: {
