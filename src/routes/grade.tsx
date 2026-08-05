@@ -4,10 +4,24 @@ import { useAuth } from "~/auth-context";
 import { getCsrfToken } from "~/csrf-client";
 import { gradeAnonymousPhotos } from "~/anonymous-grading";
 
+import { resolveSiteOrigin, resolveSiteUrl } from "~/site-url";
 export const Route = createFileRoute("/grade")({
   component: GradePage,
 });
 
+/**
+ * Share CTA with the current site origin appended (never a hardcoded domain).
+ * Resolves to the runtime origin in the browser; falls back to the bare verb
+ * when no origin is available (e.g. server render).
+ */
+function gradeCta(verb: "Craft your confidence" | "Find your best photos"): string {
+  const origin = resolveSiteOrigin();
+  return origin ? `${verb} at ${origin}` : verb;
+}
+/** Absolute /grade share URL for the current origin, or a relative fallback. */
+function gradeShareUrl(): string {
+  return resolveSiteUrl("/grade") ?? "/grade";
+}
 type UIState =
   | "idle"
   | "uploading"
@@ -322,13 +336,13 @@ function GradePage() {
 
   const handleShare = async () => {
     const shareText = percentileLabel && grade !== null
-      ? `I scored ${grade}/10 — ${percentileLabel}${percentileCity ? ` in ${percentileCity}` : ""}. Craft your confidence at gradedate.app`
-      : `I just got my profile graded. Find your best photos at gradedate.app`;
+      ? `I scored ${grade}/10 — ${percentileLabel}${percentileCity ? ` in ${percentileCity}` : ""}. ${gradeCta("Craft your confidence")}`
+      : `I just got my profile graded. ${gradeCta("Find your best photos")}`;
 
     const shareData = {
       title: "My GradeDate Profile",
       text: shareText,
-      url: "https://gradedate.app/grade",
+      url: gradeShareUrl(),
     };
 
     if (navigator.share) {
@@ -358,8 +372,8 @@ function GradePage() {
 
   const handleCopyGrade = async () => {
     const text = percentileLabel && grade !== null
-      ? `I scored ${grade}/10 — ${percentileLabel}${percentileCity ? ` in ${percentileCity}` : ""}. Craft your confidence at gradedate.app`
-      : `I just got my profile graded. Find your best photos at gradedate.app`;
+      ? `I scored ${grade}/10 — ${percentileLabel}${percentileCity ? ` in ${percentileCity}` : ""}. ${gradeCta("Craft your confidence")}`
+      : `I just got my profile graded. ${gradeCta("Find your best photos")}`;
 
     try {
       await navigator.clipboard.writeText(text);
@@ -953,14 +967,22 @@ function ShareCard({
   const [statusMsg, setStatusMsg] = useState("");
   const [statusVisible, setStatusVisible] = useState(false);
 
+  // Site origin resolved client-side after mount (avoids SSR/hydration
+  // mismatch while keeping the card CTA pointing at the real origin).
+  const [siteOrigin, setSiteOrigin] = useState<string | null>(null);
+  useEffect(() => {
+    setSiteOrigin(resolveSiteOrigin());
+  }, []);
+  const tagline = siteOrigin ? `Craft your confidence at ${siteOrigin}` : "Craft your confidence";
+
   const displayGrade = grade ?? "?";
 
   const shareText =
     percentileLabel && grade !== null
-      ? `I scored ${grade}/10 — ${percentileLabel}${percentileCity ? ` in ${percentileCity}` : ""}. Craft your confidence at gradedate.app`
+      ? `I scored ${grade}/10 — ${percentileLabel}${percentileCity ? ` in ${percentileCity}` : ""}. ${tagline}`
       : grade !== null
-        ? `I scored ${grade}/10. Craft your confidence at gradedate.app`
-        : `Craft your confidence at gradedate.app`;
+        ? `I scored ${grade}/10. ${tagline}`
+        : tagline;
 
   const showFeedback = (msg: string) => {
     setStatusMsg(msg);
@@ -1180,7 +1202,7 @@ function ShareCard({
         await navigator.share({
           title: "My GradeDate Card",
           text: shareText,
-          url: "https://gradedate.app/grade",
+          url: siteOrigin ? `${siteOrigin}/grade` : "/grade",
         });
         showFeedback("Shared!");
       } else {
@@ -1315,7 +1337,7 @@ function ShareCard({
 
         {/* Tagline */}
         <p className="mt-2 text-xs text-gray-500">
-          Craft your confidence at gradedate.app
+          {tagline}
         </p>
 
         {/* Decorative corner glows */}

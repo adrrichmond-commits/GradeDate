@@ -1,4 +1,5 @@
 import type { Server } from "bun";
+import { originFromUrl, resolveSiteUrl } from "./site-url";
 import { deriveCoachingTips } from "./coaching";
 import { topPercentLabel } from "./percentile";
 import {
@@ -2173,12 +2174,15 @@ async function handleGetReferralCode(req: Request): Promise<Response> {
 
   const stats = await getReferralStats(user.id);
 
+  // Share URL is built from the request origin (never a hardcoded domain), so
+  // referral links point at the same environment the user is actually on.
+  const shareUrl = resolveSiteUrl(`/signup?ref=${code.code}`, req.url);
   return json({
     code: code.code,
     uses: stats?.usage_count ?? 0,
     max_uses: code.max_uses ?? 1000,
     rewards_earned: stats?.rewards_earned ?? 0,
-    share_url: `https://gradedate.app/signup?ref=${code.code}`,
+    share_url: shareUrl ?? `/signup?ref=${code.code}`,
   });
 }
 
@@ -2286,8 +2290,10 @@ async function handleWaitlistJoin(req: Request): Promise<Response> {
   // Insert into waitlist (duplicates are silently ignored)
   await joinWaitlist(email, zipCode);
 
-  // Send confirmation email (best-effort, don't fail if email fails)
-  await sendWaitlistConfirmation(email);
+  // Send confirmation email (best-effort, don't fail if email fails). The CTA
+  // link is built from the request origin so it points at the site the visitor
+  // actually signed up on.
+  await sendWaitlistConfirmation(email, originFromUrl(req.url));
 
   return json({ success: true });
 }

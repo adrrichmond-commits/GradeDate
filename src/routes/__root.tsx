@@ -10,6 +10,7 @@ import type { ReactNode } from "react";
 import { useEffect, useState, useRef } from "react";
 import { AuthProvider, useAuth } from "~/auth-context";
 import { getCsrfToken } from "~/csrf-client";
+import { resolveSiteOrigin } from "~/site-url";
 
 import { Analytics } from "@vercel/analytics/react";
 import appCss from "~/styles/app.css?url";
@@ -556,6 +557,10 @@ function AppShell() {
 }
 
 function RootDocument({ children }: { children: ReactNode }) {
+  // Canonical/OG URLs are resolved from the request/runtime origin (never a
+  // hardcoded domain) so they match whatever environment serves the page:
+  // SSR request origin during server render, window.location on the client.
+  const siteUrl = resolveSiteOrigin() ?? "/";
   return (
     <html lang="en" className="dark">
       <head>
@@ -565,11 +570,11 @@ function RootDocument({ children }: { children: ReactNode }) {
         <meta property="og:title" content="GradeDate — Craft Your Confidence, Connect Authentically" />
         <meta property="og:description" content="Craft your confidence. Connect authentically. AI-powered photo feedback helps you put your best self forward and find genuine connections. Free preview." />
         <meta property="og:type" content="website" />
-        <meta property="og:url" content="https://gradedate.app" />
+        <meta property="og:url" content={siteUrl} />
         <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:title" content="GradeDate — Craft Your Confidence, Connect Authentically" />
         <meta name="twitter:description" content="Craft your confidence. Connect authentically. AI-powered photo feedback helps you put your best self forward and find genuine connections. Free preview." />
-        <link rel="canonical" href="https://gradedate.app" />
+        <link rel="canonical" href={siteUrl} />
       </head>
       <body class="overflow-x-hidden w-full">
         {children}
