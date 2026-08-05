@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "~/auth-context";
 import { useRequireSubscription, SubscriptionBanner } from "~/subscription-guard";
 import { getCsrfToken } from "~/csrf-client";
+import { getMatchActionError, matchActionFailureMessage } from "~/matches-action";
 
 interface MatchPhoto {
   id: number;
@@ -58,6 +59,7 @@ function MatchesPage() {
   const [fetching, setFetching] = useState(true);
   const [error, setError] = useState("");
   const [animState, setAnimState] = useState<"idle" | "like" | "pass" | null>(null);
+  const [failedAction, setFailedAction] = useState<"like" | "pass" | null>(null);
   const [matchCelebration, setMatchCelebration] = useState<{
     match_id: number;
     other_user: { id: number; display_name: string | null; photo_path: string | null } | null;
@@ -150,10 +152,28 @@ function MatchesPage() {
     }
   }, [user]);
 
+  const advanceAfterAction = () => {
+    setAnimState(null);
+    if (currentIdx >= matches.length - 1) {
+      setMatches([]);
+    } else {
+      setCurrentIdx((i) => i + 1);
+      setPhotoIndex(0);
+    }
+  };
+
+  const handleActionFailure = (action: "like" | "pass") => {
+    setAnimState(null);
+    setFailedAction(action);
+    setError(matchActionFailureMessage(action));
+  };
+
   const handleLike = async () => {
     const current = matches[currentIdx];
-    if (!current) return;
+    if (!current || animState !== null) return;
 
+    setError("");
+    setFailedAction(null);
     setAnimState("like");
     try {
       const res = await fetch("/api/matches/like", {
@@ -165,17 +185,20 @@ function MatchesPage() {
         body: JSON.stringify({ liked_id: current.id }),
       });
       const data = await res.json();
+      const actionError = getMatchActionError(res.ok, data, "like");
 
-      if (!res.ok && data.code === "DAILY_LIMIT") {
+      if (actionError === "DAILY_LIMIT") {
         setAnimState(null);
         setShowLikesLimitOverlay(true);
         setLikesRemaining(0);
         return;
       }
+      if (actionError) {
+        handleActionFailure("like");
+        return;
+      }
 
-      // Refresh likes remaining
       fetchLikesRemaining();
-
       if (data.matched) {
         setMatchCelebration({
           match_id: data.match_id,
@@ -184,38 +207,27 @@ function MatchesPage() {
         });
         setTimeout(() => {
           setMatchCelebration(null);
-          setAnimState(null);
-          if (currentIdx >= matches.length - 1) {
-            setMatches([]);
-          } else {
-            setCurrentIdx((i) => i + 1);
-            setPhotoIndex(0);
-          }
+          advanceAfterAction();
         }, 3000);
         return;
       }
     } catch {
-      // Silently fail
+      handleActionFailure("like");
+      return;
     }
 
-    setTimeout(() => {
-      setAnimState(null);
-      if (currentIdx >= matches.length - 1) {
-        setMatches([]);
-      } else {
-        setCurrentIdx((i) => i + 1);
-        setPhotoIndex(0);
-      }
-    }, 400);
+    setTimeout(advanceAfterAction, 400);
   };
 
   const handlePass = async () => {
     const current = matches[currentIdx];
-    if (!current) return;
+    if (!current || animState !== null) return;
 
+    setError("");
+    setFailedAction(null);
     setAnimState("pass");
     try {
-      await fetch("/api/matches/pass", {
+      const res = await fetch("/api/matches/pass", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -223,19 +235,18 @@ function MatchesPage() {
         },
         body: JSON.stringify({ passed_id: current.id }),
       });
+      const data = await res.json().catch(() => null);
+      const actionError = getMatchActionError(res.ok, data, "pass");
+      if (actionError) {
+        handleActionFailure("pass");
+        return;
+      }
     } catch {
-      // Silently fail
+      handleActionFailure("pass");
+      return;
     }
 
-    setTimeout(() => {
-      setAnimState(null);
-      if (currentIdx >= matches.length - 1) {
-        setMatches([]);
-      } else {
-        setCurrentIdx((i) => i + 1);
-        setPhotoIndex(0);
-      }
-    }, 400);
+    setTimeout(advanceAfterAction, 400);
   };
 
   if (loading || fetching) {
@@ -293,14 +304,24 @@ function MatchesPage() {
       </div>
 
       {error && (
-        <div className="mb-6 rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-center text-sm text-red-400">
-          {error}
-          <button
-            onClick={fetchMatches}
-            className="mt-2 block w-full text-center text-xs underline"
-          >
-            Try again
-          </button>
+        <div role="alert" aria-live="polite" className="mb-6 rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-center text-sm text-red-400">
+          <p>{error}</p>
+          {failedAction ? (
+            <button
+              onClick={() => (failedAction === "like" ? handleLike() : handlePass())}
+              disabled={animState !== null}
+              className="mt-2 block w-full text-center text-xs font-medium underline disabled:opacity-50"
+            >
+              Retry {failedAction}
+            </button>
+          ) : (
+            <button
+              onClick={fetchMatches}
+              className="mt-2 block w-full text-center text-xs underline"
+            >
+              Try again
+            </button>
+          )}
         </div>
       )}
 
