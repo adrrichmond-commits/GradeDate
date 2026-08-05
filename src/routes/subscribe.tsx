@@ -205,8 +205,6 @@ function SubscribePage() {
           </div>
           <div className="mb-4" />
 
-          {/* Savings badge for annual plan */}
-
           <ul className="mb-6 space-y-2 text-left text-sm">
             {[
               "Premium grade-matched profiles",
