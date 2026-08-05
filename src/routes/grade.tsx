@@ -28,6 +28,12 @@ interface PhotoGradeResult {
   is_best: boolean;
 }
 
+interface CoachingTip {
+  id: string;
+  text: string;
+  source: "rule";
+}
+
 function GradePage() {
   const { user, loading: authLoading } = useAuth();
 
@@ -45,6 +51,7 @@ function GradePage() {
   const [percentile, setPercentile] = useState<number | null>(null);
   const [percentileCity, setPercentileCity] = useState<string | null>(null);
   const [percentileLabel, setPercentileLabel] = useState<string | null>(null);
+  const [coachingTips, setCoachingTips] = useState<CoachingTip[]>([]);
 
   // Free tier regrade info
   const [freeRegradeInfo, setFreeRegradeInfo] = useState<string>("");
@@ -265,6 +272,7 @@ function GradePage() {
       setPercentile(gradeData.percentile ?? null);
       setPercentileCity(gradeData.percentile_city ?? null);
       setPercentileLabel(gradeData.percentile_label ?? null);
+      setCoachingTips(gradeData.coaching || []);
 
       // Set single grade for share card (use best photo grade)
       const bestGrade = gradesWithPreviews.find((g) => g.is_best)?.grade;
@@ -287,6 +295,7 @@ function GradePage() {
     setPercentile(null);
     setPercentileCity(null);
     setPercentileLabel(null);
+    setCoachingTips([]);
     // Revoke preview URLs
     photos.forEach((p) => URL.revokeObjectURL(p.previewUrl));
     setPhotos([]);
@@ -622,6 +631,29 @@ function GradePage() {
                     </div>
                   ))}
                 </div>
+
+                {/* Coaching tips */}
+                {coachingTips.length > 0 && (
+                  <div className="rounded-xl border border-purple-500/20 bg-purple-500/5 p-4">
+                    <div className="text-xs font-semibold uppercase tracking-wider text-purple-400">
+                      Coaching Tips
+                    </div>
+                    <ul className="mt-2 space-y-1.5">
+                      {coachingTips.map((tip) => (
+                        <li
+                          key={tip.id}
+                          className="flex items-start gap-2 text-sm text-gray-300"
+                        >
+                          <span className="mt-0.5 shrink-0 text-purple-400">✦</span>
+                          {tip.text}
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="mt-2 text-[10px] text-gray-600">
+                      Suggestions to try — not a judgment of your photos.
+                    </p>
+                  </div>
+                )}
 
                 {/* Percentile card */}
                 <div className="rounded-xl border border-rose-500/20 bg-gradient-to-r from-rose-500/5 to-purple-500/5 p-4 text-center">
