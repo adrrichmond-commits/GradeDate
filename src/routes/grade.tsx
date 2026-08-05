@@ -41,6 +41,9 @@ interface PhotoEntry {
 
 interface PhotoGradeResult {
   photo_path: string;
+  /** Client-only durable source retained for anonymous results. */
+  dataUrl?: string;
+  previewUrl?: string;
   grade: number;
   feedback: string;
   is_best: boolean;
@@ -225,10 +228,34 @@ function GradePage() {
     setErrorMessage("");
 
     try {
+      // Snapshot durable sources before starting the request. FileReader is
+      // asynchronous; if grading finishes first, the result card can render
+      // after the anonymous upload has been deleted while its data URL is
+      // still missing from React state. Awaiting here makes the source
+      // available for the first result render instead of relying on a later
+      // state update (or a now-dead blob/server URL).
+      const photosForGrade = !isAuthenticated
+        ? await Promise.all(
+            photos.map(async (photo) => {
+              if (photo.dataUrl) return photo;
+              try {
+                const dataUrl = await fileToDataUrl(photo.file);
+                return { ...photo, dataUrl };
+              } catch {
+                return photo;
+              }
+            })
+          )
+        : photos;
+
+      if (!isAuthenticated) {
+        setPhotos(photosForGrade);
+      }
+
       // Step 1: Upload all photos
       const uploadPaths: string[] = [];
 
-      for (const photo of photos) {
+      for (const photo of photosForGrade) {
         if (photo.photoPath) {
           uploadPaths.push(photo.photoPath);
           continue;
@@ -294,7 +321,8 @@ function GradePage() {
           (g, i) => ({
             ...g,
             // Match preview URL by index
-            previewUrl: photos[i]?.previewUrl || "",
+            previewUrl: photosForGrade[i]?.previewUrl || "",
+            dataUrl: photosForGrade[i]?.dataUrl,
           })
         );
 
