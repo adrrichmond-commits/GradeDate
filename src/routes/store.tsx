@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useEffect, type ReactNode } from "react";
 import { useAuth } from "~/auth-context";
 import { getCsrfToken } from "~/csrf-client";
+import { parseStoreReturnState } from "~/checkout-return";
 
 const RE_GRADE_LINK = "https://buy.stripe.com/5kQ7sL3gq0CW4edfxt7Re02";
 const BOOST_LINK = "https://buy.stripe.com/14A9AT2cm3P8265etp7Re03";
@@ -110,19 +111,35 @@ function StorePage() {
   const [foundersCheckingOut, setFoundersCheckingOut] = useState(false);
   const [checkoutProduct, setCheckoutProduct] = useState<string | null>(null);
   const [paymentState, setPaymentState] = useState<string | null>(null);
-
-  // Fetch founders count on mount and activate only the Stripe session returned
-  // by our checkout. The server re-checks ownership and payment status.
+  const [foundersState, setFoundersState] = useState<{ kind: "success" | "canceled"; message: string } | null>(null);
+  // Fetch founders count on mount and handle the Stripe return query. The
+  // parser (unit-tested in checkout-return.test.ts) only reports what the
+  // return URL says; actual entitlements come from the Stripe webhook and the
+  // server-verified activate call below.
   useEffect(() => {
     fetch("/api/founders/count")
       .then((r) => r.json())
       .then((data) => setFoundersCount(data))
       .catch(() => {});
-    const params = new URLSearchParams(window.location.search);
-    const sessionId = params.get("session_id");
-    const product = products.find((item) => item.id === params.get("product"));
-    if (sessionId && product && user) handleActivate(product, sessionId);
-    else if (params.get("payment") === "success") setPaymentState("Payment received. Verifying your purchase…");
+    const state = parseStoreReturnState(window.location.search);
+    if (state.kind === "activate" && user) {
+      const product = products.find((item) => item.id === state.productId);
+      if (product) handleActivate(product, state.sessionId);
+    } else if (state.kind === "payment-success") {
+      setPaymentState("Payment received. Verifying your purchase…");
+    } else if (state.kind === "payment-cancelled") {
+      setPaymentState("Payment was canceled. No charges were made.");
+    } else if (state.kind === "founders-success") {
+      setFoundersState({
+        kind: "success",
+        message:
+          "Payment received — activating your Founder membership. This usually takes a few seconds.",
+      });
+      // The webhook may have already granted founder status; pick it up if so.
+      refetch();
+    } else if (state.kind === "founders-cancelled") {
+      setFoundersState({ kind: "canceled", message: "Payment was canceled. No charges were made." });
+    }
   }, [user]);
 
   const handleCheckout = async (product: Product) => {
@@ -225,6 +242,30 @@ function StorePage() {
         </div>
       )}
 
+      {/* Stripe return-state banners (from ?payment=… / ?founders=… query).
+          Copy never claims payment succeeded — fulfillment is webhook-driven. */}
+      {paymentState && (
+        <div className="mb-8 rounded-xl border border-green-500/30 bg-green-500/10 p-4 text-center">
+          <p className="text-sm font-semibold text-green-400">{paymentState}</p>
+          <p className="mt-1 text-xs text-green-400/70">
+            Purchases are activated once Stripe confirms payment — usually a few seconds.
+          </p>
+        </div>
+      )}
+      {foundersState && (
+        <div className="mb-8 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-center">
+          <p className="text-sm font-semibold text-amber-300">
+            {user?.is_founder && foundersState.kind === "success"
+              ? "👑 Welcome to the Founders Club!"
+              : foundersState.message}
+          </p>
+          {foundersState.kind === "success" && !user?.is_founder && (
+            <p className="mt-1 text-xs text-amber-400/70">
+              If it hasn't appeared yet, refresh this page in a few seconds.
+            </p>
+          )}
+        </div>
+      )}
       {/* Founders Club Card */}
       {user && (
         <div className="mb-10">
