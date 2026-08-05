@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { useAuth } from "~/auth-context";
 import { getCsrfToken } from "~/csrf-client";
+import { parseSubscriptionReturnState } from "~/checkout-return";
 
 type Plan = "monthly" | "annual";
 
@@ -34,10 +35,21 @@ export const Route = createFileRoute("/subscribe")({
   component: SubscribePage,
   validateSearch: (
     search: Record<string, unknown>,
-  ): { success?: string; canceled?: string } => {
+  ): { success?: string; canceled?: string; sessionId?: string } => {
+    // Canonical interpretation of the Stripe return query (unit-tested in
+    // checkout-return.test.ts). Returning from Stripe is not proof of payment;
+    // the webhook grants the subscription and the page refetches the user.
+    const state = parseSubscriptionReturnState(
+      new URLSearchParams(
+        Object.entries(search)
+          .filter((e): e is [string, string] => typeof e[1] === "string")
+          .map(([k, v]) => [k, v]),
+      ),
+    );
     return {
-      success: search.success as string | undefined,
-      canceled: search.canceled as string | undefined,
+      success: state.success ? "true" : undefined,
+      canceled: state.canceled ? "true" : undefined,
+      sessionId: state.sessionId ?? undefined,
     };
   },
 });
@@ -155,18 +167,17 @@ function SubscribePage() {
           start chatting. Choose monthly or save 30% with an annual plan.
         </p>
 
-        {/* Success banner */}
+        {/* Success banner — copy intentionally does not claim the payment
+            succeeded: the Stripe webhook grants the subscription and the page
+            refetches the user to confirm. */}
         {showSuccess && (
           <div className="mb-6 rounded-xl border border-green-500/30 bg-green-500/10 p-4">
             <p className="font-semibold text-green-400">
-              ✅ Subscription successful! Your account is now active.
+              ✅ Payment received — we're confirming your subscription.
             </p>
             <p className="mt-1 text-sm text-green-400/70">
-              Head to{" "}
-              <Link to="/matches" className="underline hover:text-green-300">
-                Browse Matches
-              </Link>{" "}
-              to start connecting.
+              Activation usually takes a few seconds. If it hasn't appeared
+              yet, refresh this page.
             </p>
           </div>
         )}
