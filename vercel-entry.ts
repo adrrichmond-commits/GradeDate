@@ -13,6 +13,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import handler from "./dist/server/server.js";
 import { initTables } from "./src/db.ts";
 import { handleApiRoute } from "./src/api-handler.ts";
+import { seoResponse, shouldNoIndex } from "./src/seo.ts";
 
 const SECURITY_HEADERS: Record<string, string> = {
   "X-Content-Type-Options": "nosniff",
@@ -71,9 +72,11 @@ if (process.env.DATABASE_URL) {
 async function streamResponse(
   webRes: Response,
   res: ServerResponse,
+  pathname: string,
 ): Promise<void> {
   res.statusCode = webRes.status;
   webRes.headers.forEach((value, key) => res.setHeader(key, value));
+  if (shouldNoIndex(pathname)) res.setHeader("X-Robots-Tag", "noindex, nofollow");
   // Apply security headers (won't override existing)
   for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
     if (!webRes.headers.has(key)) res.setHeader(key, value);
@@ -97,18 +100,21 @@ export default async function vercelHandler(
     const webReq = toWebRequest(req);
     const { pathname } = new URL(webReq.url);
 
+    const seo = seoResponse(webReq);
+    if (seo) return streamResponse(seo, res, pathname);
+
     // 1. Route API requests to the API handler
     if (pathname.startsWith("/api/")) {
       const apiRes = await handleApiRoute(webReq);
       if (apiRes) {
-        return streamResponse(apiRes, res);
+        return streamResponse(apiRes, res, pathname);
       }
       // If the API handler returns null (unknown route), fall through to SSR
     }
 
     // 2. SSR handler for everything else
     const webRes = await fetchHandler.fetch(webReq);
-    return streamResponse(webRes, res);
+    return streamResponse(webRes, res, pathname);
   } catch (error) {
     // Log the detail server-side (captured by the host's function logs); never
     // return a stack trace to the public visitor of the site.
