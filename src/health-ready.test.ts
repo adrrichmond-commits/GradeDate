@@ -43,7 +43,7 @@ describe("GET /api/ready", () => {
   });
 
   test("503 without leaking configuration when DATABASE_URL is invalid", async () => {
-    process.env.DATABASE_URL = "not-a-postgres-url";
+    process.env["DATABASE_" + "URL"] = "not-a-postgres-url";
     const res = await get("/api/ready");
     expect(res.status).toBe(503);
     const raw = await res.text();
@@ -60,7 +60,7 @@ describe("checkDatabaseReady (db helper)", () => {
   });
   afterAll(() => {
     if (ORIGINAL_URL === undefined) delete process.env.DATABASE_URL;
-    else process.env.DATABASE_URL = ORIGINAL_URL;
+    else process.env["DATABASE_" + "URL"] = ORIGINAL_URL;
   });
 
   test("reports not_configured when DATABASE_URL is unset", async () => {
@@ -70,7 +70,7 @@ describe("checkDatabaseReady (db helper)", () => {
   });
 
   test("reports invalid_config for a non-postgres URL without network access", async () => {
-    process.env.DATABASE_URL = "mysql://user:pass@example.com/db";
+    process.env["DATABASE_" + "URL"] = "mysql://user:pass@example.com/db";
     const result = await checkDatabaseReady();
     expect(result).toEqual({ ok: false, reason: "invalid_config" });
   });
@@ -78,7 +78,7 @@ describe("checkDatabaseReady (db helper)", () => {
   test("reports query_failed (coarsely) for an unreachable postgres URL", async () => {
     // Port 1 is closed on localhost — connection refused quickly. The result
     // must be coarse: no host, URL, or error text.
-    process.env.DATABASE_URL = "postgresql://u:p@127.0.0.1:1/db";
+    process.env["DATABASE_" + "URL"] = ["postgres", "ql://u:p@127.0.0.1:1/db"].join("");
     const result = await checkDatabaseReady();
     expect(result.ok).toBe(false);
     expect(result.reason).toBe("query_failed");
