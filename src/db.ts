@@ -7,6 +7,7 @@ import {
   isNonEmptyRange,
 } from "./matching";
 import { leagueRangeScore, type LeagueValue } from "./mutual-league";
+import { PREMIUM_PRICE_ID, founderPriceLockApplies } from "./canonical-entitlements";
 
 let _sql: NeonQueryFunction<false, false> | null = null;
 
@@ -155,6 +156,10 @@ export async function initTables(): Promise<void> {
   try {
     await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS founder_number INTEGER UNIQUE`;
   } catch { /* ignore */ }
+  // Defensive migration: a lock is granted only alongside a numbered subscription founder.
+  try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS founder_price_lock_price_id TEXT`;
+  } catch { /* existing deployments may migrate on next startup */ }
   try {
     await sql()`CREATE INDEX IF NOT EXISTS idx_users_founder_number ON users(founder_number)`;
   } catch { /* ignore */ }
@@ -377,6 +382,7 @@ export interface User {
   obsessions: string | null;
   is_founder: boolean;
   founder_number: number | null;
+  founder_price_lock_price_id: string | null;
   created_at: string;
 }
 
@@ -2006,6 +2012,12 @@ export async function getFounderSpotsRemaining(): Promise<{ remaining: number; t
  * Assign the next sequential founder_number to a user.
  * Returns the assigned number, or null if all 1000 spots are taken.
  */
+export const CANONICAL_PREMIUM_PRICE_ID = PREMIUM_PRICE_ID;
+
+export function hasCanonicalFounderPriceLock(user: Pick<User, "is_founder" | "founder_number" | "founder_price_lock_price_id">): boolean {
+  return founderPriceLockApplies(user.is_founder, user.founder_number, user.founder_price_lock_price_id);
+}
+
 export async function assignFounderNumber(userId: number): Promise<number | null> {
   // Check current count using a single atomic operation via SELECT FOR UPDATE
   // We use a transaction to ensure atomicity
@@ -2020,7 +2032,7 @@ export async function assignFounderNumber(userId: number): Promise<number | null
 
   // Assign the number
   const updated = await sql()`
-    UPDATE users SET founder_number = ${nextNum}, is_founder = true
+    UPDATE users SET founder_number = ${nextNum}, is_founder = true, founder_price_lock_price_id = ${CANONICAL_PREMIUM_PRICE_ID}
     WHERE id = ${userId} AND founder_number IS NULL
     RETURNING founder_number
   `;
@@ -2035,12 +2047,6 @@ export async function assignFounderNumber(userId: number): Promise<number | null
   return founderNumber;
 }
 
-export async function setFounder(userId: number): Promise<void> {
-  await sql()`
-    UPDATE users SET is_founder = true
-    WHERE id = ${userId}
-  `;
-}
 
 // ── Waitlist ──────────────────────────────────────────────────────
 

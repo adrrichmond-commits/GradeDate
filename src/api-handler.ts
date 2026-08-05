@@ -88,7 +88,6 @@ import {
   getFounderCount,
   getFounderSpotsRemaining,
   assignFounderNumber,
-  setFounder,
   grantPaidUpsell,
   type PaidUpsellProduct,
   type User,
@@ -1814,21 +1813,6 @@ async function handleStripeWebhook(req: Request): Promise<Response> {
           break;
         }
 
-        // Check if this is a Founders Club purchase
-        if (session.metadata?.product === "founders_club") {
-          const founderNum = await assignFounderNumber(user.id);
-          if (founderNum !== null) {
-            console.log(
-              `🎉 Founders Club #${founderNum} assigned to user ${user.id} (${customerEmail})`,
-            );
-          } else {
-            await setFounder(user.id);
-            console.log(
-              `Founders Club activated for user ${user.id} (${customerEmail}) — no founder spot available`,
-            );
-          }
-          break;
-        }
 
         if (customerId && subscriptionId) {
           await updateUserStripeInfo(user.id, customerId, subscriptionId);
