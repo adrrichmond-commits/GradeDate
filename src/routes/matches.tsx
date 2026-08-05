@@ -1,5 +1,6 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState, useCallback } from "react";
+import { useModalAccessibility } from "~/modal-accessibility";
 import { useAuth } from "~/auth-context";
 import { useRequireSubscription, SubscriptionBanner } from "~/subscription-guard";
 import { getCsrfToken } from "~/csrf-client";
@@ -79,6 +80,12 @@ function MatchesPage() {
   const [reportReason, setReportReason] = useState("");
   const [reporting, setReporting] = useState(false);
   const [reportDone, setReportDone] = useState(false);
+  const closeCelebration = useCallback(() => setMatchCelebration(null), []);
+  const closeLikesLimit = useCallback(() => setShowLikesLimitOverlay(false), []);
+  const closeReport = useCallback(() => setShowReportModal(false), []);
+  const celebrationA11y = useModalAccessibility<HTMLDivElement>(!!matchCelebration, closeCelebration);
+  const likesLimitA11y = useModalAccessibility<HTMLDivElement>(showLikesLimitOverlay, closeLikesLimit);
+  const reportA11y = useModalAccessibility<HTMLDivElement>(showReportModal, closeReport);
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -672,8 +679,8 @@ function MatchesPage() {
 
       {/* Match Celebration Modal */}
       {matchCelebration && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-          <div className="mx-4 w-full max-w-sm animate-[bounceIn_0.5s_ease-out] rounded-2xl bg-gray-900 p-8 text-center shadow-2xl">
+        <div {...celebrationA11y} aria-labelledby="match-celebration-title" className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div ref={celebrationA11y.containerRef} tabIndex={-1} className="mx-4 w-full max-w-sm animate-[bounceIn_0.5s_ease-out] rounded-2xl bg-gray-900 p-8 text-center shadow-2xl">
             <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-rose-500/20 to-amber-500/20">
               <svg
                 className="h-10 w-10 text-rose-400"
@@ -689,7 +696,7 @@ function MatchesPage() {
                 />
               </svg>
             </div>
-            <h2 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-rose-400 to-amber-400">
+            <h2 id="match-celebration-title" className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-rose-400 to-amber-400">
               It's a Match!
             </h2>
             {matchCelebration.league_score != null && (
@@ -744,14 +751,14 @@ function MatchesPage() {
 
       {/* Daily Likes Limit Overlay */}
       {showLikesLimitOverlay && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-          <div className="mx-4 w-full max-w-sm animate-[bounceIn_0.5s_ease-out] rounded-2xl bg-gray-900 p-8 text-center shadow-2xl">
+        <div {...likesLimitA11y} aria-labelledby="likes-limit-title" className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div ref={likesLimitA11y.containerRef} tabIndex={-1} className="mx-4 w-full max-w-sm animate-[bounceIn_0.5s_ease-out] rounded-2xl bg-gray-900 p-8 text-center shadow-2xl">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-amber-500/10">
               <svg className="h-8 w-8 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
               </svg>
             </div>
-            <h2 className="text-xl font-bold">You're out of likes!</h2>
+            <h2 id="likes-limit-title" className="text-xl font-bold">You're out of likes!</h2>
             <p className="mt-2 text-sm text-gray-400">
               You've used all your likes for today.
               {likePacks > 0
@@ -778,9 +785,9 @@ function MatchesPage() {
 
       {/* Report Modal */}
       {showReportModal && current && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-          <div className="mx-4 w-full max-w-sm rounded-2xl bg-gray-900 p-6 shadow-2xl">
-            <h3 className="text-lg font-bold">Report {current.display_name || "User"}</h3>
+        <div {...reportA11y} aria-labelledby="matches-report-title" className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div ref={reportA11y.containerRef} tabIndex={-1} className="mx-4 w-full max-w-sm rounded-2xl bg-gray-900 p-6 shadow-2xl">
+            <h3 id="matches-report-title" className="text-lg font-bold">Report {current.display_name || "User"}</h3>
             <p className="mt-1 text-sm text-gray-400">
               {reportDone
                 ? "Thank you. Your report has been submitted."
