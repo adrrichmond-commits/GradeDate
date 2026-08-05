@@ -299,9 +299,11 @@ export async function initTables(): Promise<void> {
       referee_user_id INTEGER NOT NULL REFERENCES users(id),
       reward_type TEXT DEFAULT 'free_month',
       applied BOOLEAN DEFAULT false,
+      expires_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `;
+  await sql()`ALTER TABLE referral_rewards ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ`;
 
   await sql()`
     CREATE TABLE IF NOT EXISTS waitlist (
@@ -1698,7 +1700,7 @@ export async function updateUserPassword(
 
 // ── Upsells ──────────────────────────────────────────────────────
 
-export type PaidUpsellProduct = "re-grade" | "boost" | "reveal-likes" | "like-pack";
+export type PaidUpsellProduct = "re-grade" | "boost" | "like-pack";
 
 /** Grant a Stripe-verified purchase exactly once. The unique session id makes
  * webhook retries and activation retries harmless. */
@@ -1716,7 +1718,6 @@ export async function grantPaidUpsell(
   if (inserted.length === 0) return false;
   if (product === "re-grade") await addReGrade(userId);
   else if (product === "boost") await activateBoost(userId);
-  else if (product === "reveal-likes") await revealLikes(userId);
   else await addLikePacks(userId, 5);
   return true;
 }
@@ -1736,7 +1737,7 @@ export async function useReGrade(userId: number): Promise<boolean> {
   return rows.length > 0;
 }
 
-export async function activateBoost(userId: number, durationHours = 24): Promise<void> {
+export async function activateBoost(userId: number, durationHours = 24 * 7): Promise<void> {
   const until = new Date(Date.now() + durationHours * 60 * 60 * 1000).toISOString();
   await sql()`
     UPDATE users SET boost_until = ${until} WHERE id = ${userId}
@@ -1920,8 +1921,8 @@ export async function applyReferralCode(
 
   // Create reward record (not applied yet — applied when referee subscribes)
   await sql()`
-    INSERT INTO referral_rewards (referrer_user_id, referee_user_id)
-    VALUES (${referral.user_id}, ${newUserId})
+    INSERT INTO referral_rewards (referrer_user_id, referee_user_id, expires_at)
+    VALUES (${referral.user_id}, ${newUserId}, NOW() + INTERVAL '30 days')
   `;
 
   return { success: true };
@@ -1950,7 +1951,7 @@ export async function getReferralRewardForReferee(
   refereeUserId: number,
 ): Promise<ReferralReward | null> {
   const rows = await sql()`
-    SELECT * FROM referral_rewards WHERE referee_user_id = ${refereeUserId}
+    SELECT * FROM referral_rewards WHERE referee_user_id = ${refereeUserId} AND (expires_at IS NULL OR expires_at > NOW())
   `;
   return rows.length > 0 ? (rows[0] as unknown as ReferralReward) : null;
 }
@@ -1962,7 +1963,7 @@ export async function applyReferralReward(rewardId: number): Promise<void> {
   if (reward.length === 0) return;
 
   const r = reward[0] as unknown as ReferralReward;
-  if (r.applied) return;
+  if (r.applied || (r.expires_at && new Date(r.expires_at).getTime() <= Date.now())) return;
 
   // Give referrer 1 month of premium — set to active and extend
   await sql()`
@@ -2019,7 +2020,7 @@ export async function assignFounderNumber(userId: number): Promise<number | null
 
   // Assign the number
   const updated = await sql()`
-    UPDATE users SET founder_number = ${nextNum}, is_founder = true, regrades_available = 999999
+    UPDATE users SET founder_number = ${nextNum}, is_founder = true
     WHERE id = ${userId} AND founder_number IS NULL
     RETURNING founder_number
   `;
@@ -2036,7 +2037,7 @@ export async function assignFounderNumber(userId: number): Promise<number | null
 
 export async function setFounder(userId: number): Promise<void> {
   await sql()`
-    UPDATE users SET is_founder = true, regrades_available = 999999
+    UPDATE users SET is_founder = true
     WHERE id = ${userId}
   `;
 }

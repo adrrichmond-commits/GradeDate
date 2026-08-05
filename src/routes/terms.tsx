@@ -122,7 +122,7 @@ function TermsOfService() {
           <ul className="list-disc space-y-2 pl-6 leading-relaxed">
             <li>
               GradeDate costs{" "}
-              <strong className="text-white">$5.99 per month</strong>. A paid subscription is
+              <strong className="text-white">$5.99 per month</strong>. Premium is optional; free accounts can browse and use the free tier. A paid subscription is
               required to access the Service.
             </li>
             <li>

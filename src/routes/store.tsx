@@ -42,9 +42,9 @@ const products: Product[] = [
   {
     id: "boost",
     name: "Profile Boost",
-    price: "$3.99",
+    price: "$2.99",
     description:
-      "Get 24 hours of increased visibility — your profile appears at the top of match results for users in your grade range.",
+      "Get 7 days of increased visibility — your profile appears at the top of match results for users in your grade range.",
     paymentLink: BOOST_LINK,
     endpoint: "/api/store/activate-boost",
     icon: (
@@ -279,7 +279,7 @@ function StorePage() {
               </div>
               <h2 className="mt-3 text-2xl font-bold">Founders Club</h2>
               <p className="mt-2 text-gray-400 max-w-xl">
-                Join the first 1000 members and unlock lifetime benefits. One-time purchase, permanent perks.
+                Join the first 1000 members and unlock lifetime benefits. Subscription-only membership at $5.99/month with a lifetime price lock.
               </p>
 
               <div className="mt-5 grid gap-3 sm:grid-cols-3">
@@ -300,8 +300,8 @@ function StorePage() {
                 <div className="flex items-start gap-2 text-sm">
                   <span className="mt-0.5 text-amber-400">✓</span>
                   <div>
-                    <span className="font-medium text-white">Priority Visibility</span>
-                    <p className="text-xs text-gray-500">Your profile gets boosted permanently</p>
+                    <span className="font-medium text-white">Founder Badge</span>
+                    <p className="text-xs text-gray-500">Numbered badge and lifetime $5.99/month price lock</p>
                   </div>
                 </div>
               </div>
@@ -357,7 +357,7 @@ function StorePage() {
 
       {/* Product Cards */}
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {products.map((product) => {
+        {products.filter((product) => product.id !== "reveal-likes").map((product) => {
           const isOwned =
             (product.id === "re-grade" && (user?.regrades_available ?? 0) > 0) ||
             (product.id === "boost" && user?.boost_until && new Date(user.boost_until) > new Date()) ||

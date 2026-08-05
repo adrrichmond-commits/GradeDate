@@ -20,7 +20,6 @@ import {
   updateUserProfile,
   updateUserGrade,
   updateSubscriptionStatus,
-  activateAnnualSubscription,
   updateUserStripeInfo,
   getUserByStripeCustomerId,
   getUsersByGradeRange,
@@ -49,7 +48,6 @@ import {
   addReGrade,
   useReGrade,
   activateBoost,
-  revealLikes,
   addLikePacks,
   getLikePacksRemaining,
   getLikers,
@@ -240,7 +238,12 @@ async function getCurrentUser(req: Request): Promise<User | null> {
   if (!sessionId) return null;
   const session = await getSessionById(sessionId);
   if (!session) return null;
-  return getUserById(session.user_id);
+  const user = await getUserById(session.user_id);
+  if (user?.subscription_status === "active" && user.subscription_expires_at && new Date(user.subscription_expires_at).getTime() <= Date.now() && !user.stripe_subscription_id) {
+    await updateSubscriptionStatus(user.id, "inactive");
+    return getUserById(user.id);
+  }
+  return user;
 }
 
 type SafeUser = Omit<User, "password_hash">;
@@ -959,8 +962,12 @@ async function handleGradePhotos(req: Request): Promise<Response> {
     return json({ error: "Provide 1-5 photo paths" }, 400);
   }
 
-  // Free tier check: if not subscribed, check last_free_regrade_at
-  if (user.subscription_status !== "active") {
+  // A repeat authenticated grading run consumes one paid regrade credit.
+  // New free users retain one run per seven-day window.
+  const hasActivePremium = user.subscription_status === "active" && (!user.subscription_expires_at || new Date(user.subscription_expires_at).getTime() > Date.now());
+  if (user.grade !== null && hasActivePremium) {
+    if (!(await useReGrade(user.id))) return json({ error: "Purchase a $0.99 re-grade credit to grade again.", code: "REGRADE_REQUIRED" }, 402);
+  } else if (!hasActivePremium) {
     const now = new Date();
     const lastFree = user.last_free_regrade_at ? new Date(user.last_free_regrade_at) : null;
     const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
@@ -1051,7 +1058,7 @@ async function handleGradePhotos(req: Request): Promise<Response> {
   }
 
   // Update last_free_regrade_at for free users
-  if (user.subscription_status !== "active") {
+  if (!hasActivePremium) {
     await updateLastFreeRegrade(user.id);
   }
 
@@ -1564,48 +1571,8 @@ async function handleSubscriptionStatus(req: Request): Promise<Response> {
   });
 }
 
-async function handleSubscriptionActivate(req: Request): Promise<Response> {
-  const user = await getCurrentUser(req);
-  if (!user) {
-    return json({ error: "Unauthorized" }, 401);
-  }
-
-  console.warn(
-    "POST /api/subscription/activate is deprecated — use /api/subscription/create-checkout with Stripe Checkout Sessions instead.",
-  );
-
-  let plan: string | null = null;
-  try {
-    const body = await req.json();
-    plan = body.plan || null;
-  } catch { /* no body */ }
-
-  if (user.subscription_status === "active") {
-    return json({
-      ok: true,
-      message: "Subscription already active",
-      subscription_status: "active",
-    });
-  }
-
-  if (plan === "annual") {
-    await activateAnnualSubscription(user.id);
-  } else {
-    await updateSubscriptionStatus(user.id, "active");
-  }
-
-  // Check and apply referral reward — if this user was referred, give both the free month
-  const pendingReward = await getReferralRewardForReferee(user.id);
-  if (pendingReward && !pendingReward.applied) {
-    await applyReferralReward(pendingReward.id);
-    console.log(`Referral reward applied: referrer=${pendingReward.referrer_user_id}, referee=${user.id}`);
-  }
-
-  return json({
-    ok: true,
-    message: plan === "annual" ? "Annual subscription activated" : "Subscription activated",
-    subscription_status: "active",
-  });
+async function handleSubscriptionActivate(_req: Request): Promise<Response> {
+  return json({ error: "This endpoint is deprecated. Complete payment through Stripe Checkout." }, 410);
 }
 
 async function handleCreateCheckout(req: Request): Promise<Response> {
@@ -1622,8 +1589,8 @@ async function handleCreateCheckout(req: Request): Promise<Response> {
   }
 
   const body = await req.json().catch(() => null);
-  if (!body?.plan || !["monthly", "annual"].includes(body.plan)) {
-    return json({ error: "plan must be 'monthly' or 'annual'" }, 400);
+  if (body?.plan !== "monthly") {
+    return json({ error: "Only the monthly Premium plan is available" }, 400);
   }
 
   const stripe = getStripe();
@@ -1631,11 +1598,7 @@ async function handleCreateCheckout(req: Request): Promise<Response> {
     return json({ error: "Stripe is not configured" }, 500);
   }
 
-  // Use PREMIUM_PRICE_ID for monthly; annual uses a separate price ID
-  const priceId =
-    body.plan === "annual"
-      ? "price_1Tvzh8GuEElH7kaizZdfy7s9"
-      : PREMIUM_PRICE_ID;
+  const priceId = PREMIUM_PRICE_ID;
 
   const session = await stripe.checkout.sessions.create({
     mode: "subscription",
@@ -1656,7 +1619,6 @@ async function handleCreateCheckout(req: Request): Promise<Response> {
 const UPSELL_PRICES: Record<PaidUpsellProduct, string | undefined> = {
   "re-grade": process.env.STRIPE_REGRADE_PRICE_ID,
   boost: process.env.STRIPE_BOOST_PRICE_ID,
-  "reveal-likes": process.env.STRIPE_REVEAL_LIKES_PRICE_ID,
   "like-pack": process.env.STRIPE_LIKE_PACK_PRICE_ID,
 };
 
@@ -1735,14 +1697,14 @@ async function handleLikedMe(req: Request): Promise<Response> {
     return json({ error: "Unauthorized" }, 401);
   }
 
-  // If user hasn't activated reveal-likes, return paywalled preview
-  if (!user.likes_revealed || user.likes_revealed <= 0) {
+  const hasActivePremium = user.subscription_status === "active" && (!user.subscription_expires_at || new Date(user.subscription_expires_at).getTime() > Date.now());
+  if (!hasActivePremium) {
     // Return count only, no details
     const likers = await getLikers(user.id);
     return json({
       paywalled: true,
       count: likers.length,
-      message: "Unlock to see who liked you!",
+      message: "Premium includes seeing who liked you. Subscribe to unlock.",
     });
   }
 
@@ -2219,47 +2181,8 @@ async function handleApplyReferralCode(req: Request): Promise<Response> {
 
 // ── Founders Club ────────────────────────────────────────────────
 
-async function handleFoundersCheckout(req: Request): Promise<Response> {
-  const user = await getCurrentUser(req);
-  if (!user) {
-    return json({ error: "Unauthorized" }, 401);
-  }
-
-  // Check if already a founder
-  if (user.is_founder) {
-    return json({ error: "You are already a Founders Club member!" }, 400);
-  }
-
-  // Check the 1000 cap
-  const count = await getFounderCount();
-  if (count >= 1000) {
-    return json({ error: "Sorry, all 1000 Founders Club spots have been claimed." }, 400);
-  }
-
-  const stripe = getStripe();
-  if (!stripe) {
-    return json({ error: "Stripe is not configured" }, 500);
-  }
-
-  // Founders Club product price ID — uses the same monthly subscription price
-  const foundersPriceId = process.env.FOUNDERS_CLUB_PRICE_ID || PREMIUM_PRICE_ID;
-
-  const session = await stripe.checkout.sessions.create({
-    mode: "payment",
-    line_items: [{ price: foundersPriceId, quantity: 1 }],
-    // Return URLs come from the current origin and land on /store, which
-    // renders ?founders=success / ?founders=canceled. The webhook (metadata
-    // product === "founders_club") performs actual founder assignment.
-    ...foundersCheckoutUrls(req.url),
-    client_reference_id: String(user.id),
-    customer_email: user.email,
-    metadata: {
-      user_id: String(user.id),
-      product: "founders_club",
-    },
-  });
-
-  return json({ url: session.url });
+async function handleFoundersCheckout(_req: Request): Promise<Response> {
+  return json({ error: "Founders Club is included with the monthly Premium subscription; direct purchases are unavailable." }, 410);
 }
 
 async function handleFoundersCount(_req: Request): Promise<Response> {
