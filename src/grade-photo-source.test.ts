@@ -33,3 +33,21 @@ describe("resolveGradePhotoSrc", () => {
     expect(resolveGradePhotoSrc(null, null, null)).toBe("");
   });
 });
+
+describe("result source retention", () => {
+  test("keeps each result card tied to its own durable source", () => {
+    const results = [
+      { dataUrl: "data:image/jpeg;base64,ONE", previewUrl: "blob:one", photo_path: "/uploads/one" },
+      { dataUrl: "data:image/jpeg;base64,TWO", previewUrl: "blob:two", photo_path: "/uploads/two" },
+    ];
+    expect(results.map((result) =>
+      resolveGradePhotoSrc(result.dataUrl, result.previewUrl, result.photo_path)
+    )).toEqual(["data:image/jpeg;base64,ONE", "data:image/jpeg;base64,TWO"]);
+  });
+
+  test("does not replace a durable result source when the preview state is stale", () => {
+    expect(resolveGradePhotoSrc("data:image/png;base64,RESULT", "", "/uploads/deleted")).toBe(
+      "data:image/png;base64,RESULT"
+    );
+  });
+});
