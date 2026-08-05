@@ -1,5 +1,6 @@
 import type { Server } from "bun";
 import { deriveCoachingTips } from "./coaching";
+import { topPercentLabel } from "./percentile";
 import {
   createUser,
   getUserByEmail,
@@ -1029,7 +1030,7 @@ async function handleGradePhotos(req: Request): Promise<Response> {
   await checkAndAwardBadges(user.id);
 
   const topLabel = percentileResult
-    ? `Top ${Math.round(100 - percentileResult.percentile)}% in ${percentileResult.percentile_city}`
+    ? `${topPercentLabel(percentileResult.percentile)} in ${percentileResult.percentile_city}`
     : "Not enough users in your city for percentile ranking yet";
 
   return json({
@@ -1057,7 +1058,7 @@ async function handleGetPercentile(req: Request): Promise<Response> {
     const result = await calculatePercentile(user.id);
     if (result) {
       await updateUserPercentile(user.id, result.percentile, result.percentile_city);
-      const label = `Top ${Math.round(100 - result.percentile)}% in ${result.percentile_city}`;
+      const label = `${topPercentLabel(result.percentile)} in ${result.percentile_city}`;
       return json({
         percentile: result.percentile,
         percentile_city: result.percentile_city,
@@ -1071,7 +1072,7 @@ async function handleGetPercentile(req: Request): Promise<Response> {
     });
   }
 
-  const label = `Top ${Math.round(100 - user.percentile)}% in ${user.percentile_city}`;
+  const label = `${topPercentLabel(user.percentile)} in ${user.percentile_city}`;
   return json({
     percentile: user.percentile,
     percentile_city: user.percentile_city,
@@ -2298,7 +2299,7 @@ async function handleGradeCard(req: Request): Promise<Response> {
     }
     displayName = user.display_name || "Anonymous";
     if (user.percentile != null && user.percentile_city) {
-      percentileLabel = `Top ${Math.round(100 - user.percentile)}% in ${user.percentile_city}`;
+      percentileLabel = `${topPercentLabel(user.percentile)} in ${user.percentile_city}`;
     }
 
     // Badges — nested try/catch so badge DB failure never kills the card

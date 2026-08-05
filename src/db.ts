@@ -1,5 +1,11 @@
 import { neon } from "@neondatabase/serverless";
 import type { NeonQueryFunction } from "@neondatabase/serverless";
+import { computePercentile } from "./percentile";
+import {
+  compute8020Counts,
+  computeGradeBands,
+  isNonEmptyRange,
+} from "./matching";
 
 let _sql: NeonQueryFunction<false, false> | null = null;
 
@@ -685,11 +691,13 @@ export async function calculatePercentile(userId: number): Promise<{
     ? `${user.location_city}, ${user.location_state}`
     : user.location_city;
 
-  // Count users in the same city who have a percentile/grade
+  // Count graded users in the same city. The percentile is derived from the
+  // grade distribution, so we count on the `grade` column (1-10), never on
+  // the `percentile` column (0-100) — mixing the two scales corrupts the rank.
   const totalRows = await sql()`
     SELECT COUNT(*)::int AS cnt FROM users
     WHERE location_city = ${user.location_city}
-      AND percentile IS NOT NULL
+      AND grade IS NOT NULL
       AND id != ${userId}
   `;
   const totalInCity = (totalRows[0] as { cnt: number }).cnt;
@@ -701,15 +709,15 @@ export async function calculatePercentile(userId: number): Promise<{
   const lowerRows = await sql()`
     SELECT COUNT(*)::int AS cnt FROM users
     WHERE location_city = ${user.location_city}
-      AND percentile IS NOT NULL
+      AND grade IS NOT NULL
       AND id != ${userId}
-      AND percentile <= ${best.grade}
+      AND grade <= ${best.grade}
   `;
   const lowerOrEqual = (lowerRows[0] as { cnt: number }).cnt;
 
-  // Percentile: what percentage of users you rank above
-  // (lowerOrEqual / totalInCity) * 100
-  const percentile = Math.round((lowerOrEqual / totalInCity) * 1000) / 10;
+  // Percentile (0-100, higher = better): what percentage of graded users in
+  // the city have a grade at or below yours. Rounded to one decimal.
+  const percentile = computePercentile(lowerOrEqual, totalInCity);
 
   return { percentile, percentile_city: cityName, bestGrade: best.grade };
 }
@@ -1109,8 +1117,10 @@ export async function getUserBadges(user: User): Promise<Badge[]> {
 
 /**
  * Get users for the swiping feed using an 80/20 distribution:
- * 80% of results from the user's percentile range (or grade range),
- * 10% from above, 10% from below. Results are shuffled.
+ * 80% of results from the user's grade range (±1 grade on the 1-10 scale),
+ * 10% from above, 10% from below. Results are shuffled. The stored
+ * percentile (0-100) is never used as a grade filter — matching always
+ * compares users on the grade scale.
  */
 export async function getUsersWith8020Matching(
   userId: number,
@@ -1124,89 +1134,65 @@ export async function getUsersWith8020Matching(
 ): Promise<MatchUser[]> {
   const user = await getUserById(userId);
 
-  // Determine if we use percentile or grade-based range
-  const usePercentile = user?.percentile != null;
-  const percentile = user?.percentile ?? null;
-
-  // In-range: ±5 percentile points or ±1 grade
-  let inRangeMin: number;
-  let inRangeMax: number;
-
-  if (usePercentile && percentile != null) {
-    inRangeMin = Math.max(0, percentile - 5);
-    inRangeMax = Math.min(100, percentile + 5);
-  } else {
-    inRangeMin = Math.max(1, userGrade - 1);
-    inRangeMax = Math.min(10, userGrade + 1);
-  }
+  // Matching is always on the grade scale (1-10). The stored percentile is a
+  // 0-100 display metric derived from the grade distribution and must never
+  // be passed as a grade bound — doing so mixes scales (e.g. percentile 72
+  // becomes "grade >= 72", which matches nothing) and empties the feed.
+  const { inRange, above, below } = computeGradeBands(userGrade);
 
   // Fetch in-range users (80%)
-  const inRangeUsers = await getUsersByGradeRange(
-    userGrade,
-    inRangeMin,
-    inRangeMax,
-    excludeUserId,
-    lookingFor,
-    blockedByIds,
-    latitude,
-    longitude,
-    maxDistance,
+  const inRangeUsers = isNonEmptyRange(inRange)
+    ? await getUsersByGradeRange(
+        userGrade,
+        inRange.min,
+        inRange.max,
+        excludeUserId,
+        lookingFor,
+        blockedByIds,
+        latitude,
+        longitude,
+        maxDistance,
+      )
+    : [];
+
+  // Fetch above-range users (10%) — strictly higher grades
+  const aboveUsers = isNonEmptyRange(above)
+    ? await getUsersByGradeRange(
+        userGrade,
+        above.min,
+        above.max,
+        excludeUserId,
+        lookingFor,
+        blockedByIds,
+        latitude,
+        longitude,
+        maxDistance,
+      )
+    : [];
+
+  // Fetch below-range users (10%) — strictly lower grades
+  const belowUsers = isNonEmptyRange(below)
+    ? await getUsersByGradeRange(
+        userGrade,
+        below.min,
+        below.max,
+        excludeUserId,
+        lookingFor,
+        blockedByIds,
+        latitude,
+        longitude,
+        maxDistance,
+      )
+    : [];
+
+  // Combine: 80% in-range, ~10% above, ~10% below. If no in-range users
+  // exist, fall back to the out-of-range pools so the feed is never empty
+  // while any graded users exist.
+  const { inRangeCount, aboveCount, belowCount } = compute8020Counts(
+    inRangeUsers.length,
+    aboveUsers.length,
+    belowUsers.length,
   );
-
-  // Fetch above-range users (10%)
-  let aboveMin: number;
-  let aboveMax: number;
-  if (usePercentile) {
-    aboveMin = inRangeMax;
-    aboveMax = 100;
-  } else {
-    aboveMin = inRangeMax + 1 > 10 ? inRangeMax : inRangeMax + 1;
-    aboveMax = 10;
-  }
-  const aboveUsers = aboveMin <= aboveMax
-    ? await getUsersByGradeRange(
-        userGrade,
-        aboveMin,
-        aboveMax,
-        excludeUserId,
-        lookingFor,
-        blockedByIds,
-        latitude,
-        longitude,
-        maxDistance,
-      )
-    : [];
-
-  // Fetch below-range users (10%)
-  let belowMin: number;
-  let belowMax: number;
-  if (usePercentile) {
-    belowMin = 0;
-    belowMax = inRangeMin;
-  } else {
-    belowMin = 1;
-    belowMax = inRangeMin - 1 < 1 ? inRangeMin : inRangeMin - 1;
-  }
-  const belowUsers = belowMin <= belowMax
-    ? await getUsersByGradeRange(
-        userGrade,
-        belowMin,
-        belowMax,
-        excludeUserId,
-        lookingFor,
-        blockedByIds,
-        latitude,
-        longitude,
-        maxDistance,
-      )
-    : [];
-
-  // Combine: 80% in-range, 10% above, 10% below
-  // Calculate counts — if we don't have enough above/below, fill with in-range
-  const totalInRange = inRangeUsers.length;
-  const aboveCount = Math.max(0, Math.min(aboveUsers.length, Math.ceil(totalInRange * 0.125))); // ~10% of total
-  const belowCount = Math.max(0, Math.min(belowUsers.length, Math.ceil(totalInRange * 0.125)));
-  const inRangeCount = totalInRange; // Keep all in-range
 
   // Select from each pool
   const shuffledAbove = [...aboveUsers].sort(() => Math.random() - 0.5).slice(0, aboveCount);
