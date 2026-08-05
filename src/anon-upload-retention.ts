@@ -16,6 +16,7 @@
 import { readdirSync, statSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { deletePhoto, listBlobs, uploadsDir } from "./blob-store";
+import { EVENTS, logError, logInfo, logWarn } from "./observability";
 
 /** Filename prefix that identifies an anonymous free-preview upload. */
 export const ANON_UPLOAD_PREFIX = "anon_";
@@ -74,7 +75,7 @@ export function sweepLocalAnonUploads(dir: string, maxAgeMs: number, now: number
         unlinkSync(filePath);
         deleted++;
       } catch (err) {
-        console.error("[anon-upload-retention] Failed to delete local file:", err);
+        logWarn(EVENTS.ANON_RETENTION_DELETE_FAILED, { err, store: "local" });
       }
     }
   }
@@ -108,7 +109,7 @@ export async function sweepBlobAnonUploads(
   try {
     blobs = await backend.list(ANON_UPLOAD_PREFIX);
   } catch (err) {
-    console.error("[anon-upload-retention] Blob list failed:", err);
+    logWarn(EVENTS.ANON_RETENTION_LIST_FAILED, { err });
     return 0;
   }
   let deleted = 0;
@@ -120,7 +121,7 @@ export async function sweepBlobAnonUploads(
       await backend.del(blob.url);
       deleted++;
     } catch (err) {
-      console.error("[anon-upload-retention] Blob delete failed:", err);
+      logWarn(EVENTS.ANON_RETENTION_DELETE_FAILED, { err, store: "blob" });
     }
   }
   return deleted;
@@ -138,7 +139,7 @@ export async function sweepExpiredAnonUploads(
   const local = sweepLocalAnonUploads(uploadsDir(), maxAgeMs, now);
   const blob = await sweepBlobAnonUploads(maxAgeMs, now);
   if (local > 0 || blob > 0) {
-    console.log(`[anon-upload-retention] Swept ${local} local + ${blob} blob anonymous uploads.`);
+    logInfo(EVENTS.ANON_RETENTION_SWEEP_COMPLETE, { local, blob });
   }
   return { local, blob };
 }
@@ -154,7 +155,7 @@ export async function maybeSweepExpiredAnonUploads(now: number = Date.now()): Pr
   try {
     await sweepExpiredAnonUploads();
   } catch (err) {
-    console.error("[anon-upload-retention] Opportunistic sweep failed:", err);
+    logError(EVENTS.ANON_RETENTION_SWEEP_FAILED, { err });
   }
   return true;
 }
