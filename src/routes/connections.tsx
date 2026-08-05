@@ -1,5 +1,6 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState, useCallback } from "react";
+import { useModalAccessibility } from "~/modal-accessibility";
 import { useAuth } from "~/auth-context";
 import { getCsrfToken } from "~/csrf-client";
 
@@ -63,6 +64,8 @@ function ConnectionsPage() {
   const [reportDone, setReportDone] = useState(false);
   const [blocking, setBlocking] = useState(false);
   const [unmatching, setUnmatching] = useState(false);
+  const closeReport = useCallback(() => setShowReportModal(false), []);
+  const reportA11y = useModalAccessibility<HTMLDivElement>(showReportModal, closeReport);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -454,9 +457,9 @@ function ConnectionsPage() {
 
       {/* Report Modal */}
       {showReportModal && menuConn && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-          <div className="mx-4 w-full max-w-sm rounded-2xl bg-gray-900 p-6 shadow-2xl">
-            <h3 className="text-lg font-bold">
+        <div {...reportA11y} aria-labelledby="connections-report-title" className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div ref={reportA11y.containerRef} tabIndex={-1} className="mx-4 w-full max-w-sm rounded-2xl bg-gray-900 p-6 shadow-2xl">
+            <h3 id="connections-report-title" className="text-lg font-bold">
               Report {"display_name" in menuConn ? (menuConn as LikerProfile).display_name || "User" : (menuConn as Connection).display_name || "User"}
             </h3>
             <p className="mt-1 text-sm text-gray-400">
