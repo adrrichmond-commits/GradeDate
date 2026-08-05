@@ -2,6 +2,11 @@ import type { Server } from "bun";
 import { deriveCoachingTips } from "./coaching";
 import { topPercentLabel } from "./percentile";
 import {
+  aggregateGradingMethod,
+  fallbackGrade,
+  FALLBACK_FEEDBACK,
+} from "./grading-method";
+import {
   foundersCheckoutUrls,
   storeUpsellCheckoutUrls,
   subscriptionCheckoutUrls,
@@ -834,7 +839,7 @@ async function handleGrade(req: Request): Promise<Response> {
   return json({
     grade,
     ...(analysis ? { analysis } : {}),
-    grading_method: usedAI ? "ai" : "mock",
+    grading_method: aggregateGradingMethod(usedAI ? 1 : 0, 1),
   });
 }
 
@@ -974,6 +979,7 @@ async function handleGradePhotos(req: Request): Promise<Response> {
   const grades: { photo_path: string; grade: number; feedback: string; is_best: boolean }[] = [];
   let highestGrade = -1;
   let highestIndex = -1;
+  let fallbackCount = 0;
 
   for (let i = 0; i < photoPaths.length; i++) {
     let grade: number;
@@ -985,8 +991,9 @@ async function handleGradePhotos(req: Request): Promise<Response> {
       feedback = result.feedback;
     } catch (err) {
       console.error("AI grading failed for photo, using fallback:", err);
-      grade = Math.max(1, Math.min(10, Math.round(Math.random() * 5 + 3))); // 3-8 fallback
-      feedback = "Try better lighting for a clearer photo.";
+      fallbackCount++;
+      grade = fallbackGrade(); // 3-8 fallback
+      feedback = FALLBACK_FEEDBACK; // honest: does not claim the photo was analyzed
     }
 
     if (grade > highestGrade) {
@@ -1047,6 +1054,7 @@ async function handleGradePhotos(req: Request): Promise<Response> {
       feedback: g.feedback,
       is_best: g.is_best,
     })),
+    grading_method: aggregateGradingMethod(photoPaths.length - fallbackCount, photoPaths.length),
     percentile: percentileResult?.percentile ?? null,
     percentile_city: percentileResult?.percentile_city ?? null,
     percentile_label: topLabel,
