@@ -1,10 +1,22 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useEffect, useState, useCallback } from "react";
+import {
+  useEffect,
+  useState,
+  useCallback,
+  useRef,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { useModalAccessibility } from "~/modal-accessibility";
 import { useAuth } from "~/auth-context";
 import { useRequireSubscription, SubscriptionBanner } from "~/subscription-guard";
 import { getCsrfToken } from "~/csrf-client";
 import { getMatchActionError, matchActionFailureMessage } from "~/matches-action";
+import {
+  computeSwipeFrame,
+  resolveSwipeAction,
+  swipeThreshold,
+  type SwipeFrame,
+} from "~/swipe-gesture";
 
 interface MatchPhoto {
   id: number;
@@ -60,6 +72,18 @@ function MatchesPage() {
   const [fetching, setFetching] = useState(true);
   const [error, setError] = useState("");
   const [animState, setAnimState] = useState<"idle" | "like" | "pass" | null>(null);
+  // Live swipe-drag frame (null when not dragging). Drives the card transform
+  // directly so the card tracks the pointer without waiting for a commit.
+  const [drag, setDrag] = useState<SwipeFrame | null>(null);
+  const dragStartRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    threshold: number;
+    lastX: number;
+    lastTime: number;
+    velocityX: number;
+  } | null>(null);
   const [failedAction, setFailedAction] = useState<"like" | "pass" | null>(null);
   const [matchCelebration, setMatchCelebration] = useState<{
     match_id: number;
@@ -256,6 +280,90 @@ function MatchesPage() {
     setTimeout(advanceAfterAction, 400);
   };
 
+  /**
+   * Swipe gestures — pointer-based drag on the card.
+   *
+   * - `touch-action: pan-y` (touch-pan-y class) lets the page scroll vertically
+   *   while horizontal drags come to us; the browser fires pointercancel when it
+   *   takes over a vertical scroll, and we reset the card.
+   * - Drags that start on interactive elements (photo arrows, dots, links,
+   *   buttons) are ignored so taps/clicks keep working.
+   * - Release past the threshold (or a fast fling) commits like/pass through the
+   *   same handlers as the buttons, so failure/retry, the daily-limit overlay,
+   *   and the match celebration behave identically. Below the threshold the card
+   *   springs back.
+   * - While an action is pending (animState !== null) new drags are blocked, so a
+   *   swipe can never double-fire.
+   */
+  const isInteractiveTarget = (target: EventTarget | null) => {
+    if (!(target instanceof Element)) return false;
+    return Boolean(
+      target.closest("button, a, input, select, textarea, label, [role='button']"),
+    );
+  };
+
+  const startSwipe = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (animState !== null || !current || dragStartRef.current) return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    if (isInteractiveTarget(e.target)) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const start = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      threshold: swipeThreshold(rect.width),
+      lastX: e.clientX,
+      lastTime: performance.now(),
+      velocityX: 0,
+    };
+    dragStartRef.current = start;
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // Pointer may already be gone; the up/cancel handlers clean up.
+    }
+    setDrag(computeSwipeFrame(0, 0, start.threshold));
+    // Stop text selection / native image drag for mouse pointers without
+    // blocking touch scrolling (touch-action handles that).
+    if (e.pointerType === "mouse") e.preventDefault();
+  };
+
+  const moveSwipe = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const g = dragStartRef.current;
+    if (!g || e.pointerId !== g.pointerId) return;
+    const now = performance.now();
+    const dt = now - g.lastTime;
+    if (dt > 0) {
+      const instant = (e.clientX - g.lastX) / dt;
+      g.velocityX = g.velocityX === 0 ? instant : g.velocityX * 0.7 + instant * 0.3;
+    }
+    g.lastX = e.clientX;
+    g.lastTime = now;
+    setDrag(computeSwipeFrame(e.clientX - g.startX, e.clientY - g.startY, g.threshold));
+  };
+
+  const endSwipe = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const g = dragStartRef.current;
+    if (!g || e.pointerId !== g.pointerId) return;
+    const action = resolveSwipeAction({
+      dx: e.clientX - g.startX,
+      threshold: g.threshold,
+      velocityX: g.velocityX,
+      canAct: animState === null,
+    });
+    dragStartRef.current = null;
+    setDrag(null);
+    if (action === "like") handleLike();
+    else if (action === "pass") handlePass();
+  };
+
+  const cancelSwipe = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const g = dragStartRef.current;
+    if (!g || e.pointerId !== g.pointerId) return;
+    dragStartRef.current = null;
+    setDrag(null);
+  };
+
   if (loading || fetching) {
     return (
       <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center px-4">
@@ -402,18 +510,33 @@ function MatchesPage() {
         <div className="relative">
           <div
             key={current.id}
-            className={`animate-[cardEnter_0.4s_ease-out] rounded-2xl overflow-hidden transition-all duration-300 ${
+            onPointerDown={startSwipe}
+            onPointerMove={moveSwipe}
+            onPointerUp={endSwipe}
+            onPointerCancel={cancelSwipe}
+            onLostPointerCapture={cancelSwipe}
+            className={`animate-[cardEnter_0.4s_ease-out] select-none touch-pan-y rounded-2xl overflow-hidden transition-all duration-300 motion-reduce:transition-none cursor-grab active:cursor-grabbing ${
               animState === "like"
                 ? "translate-x-full opacity-0 rotate-6"
                 : animState === "pass"
                   ? "-translate-x-full opacity-0 -rotate-6"
                   : ""
             }`}
-            style={{
-              animation: animState === null ? "cardEnter 0.4s ease-out" : undefined,
-              boxShadow:
-                "0 0 20px 1px rgba(244,63,94,0.1), 0 0 40px 5px rgba(244,63,94,0.04)",
-            }}
+            style={
+              drag
+                ? {
+                    transform: `translate3d(${drag.x}px, ${drag.y}px, 0) rotate(${drag.rotation}deg)`,
+                    opacity: drag.opacity,
+                    transition: "none",
+                    boxShadow:
+                      "0 0 20px 1px rgba(244,63,94,0.1), 0 0 40px 5px rgba(244,63,94,0.04)",
+                  }
+                : {
+                    animation: animState === null ? "cardEnter 0.4s ease-out" : undefined,
+                    boxShadow:
+                      "0 0 20px 1px rgba(244,63,94,0.1), 0 0 40px 5px rgba(244,63,94,0.04)",
+                  }
+            }
           >
             {/* Photo Carousel */}
             <div className="relative aspect-[3/4] w-full bg-gray-800 overflow-hidden">
@@ -450,6 +573,7 @@ function MatchesPage() {
                     <img
                       src={photoUrls[idx]}
                       alt={current.display_name || "Match"}
+                      draggable={false}
                       className="h-full w-full object-cover"
                     />
 
@@ -513,19 +637,39 @@ function MatchesPage() {
               {/* Photo vignette overlay */}
               <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_40%,rgba(3,7,18,0.6)_100%)]" />
 
-              {/* Dramatic LIKE overlay */}
-              {animState === "like" && (
-                <div className="absolute inset-0 z-10 flex items-center justify-center bg-green-500/20 backdrop-blur-[2px]">
-                  <span className="animate-[likeStamp_0.3s_ease-out] rounded-xl border-[3px] border-green-400 px-8 py-3 text-4xl font-black text-green-400 -rotate-12 shadow-2xl">
+              {/* Dramatic LIKE overlay — committed or while dragging past the threshold */}
+              {(animState === "like" || drag?.direction === "like") && (
+                <div
+                  className={`absolute inset-0 z-10 flex items-center justify-center ${
+                    animState === "like"
+                      ? "bg-green-500/20 backdrop-blur-[2px]"
+                      : "pointer-events-none bg-green-500/10"
+                  }`}
+                >
+                  <span
+                    className={`rounded-xl border-[3px] border-green-400 px-8 py-3 text-4xl font-black text-green-400 -rotate-12 shadow-2xl motion-reduce:animate-none ${
+                      animState === "like" ? "animate-[likeStamp_0.3s_ease-out]" : "opacity-70"
+                    }`}
+                  >
                     LIKE
                   </span>
                 </div>
               )}
 
-              {/* Dramatic PASS overlay */}
-              {animState === "pass" && (
-                <div className="absolute inset-0 z-10 flex items-center justify-center bg-red-500/20 backdrop-blur-[2px]">
-                  <span className="animate-[passStamp_0.3s_ease-out] rounded-xl border-[3px] border-red-400 px-8 py-3 text-4xl font-black text-red-400 rotate-12 shadow-2xl">
+              {/* Dramatic PASS overlay — committed or while dragging past the threshold */}
+              {(animState === "pass" || drag?.direction === "pass") && (
+                <div
+                  className={`absolute inset-0 z-10 flex items-center justify-center ${
+                    animState === "pass"
+                      ? "bg-red-500/20 backdrop-blur-[2px]"
+                      : "pointer-events-none bg-red-500/10"
+                  }`}
+                >
+                  <span
+                    className={`rounded-xl border-[3px] border-red-400 px-8 py-3 text-4xl font-black text-red-400 rotate-12 shadow-2xl motion-reduce:animate-none ${
+                      animState === "pass" ? "animate-[passStamp_0.3s_ease-out]" : "opacity-70"
+                    }`}
+                  >
                     PASS
                   </span>
                 </div>
