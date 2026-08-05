@@ -98,6 +98,7 @@ import {
   type PersistedBadge,
 } from "../src/db.ts";
 import { sendPasswordResetEmail } from "../src/email.ts";
+import { isGradeCardOwner } from "./grade-card-access";
 import { sendWaitlistConfirmation } from "../src/email.ts";
 import { lookupZip } from "../src/zipcode.ts";
 import { checkAuthRateLimit, checkStrictRateLimit, checkRateLimit } from "../src/rate-limit.ts";
@@ -2310,9 +2311,18 @@ async function handleGradeCard(req: Request): Promise<Response> {
   if (!userIdStr) {
     return json({ error: "userId is required" }, 400);
   }
-  const userId = parseInt(userIdStr, 10);
-  if (isNaN(userId)) {
+  // Grade cards include the user's percentile and badges. They are private;
+  // userId is not a share credential and must never enable enumeration.
+  const currentUser = await getCurrentUser(req);
+  if (!currentUser) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+  const userId = Number(userIdStr);
+  if (!Number.isSafeInteger(userId) || userId <= 0) {
     return json({ error: "Invalid userId" }, 400);
+  }
+  if (!isGradeCardOwner(userId, currentUser.id)) {
+    return json({ error: "Forbidden" }, 403);
   }
 
   let displayName = "Anonymous";
