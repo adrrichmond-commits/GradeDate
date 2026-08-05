@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "~/auth-context";
 import { getCsrfToken } from "~/csrf-client";
+import { gradeAnonymousPhotos } from "~/anonymous-grading";
 
 export const Route = createFileRoute("/grade")({
   component: GradePage,
@@ -193,39 +194,44 @@ function GradePage() {
         }
       }
 
-      // If anonymous: keep single-photo flow using old /api/grade
+      // If anonymous: reuse the per-photo /api/grade endpoint for each photo
+      // (no auth or persistence needed), then compose the same result shape the
+      // authenticated /api/grade-photos flow returns.
       if (!isAuthenticated) {
         setState("analyzing");
 
-        const gradeBody: Record<string, string> = {};
-        if (uploadPaths.length > 0) {
-          gradeBody.photo_path = uploadPaths[0];
-        }
+        const result = await gradeAnonymousPhotos(
+          uploadPaths,
+          getCsrfToken() || ""
+        );
 
-        const gradeRes = await fetch("/api/grade", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-CSRF-Token": getCsrfToken() || "",
-          },
-          body: JSON.stringify(gradeBody),
-        });
-
-        const gradeData = await gradeRes.json();
-
-        if (!gradeRes.ok) {
-          if (gradeData.code === "NSFW") {
+        if (!result.ok) {
+          if (result.kind === "nsfw") {
             setState("nsfw");
             return;
           }
-          setErrorMessage(gradeData.error || "Grading failed. Please try again.");
+          setErrorMessage(result.message);
           setState("error");
           return;
         }
 
-        setGrade(gradeData.grade);
-        setAnalysis(gradeData.analysis || null);
-        setGradingMethod(gradeData.grading_method || null);
+        // Build photo grades with preview URLs
+        const gradesWithPreviews: PhotoGradeResult[] = result.grades.map(
+          (g, i) => ({
+            ...g,
+            // Match preview URL by index
+            previewUrl: photos[i]?.previewUrl || "",
+          })
+        );
+
+        setPhotoGrades(gradesWithPreviews);
+        setCoachingTips(result.coaching);
+        setGradingMethod(result.grading_method);
+
+        // Set single grade for share card (use best photo grade)
+        const bestGrade = gradesWithPreviews.find((g) => g.is_best)?.grade;
+        setGrade(bestGrade ?? gradesWithPreviews[0]?.grade ?? null);
+
         setState("done");
         return;
       }
@@ -454,9 +460,9 @@ function GradePage() {
                     onClick={handleGradePhotos}
                     className="w-full rounded-full bg-rose-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-rose-600/25 transition hover:bg-rose-500 hover:shadow-rose-500/30"
                   >
-                    {isAuthenticated
-                      ? `Grade My ${photos.length === 1 ? "Photo" : `${photos.length} Photos`}`
-                      : "Grade My Photo"}
+                    {`Grade My ${
+                      photos.length === 1 ? "Photo" : `${photos.length} Photos`
+                    }`}
                   </button>
                 )}
 
@@ -667,31 +673,34 @@ function GradePage() {
                   </div>
                 )}
 
-                {/* Percentile card */}
-                <div className="rounded-xl border border-rose-500/20 bg-gradient-to-r from-rose-500/5 to-purple-500/5 p-4 text-center">
-                  <div className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-                    Your Percentile
+                {/* Percentile card (authenticated only — anonymous previews
+                    have no city or percentile yet) */}
+                {isAuthenticated && (
+                  <div className="rounded-xl border border-rose-500/20 bg-gradient-to-r from-rose-500/5 to-purple-500/5 p-4 text-center">
+                    <div className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+                      Your Percentile
+                    </div>
+                    {percentileLabel ? (
+                      <>
+                        <div className="mt-1 text-2xl font-extrabold text-white">
+                          {percentileLabel}
+                        </div>
+                        <p className="mt-1 text-xs text-gray-500">
+                          Based on other users in your city
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <div className="mt-1 text-lg font-semibold text-gray-400">
+                          Not enough data yet
+                        </div>
+                        <p className="mt-1 text-xs text-gray-500">
+                          More users in your city needed for percentile ranking
+                        </p>
+                      </>
+                    )}
                   </div>
-                  {percentileLabel ? (
-                    <>
-                      <div className="mt-1 text-2xl font-extrabold text-white">
-                        {percentileLabel}
-                      </div>
-                      <p className="mt-1 text-xs text-gray-500">
-                        Based on other users in your city
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <div className="mt-1 text-lg font-semibold text-gray-400">
-                        Not enough data yet
-                      </div>
-                      <p className="mt-1 text-xs text-gray-500">
-                        More users in your city needed for percentile ranking
-                      </p>
-                    </>
-                  )}
-                </div>
+                )}
 
                 {/* Shareable card */}
                 <ShareCard
