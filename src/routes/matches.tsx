@@ -287,7 +287,7 @@ function MatchesPage() {
         </p>
         {user.grade !== null && (
           <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-rose-500/10 px-3 py-1 text-xs text-rose-400">
-            Top {user.percentile != null ? `${Math.round(user.percentile)}%` : `${user.grade}/10`} in your area
+            Top {user.percentile != null ? `${Math.round(100 - user.percentile)}%` : `${user.grade}/10`} in your area
           </div>
         )}
       </div>
