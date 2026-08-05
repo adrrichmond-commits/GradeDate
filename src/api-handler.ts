@@ -2,6 +2,7 @@ import type { Server } from "bun";
 import { originFromUrl, resolveSiteUrl } from "./site-url";
 import { deriveCoachingTips } from "./coaching";
 import { topPercentLabel } from "./percentile";
+import { validateUnmatchRequest } from "./unmatch-flow";
 import {
   aggregateGradingMethod,
   fallbackGrade,
@@ -1479,12 +1480,9 @@ async function handleUnmatch(req: Request): Promise<Response> {
   const body = await req.json().catch(() => null);
   const targetId = body?.matchUserId;
 
-  if (!targetId || typeof targetId !== "number") {
-    return json({ error: "matchUserId is required" }, 400);
-  }
-
-  if (targetId === user.id) {
-    return json({ error: "You cannot unmatch yourself" }, 400);
+  const validationError = validateUnmatchRequest(user.id, targetId);
+  if (validationError) {
+    return json({ error: validationError }, 400);
   }
 
   await unmatchUser(user.id, targetId);
