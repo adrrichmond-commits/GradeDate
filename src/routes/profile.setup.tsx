@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { useAuth } from "~/auth-context";
 import { getCsrfToken } from "~/csrf-client";
 import { useRequireSubscription } from "~/subscription-guard";
+import { photoFromUploadResponse } from "~/photo-upload";
 
 export const Route = createFileRoute("/profile/setup")({
   component: ProfileSetup,
@@ -27,7 +28,7 @@ interface PhotoItem {
 function ProfileSetup() {
   const navigate = useNavigate();
   const { user, loading, refetch } = useAuth();
-  const { isSubscribed, checking } = useRequireSubscription();
+  const { checking } = useRequireSubscription();
   const [displayName, setDisplayName] = useState("");
   const [age, setAge] = useState("");
   const [gender, setGender] = useState("");
@@ -104,7 +105,7 @@ function ProfileSetup() {
     );
   }
 
-  if (!user || !isSubscribed) return null;
+  if (!user) return null;
 
   // If user already has a profile, redirect to profile page
   if (user.display_name && !submitting) {
@@ -128,9 +129,13 @@ function ProfileSetup() {
         setError(data.error || "Upload failed");
         return;
       }
-      // Append the returned photo to the grid
-      const newPhoto: PhotoItem = data.photo;
-      setPhotos((prev) => [...prev, newPhoto]);
+      // Authenticated /api/upload returns { photos: [...] }; legacy { photo } also accepted
+      const newPhoto = photoFromUploadResponse(data);
+      if (!newPhoto) {
+        setError("Upload failed. Please try again.");
+        return;
+      }
+      setPhotos((prev) => [...prev, newPhoto as PhotoItem]);
     } catch {
       setError("Photo upload failed. Please try again.");
     } finally {
