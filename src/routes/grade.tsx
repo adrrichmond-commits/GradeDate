@@ -273,6 +273,7 @@ function GradePage() {
       setPercentileCity(gradeData.percentile_city ?? null);
       setPercentileLabel(gradeData.percentile_label ?? null);
       setCoachingTips(gradeData.coaching || []);
+      setGradingMethod(gradeData.grading_method || null);
 
       // Set single grade for share card (use best photo grade)
       const bestGrade = gradesWithPreviews.find((g) => g.is_best)?.grade;
@@ -632,6 +633,17 @@ function GradePage() {
                   ))}
                 </div>
 
+                {/* Grading method notice (simulated/mixed fallback) */}
+                {gradingMethod && gradingMethod !== "ai" && (
+                  <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-center">
+                    <p className="text-xs text-amber-300">
+                      {gradingMethod === "mock"
+                        ? "AI grading was unavailable, so these grades are simulated. Try again later for AI-assisted grades."
+                        : "AI grading was unavailable for some photos — those grades are simulated."}
+                    </p>
+                  </div>
+                )}
+
                 {/* Coaching tips */}
                 {coachingTips.length > 0 && (
                   <div className="rounded-xl border border-purple-500/20 bg-purple-500/5 p-4">
@@ -784,7 +796,9 @@ function GradePage() {
                     <span className="text-3xl text-gray-500">/10</span>
                   </div>
                   {gradingMethod === "mock" && (
-                    <div className="mt-1 text-xs text-gray-600">(mock)</div>
+                    <div className="mt-1 text-xs font-medium text-amber-500">
+                      Simulated grade — AI grading was unavailable
+                    </div>
                   )}
                   {analysis && (
                     <p className="mt-2 text-sm italic text-gray-400">
@@ -795,7 +809,9 @@ function GradePage() {
                     Your grade helps us find your best matches. It is never shown to other users.
                   </p>
                   <p className="mt-1 text-[10px] text-gray-700">
-                    AI-generated estimate. Results may vary.
+                    {gradingMethod === "mock"
+                      ? "AI grading was unavailable, so this grade is simulated. Try again later for an AI-assisted grade."
+                      : "AI-generated estimate. Results may vary."}
                   </p>
                 </div>
 
