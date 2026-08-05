@@ -15,6 +15,7 @@ import { initTables } from "./src/db.ts";
 import { sweepExpiredAnonUploads } from "./src/anon-upload-retention.ts";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { seoResponse, shouldNoIndex } from "./src/seo.ts";
 
 // ── Security Headers ─────────────────────────────────────────
 const SECURITY_HEADERS: Record<string, string> = {
@@ -35,11 +36,12 @@ const SECURITY_HEADERS: Record<string, string> = {
     "form-action 'self'",
 };
 
-function applySecurityHeaders(response: Response): Response {
+function applySecurityHeaders(response: Response, pathname?: string): Response {
   const headers = new Headers(response.headers);
   for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
     if (!headers.has(key)) headers.set(key, value);
   }
+  if (pathname && shouldNoIndex(pathname)) headers.set("X-Robots-Tag", "noindex, nofollow");
   return new Response(response.body, {
     status: response.status,
     headers,
@@ -92,30 +94,33 @@ for (let attempt = 1; ; attempt++) {
       async fetch(req) {
         const { pathname } = new URL(req.url);
 
+        const seo = seoResponse(req);
+        if (seo) return applySecurityHeaders(seo, pathname);
+
         // 1. Serve uploaded files
         if (pathname.startsWith("/uploads/")) {
           const filePath = path.join(UPLOADS_DIR, pathname.slice("/uploads/".length));
           if (existsSync(filePath)) {
             const file = Bun.file(filePath);
-            return applySecurityHeaders(new Response(file));
+            return applySecurityHeaders(new Response(file), pathname);
           }
-          return applySecurityHeaders(new Response("Not found", { status: 404 }));
+          return applySecurityHeaders(new Response("Not found", { status: 404 }), pathname);
         }
 
         // 2. API routes
         const apiResponse = await handleApiRoute(req);
-        if (apiResponse) return applySecurityHeaders(apiResponse);
+        if (apiResponse) return applySecurityHeaders(apiResponse, pathname);
 
         // 3. Static client assets
         if (pathname !== "/") {
           const file = Bun.file(CLIENT_DIR + pathname);
-          if (await file.exists()) return applySecurityHeaders(new Response(file));
+          if (await file.exists()) return applySecurityHeaders(new Response(file), pathname);
         }
 
         // 4. SSR handler
         return applySecurityHeaders(await (
           handler as { fetch: (r: Request) => Response | Promise<Response> }
-        ).fetch(req));
+        ).fetch(req), pathname);
       },
     });
     break;
