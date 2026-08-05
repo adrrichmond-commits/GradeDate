@@ -152,6 +152,21 @@ function AppShell() {
   const [showPushPrompt, setShowPushPrompt] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const closeMenu = () => setMenuOpen(false);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const firstLink = document.querySelector<HTMLElement>("#mobile-navigation a, #mobile-navigation button");
+    const timer = window.setTimeout(() => firstLink?.focus(), 0);
+    return () => {
+      window.clearTimeout(timer);
+      document.body.style.overflow = previousOverflow;
+      menuButtonRef.current?.focus();
+    };
+  }, [menuOpen]);
 
   // Cookie helper
   function getCookie(name: string): string | null {
@@ -301,6 +316,9 @@ function AppShell() {
                   className="md:hidden flex items-center justify-center h-10 w-10 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition"
                   onClick={() => setMenuOpen((prev) => !prev)}
                   aria-label={menuOpen ? "Close menu" : "Open menu"}
+                  aria-expanded={menuOpen}
+                  aria-controls="mobile-navigation"
+                  ref={menuButtonRef}
                 >
                   {menuOpen ? (
                     <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -335,7 +353,15 @@ function AppShell() {
 
       {/* ── Mobile slide-down menu panel ── */}
       {user && menuOpen && (
-        <div className="fixed inset-x-0 top-16 z-40 border-b border-white/5 bg-gray-950/95 backdrop-blur-md md:hidden overflow-y-auto max-h-[80vh]">
+        <div id="mobile-navigation" role="dialog" aria-modal="true" aria-label="Mobile navigation" tabIndex={-1} className="fixed inset-x-0 top-16 z-40 border-b border-white/5 bg-gray-950/95 backdrop-blur-md md:hidden overflow-y-auto max-h-[80vh]" onKeyDown={(e) => {
+            if (e.key === "Escape") { e.preventDefault(); closeMenu(); menuButtonRef.current?.focus(); return; }
+            if (e.key !== "Tab") return;
+            const items = Array.from(e.currentTarget.querySelectorAll<HTMLElement>("a[href], button:not([disabled])"));
+            if (!items.length) return;
+            const first = items[0], last = items[items.length - 1];
+            if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+            else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+          }}>
           <div className="flex flex-col gap-1 px-4 py-3">
             {user.subscription_status !== "active" && (
               <Link
