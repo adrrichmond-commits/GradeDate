@@ -6,6 +6,7 @@ import {
   computeGradeBands,
   isNonEmptyRange,
 } from "./matching";
+import { leagueRangeScore, type LeagueValue } from "./mutual-league";
 
 let _sql: NeonQueryFunction<false, false> | null = null;
 
@@ -1423,29 +1424,16 @@ export async function createMatch(user1Id: number, user2Id: number): Promise<Mat
  * Never exposes individual grades — returns only the composite score.
  */
 export function calculateMutualLeagueScore(
-  userA: { grade: number; percentile: number | null },
-  userB: { grade: number; percentile: number | null },
+  userA: LeagueValue,
+  userB: LeagueValue,
   compatibilityScore: number,
   photoGradeA: number,
   photoGradeB: number,
 ): number {
   // ── 40%: in-range check ──────────────────────────────
-  let rangeScore = 0;
-  const rangeBand = (userA.percentile != null && userB.percentile != null) ? 5 : 1;
-  const valA = userA.percentile ?? userA.grade;
-  const valB = userB.percentile ?? userB.grade;
-
-  const aInB = Math.abs(valA - valB) <= rangeBand; // A is in B's range
-  const bInA = Math.abs(valB - valA) <= rangeBand; // B is in A's range (same math by symmetry)
-
-  // If both are in each other's range: full 40%
-  if (aInB && bInA) {
-    rangeScore = 40;
-  } else if (aInB || bInA) {
-    // One-way: partial 20%
-    rangeScore = 20;
-  }
-  // else: 0%
+  // Normalize percentile and grade inputs before comparing; they are different
+  // units in storage, but the league score uses one canonical 0–100 scale.
+  const rangeScore = leagueRangeScore(userA, userB);
 
   // ── 30%: compatibility ──────────────────────────────
   const compatScore = (compatibilityScore / 100) * 30;
