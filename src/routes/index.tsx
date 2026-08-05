@@ -59,7 +59,7 @@ function DemoGrader() {
       <div className="card border-rose-500/20 p-6">
         <div className="mb-4 flex items-center gap-2">
           <span className="badge">DEMO</span>
-          <span className="text-sm text-gray-400">Try our grader</span>
+          <span className="text-sm text-gray-400">Simulated — not real AI analysis</span>
         </div>
 
         {state === "idle" && (
@@ -78,9 +78,9 @@ function DemoGrader() {
               />
             </svg>
             <span className="text-sm font-medium text-gray-300">
-              Upload a selfie to see your grade
+              Upload a selfie to see a simulated demo grade
             </span>
-            <span className="text-xs text-gray-500">PNG, JPG — demo only</span>
+            <span className="text-xs text-gray-500">PNG, JPG — demo only, no real analysis</span>
             <input
               type="file"
               accept="image/*"
@@ -100,7 +100,7 @@ function DemoGrader() {
               />
             )}
             <div className="loader-pulse" />
-            <p className="text-sm text-gray-400">Analyzing your features...</p>
+            <p className="text-sm text-gray-400">Simulating a demo grade...</p>
           </div>
         )}
 
@@ -118,6 +118,9 @@ function DemoGrader() {
                 {grade}
               </div>
               <div className="mt-1 text-sm font-medium text-gray-300">/ 10</div>
+              <p className="mt-1 text-[10px] uppercase tracking-widest text-gray-600">
+                Demo grade — simulated, not real AI analysis
+              </p>
             </div>
             <p className="text-center text-sm text-gray-400">
               {grade >= 9
