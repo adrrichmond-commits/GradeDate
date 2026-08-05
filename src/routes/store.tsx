@@ -6,7 +6,6 @@ import { parseStoreReturnState } from "~/checkout-return";
 
 const RE_GRADE_LINK = "https://buy.stripe.com/5kQ7sL3gq0CW4edfxt7Re02";
 const BOOST_LINK = "https://buy.stripe.com/14A9AT2cm3P8265etp7Re03";
-const REVEAL_LIKES_LINK = "https://buy.stripe.com/eVq8wPbMW1H02659957Re04";
 const LIKE_PACK_LINK = "https://buy.stripe.com/28E5kD8AK2L4fWVfxt7Re06";
 
 interface Product {
@@ -23,9 +22,9 @@ const products: Product[] = [
   {
     id: "re-grade",
     name: "Re-grade",
-    price: "$2.99",
+    price: "$0.99",
     description:
-      "Think your first grade didn't do you justice? Get a fresh AI evaluation of your photo — good for one re-grade.",
+      "Think your first grade didn't do you justice? Buy a $0.99 regrade credit, then re-run the multi-photo grading flow in the Grade page for fresh AI feedback on your photos.",
     paymentLink: RE_GRADE_LINK,
     endpoint: "/api/store/activate-re-grade",
     icon: (
@@ -54,25 +53,6 @@ const products: Product[] = [
           strokeLinejoin="round"
           strokeWidth={1.5}
           d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"
-        />
-      </svg>
-    ),
-  },
-  {
-    id: "reveal-likes",
-    name: "See Who Liked You",
-    price: "$0.99",
-    description:
-      "Unlock the list of people who have already liked your profile. Skip the guesswork and match instantly.",
-    paymentLink: REVEAL_LIKES_LINK,
-    endpoint: "/api/store/activate-reveal-likes",
-    icon: (
-      <svg className="h-7 w-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={1.5}
-          d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"
         />
       </svg>
     ),
@@ -357,11 +337,10 @@ function StorePage() {
 
       {/* Product Cards */}
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {products.filter((product) => product.id !== "reveal-likes").map((product) => {
+        {products.map((product) => {
           const isOwned =
             (product.id === "re-grade" && (user?.regrades_available ?? 0) > 0) ||
             (product.id === "boost" && user?.boost_until && new Date(user.boost_until) > new Date()) ||
-            (product.id === "reveal-likes" && (user?.likes_revealed ?? 0) > 0) ||
             (product.id === "like-pack" && false); // always purchasable
           const justActivated = activated === product.id;
 

@@ -355,7 +355,6 @@ export interface User {
   stripe_subscription_id: string | null;
   regrades_available: number;
   boost_until: string | null;
-  likes_revealed: number;
   date_of_birth: string | null;
   latitude: number | null;
   longitude: number | null;
@@ -794,18 +793,6 @@ export async function updateSubscriptionStatus(
     UPDATE users SET
       subscription_status = ${status},
       subscription_updated_at = NOW()
-    WHERE id = ${userId}
-  `;
-}
-
-export async function activateAnnualSubscription(
-  userId: number,
-): Promise<void> {
-  await sql()`
-    UPDATE users SET
-      subscription_status = 'active',
-      subscription_updated_at = NOW(),
-      subscription_expires_at = NOW() + INTERVAL '1 year'
     WHERE id = ${userId}
   `;
 }
@@ -1747,12 +1734,6 @@ export async function activateBoost(userId: number, durationHours = 24 * 7): Pro
   const until = new Date(Date.now() + durationHours * 60 * 60 * 1000).toISOString();
   await sql()`
     UPDATE users SET boost_until = ${until} WHERE id = ${userId}
-  `;
-}
-
-export async function revealLikes(userId: number): Promise<void> {
-  await sql()`
-    UPDATE users SET likes_revealed = 1 WHERE id = ${userId}
   `;
 }
 
