@@ -1,5 +1,11 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, useReducer } from "react";
+import { useModalAccessibility } from "~/modal-accessibility";
+import {
+  initialUnmatchState,
+  unmatchReducer,
+  unmatchFailureMessage,
+} from "~/unmatch-flow";
 import { useAuth } from "~/auth-context";
 import { getCsrfToken } from "~/csrf-client";
 import { useRequireSubscription } from "~/subscription-guard";
@@ -54,10 +60,17 @@ function ChatPage() {
   const [reporting, setReporting] = useState(false);
   const [reportDone, setReportDone] = useState(false);
   const [blocking, setBlocking] = useState(false);
-  const [unmatching, setUnmatching] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Unmatch confirmation flow — unmatch is permanent (match + chat history),
+  // so it always goes through an explicit confirmation dialog first. The
+  // dialog is the undo path: cancel before the request and nothing is deleted.
+  const [unmatch, dispatchUnmatch] = useReducer(unmatchReducer, initialUnmatchState);
+  const keepMatchRef = useRef<HTMLButtonElement>(null);
+  const unmatchOpen = unmatch.phase === "confirming" || unmatch.phase === "failed";
+  const closeUnmatch = useCallback(() => dispatchUnmatch({ type: "CANCEL" }), []);
+  const unmatchA11y = useModalAccessibility<HTMLDivElement>(unmatchOpen, closeUnmatch, keepMatchRef);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -170,21 +183,33 @@ function ChatPage() {
     setShowMenu(false);
   };
 
-  const handleUnmatch = async () => {
+  const requestUnmatch = () => {
     if (!otherUser) return;
-    setUnmatching(true);
+    setShowMenu(false);
+    dispatchUnmatch({ type: "REQUEST", targetUserId: otherUser.id });
+  };
+
+  const confirmUnmatch = async () => {
+    if (!otherUser || (unmatch.phase !== "confirming" && unmatch.phase !== "failed")) return;
+    const userId = otherUser.id;
+    dispatchUnmatch({ type: "CONFIRM" });
     try {
-      await fetch('/api/matches/unmatch', {
+      const res = await fetch('/api/matches/unmatch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() || '' },
-        body: JSON.stringify({ matchUserId: otherUser.id }),
+        body: JSON.stringify({ matchUserId: userId }),
       });
+      const data = await res.json().catch(() => null);
+      const failure = unmatchFailureMessage(res.ok, data);
+      if (failure) {
+        dispatchUnmatch({ type: "FAILED", error: failure });
+        return;
+      }
+      dispatchUnmatch({ type: "SUCCEEDED" });
       navigate({ to: '/connections' });
     } catch {
-      // ignore
+      dispatchUnmatch({ type: "FAILED", error: unmatchFailureMessage(false, null)! });
     }
-    setUnmatching(false);
-    setShowMenu(false);
   };
 
   function formatTime(ts: string): string {
@@ -274,14 +299,13 @@ function ChatPage() {
                 {blocking ? "Blocking..." : "Block User"}
               </button>
               <button
-                onClick={handleUnmatch}
-                disabled={unmatching}
-                className="flex w-full items-center gap-2 px-4 py-2 text-sm text-gray-300 transition hover:bg-gray-700 disabled:opacity-50"
+                onClick={requestUnmatch}
+                className="flex w-full items-center gap-2 px-4 py-2 text-sm text-gray-300 transition hover:bg-gray-700"
               >
                 <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
-                {unmatching ? "Unmatching..." : "Unmatch"}
+                Unmatch
               </button>
               <button
                 onClick={() => {
@@ -448,6 +472,45 @@ function ChatPage() {
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Unmatch Confirmation Modal */}
+      {unmatchOpen && otherUser && (
+        <div {...unmatchA11y} aria-labelledby="chat-unmatch-title" className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
+          <div ref={unmatchA11y.containerRef} tabIndex={-1} className="mx-4 w-full max-w-sm rounded-2xl bg-gray-900 p-6 shadow-2xl">
+            <h3 id="chat-unmatch-title" className="text-lg font-bold">
+              Unmatch {otherUser.display_name || "this match"}?
+            </h3>
+            <p className="mt-1 text-sm text-gray-400">
+              {unmatch.phase === "failed" ? (
+                <span role="alert">{unmatch.error}</span>
+              ) : (
+                "This permanently removes the match and all chat history. This can't be undone."
+              )}
+            </p>
+            <div className="mt-5 flex gap-3">
+              <button
+                ref={keepMatchRef}
+                onClick={closeUnmatch}
+                disabled={unmatch.phase === "pending"}
+                className="flex-1 rounded-full border border-gray-600 px-4 py-2 text-sm font-medium text-gray-300 transition hover:border-gray-500 disabled:opacity-50"
+              >
+                Keep Match
+              </button>
+              <button
+                onClick={confirmUnmatch}
+                disabled={unmatch.phase === "pending"}
+                className="flex-1 rounded-full bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-500 disabled:opacity-50"
+              >
+                {unmatch.phase === "pending"
+                  ? "Unmatching..."
+                  : unmatch.phase === "failed"
+                    ? "Try Again"
+                    : "Unmatch"}
+              </button>
+            </div>
           </div>
         </div>
       )}
