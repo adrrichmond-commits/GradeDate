@@ -28,17 +28,24 @@ export async function sendPasswordResetEmail(
 
 export async function sendWaitlistConfirmation(
   email: string,
+  siteOrigin?: string | null,
 ): Promise<boolean> {
   if (!resend) {
     console.log("RESEND_API_KEY not set, cannot send waitlist email");
     return false;
   }
   try {
+    // CTA link is built from the origin the signup request came from (never a
+    // hardcoded domain); if no origin is available, omit the link rather than
+    // point at the wrong host.
+    const cta = siteOrigin
+      ? `<p>In the meantime, get your free grade at <a href="${siteOrigin}/grade">${siteOrigin}/grade</a>.</p>`
+      : "";
     await resend.emails.send({
       from: "GradeDate <noreply@gradedate.app>",
       to: email,
       subject: "You're on the list — GradeDate",
-      html: `<p>Thanks for joining the GradeDate waitlist! We'll let you know when new singles join your area.</p><p>In the meantime, get your free grade at <a href="https://gradedate.app/grade">gradedate.app/grade</a>.</p>`,
+      html: `<p>Thanks for joining the GradeDate waitlist! We'll let you know when new singles join your area.</p>${cta}`,
     });
     return true;
   } catch (err) {
