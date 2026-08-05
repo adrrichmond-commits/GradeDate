@@ -26,6 +26,8 @@ const AUSTIN_METRO_CITIES = new Set([
   "bastrop",
 ]);
 
+import { EVENTS, logWarn } from "./observability";
+
 export interface GeoResult {
   city: string | null;
   region: string | null;
@@ -56,7 +58,7 @@ async function fetchIpApi(ip: string): Promise<{ city: string | null; region: st
     const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
 
     if (!res.ok) {
-      console.warn(`[geo] ip-api.com returned ${res.status}`);
+      logWarn(EVENTS.GEO_PROVIDER_HTTP_ERROR, { status: res.status });
       return { city: null, region: null };
     }
 
@@ -66,7 +68,7 @@ async function fetchIpApi(ip: string): Promise<{ city: string | null; region: st
       region: data.regionName ?? null,
     };
   } catch (err) {
-    console.warn("[geo] ip-api.com fetch failed:", err);
+    logWarn(EVENTS.GEO_PROVIDER_FAILED, { err });
     return { city: null, region: null };
   }
 }

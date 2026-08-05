@@ -1,4 +1,5 @@
 import { Resend } from "resend";
+import { EVENTS, logInfo, logWarn } from "./observability";
 
 const resend = process.env.RESEND_API_KEY
   ? new Resend(process.env.RESEND_API_KEY)
@@ -9,7 +10,7 @@ export async function sendPasswordResetEmail(
   resetUrl: string,
 ): Promise<boolean> {
   if (!resend) {
-    console.log("RESEND_API_KEY not set, cannot send email");
+    logInfo(EVENTS.EMAIL_PROVIDER_UNCONFIGURED, { purpose: "password_reset" });
     return false;
   }
   try {
@@ -21,7 +22,7 @@ export async function sendPasswordResetEmail(
     });
     return true;
   } catch (err) {
-    console.error("Failed to send password reset email:", err);
+    logWarn(EVENTS.EMAIL_SEND_FAILED, { err, purpose: "password_reset" });
     return false;
   }
 }
@@ -31,7 +32,7 @@ export async function sendWaitlistConfirmation(
   siteOrigin?: string | null,
 ): Promise<boolean> {
   if (!resend) {
-    console.log("RESEND_API_KEY not set, cannot send waitlist email");
+    logInfo(EVENTS.EMAIL_PROVIDER_UNCONFIGURED, { purpose: "waitlist" });
     return false;
   }
   try {
@@ -49,7 +50,7 @@ export async function sendWaitlistConfirmation(
     });
     return true;
   } catch (err) {
-    console.error("Failed to send waitlist confirmation email:", err);
+    logWarn(EVENTS.EMAIL_SEND_FAILED, { err, purpose: "waitlist" });
     return false;
   }
 }

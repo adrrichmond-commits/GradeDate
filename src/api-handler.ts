@@ -89,6 +89,7 @@ import {
   getFounderSpotsRemaining,
   assignFounderNumber,
   grantPaidUpsell,
+  checkDatabaseReady,
   type PaidUpsellProduct,
   type User,
   type UserPhoto,
@@ -111,6 +112,13 @@ import path from "node:path";
 import { webcrypto } from "node:crypto";
 import { storePhoto, readPhotoBuffer, deletePhoto, isExternalUrl } from "../src/blob-store.ts";
 import { deleteAnonUpload, maybeSweepExpiredAnonUploads } from "./anon-upload-retention";
+import {
+  EVENTS,
+  logError,
+  logInfo,
+  logWarn,
+  requestIdFrom,
+} from "./observability";
 
 // ── Stripe constants ──────────────────────────────────────────
 
@@ -314,8 +322,12 @@ async function handleSignup(req: Request): Promise<Response> {
   if (referralCode) {
     const referralResult = await applyReferralCode(referralCode, user.id);
     if (!referralResult.success) {
-      // Don't fail signup — just log it; the frontend can also display a notice
-      console.log(`Referral code "${referralCode}" failed for user ${user.id}: ${referralResult.error}`);
+      // Don't fail signup — just log it; the frontend can also display a notice.
+      // The code itself is never logged (it is a redeemable token).
+      logWarn(EVENTS.AUTH_REFERRAL_FAILED, {
+        user_id: user.id,
+        err: new Error(referralResult.error ?? "Referral code rejected"),
+      });
     }
   }
 
@@ -405,16 +417,19 @@ async function handleUpload(req: Request): Promise<Response> {
   }
 
   if (files.length === 0) {
+    logInfo(EVENTS.UPLOAD_REJECTED, { reason: "no_files" });
     return json({ error: "No photo file provided" }, 400);
   }
 
   if (files.length > 5) {
+    logInfo(EVENTS.UPLOAD_REJECTED, { reason: "too_many_files", file_count: files.length });
     return json({ error: "Maximum 5 photos per upload" }, 400);
   }
 
   const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
   for (const file of files) {
     if (!ALLOWED_TYPES.includes(file.type)) {
+      logInfo(EVENTS.UPLOAD_REJECTED, { reason: "unsupported_type" });
       return json({ error: "Only JPEG, PNG, and WebP images are allowed" }, 400);
     }
   }
@@ -422,6 +437,7 @@ async function handleUpload(req: Request): Promise<Response> {
   const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
   for (const file of files) {
     if (file.size > MAX_FILE_SIZE) {
+      logInfo(EVENTS.UPLOAD_REJECTED, { reason: "file_too_large" });
       return json({ error: "Photo must be under 10 MB" }, 400);
     }
   }
@@ -475,8 +491,10 @@ async function handleUpload(req: Request): Promise<Response> {
   }
 
   if (user) {
+    logInfo(EVENTS.UPLOAD_COMPLETED, { user_type: "authenticated", file_count: uploadResults.length, user_id: user.id });
     return json({ photos: uploadResults });
   }
+  logInfo(EVENTS.UPLOAD_COMPLETED, { user_type: "anonymous", file_count: uploadResults.length });
   return json({ photo_paths: uploadResults.map(r => r.photo_path) });
 }
 
@@ -643,7 +661,7 @@ async function nsfwCheck(photoPath: string): Promise<"SAFE" | "NSFW"> {
     });
 
     if (!response.ok) {
-      console.error("NSFW check API error:", response.status);
+      logWarn(EVENTS.MODERATION_NSFW_HTTP_ERROR, { status: response.status });
       return "SAFE";
     }
 
@@ -658,7 +676,7 @@ async function nsfwCheck(photoPath: string): Promise<"SAFE" | "NSFW"> {
 
     return content.toUpperCase().includes("NSFW") ? "NSFW" : "SAFE";
   } catch (err) {
-    console.error("NSFW check failed:", err);
+    logWarn(EVENTS.MODERATION_NSFW_FAILED, { err });
     return "SAFE";
   }
 }
@@ -799,6 +817,7 @@ async function handleGrade(req: Request): Promise<Response> {
   // NSFW screening before grading
   const nsfwResult = await nsfwCheck(photoPath);
   if (nsfwResult === "NSFW") {
+    logWarn(EVENTS.GRADE_NSFW_BLOCKED, { user_type: user ? "authenticated" : "anonymous" });
     // Clean up the file
     try {
       await deletePhoto(photoPath);
@@ -826,6 +845,7 @@ async function handleGrade(req: Request): Promise<Response> {
   let grade: number;
   let analysis: string | null = null;
   let usedAI = false;
+  let fallbackError: unknown = null;
 
   try {
     const result = await gradeWithAI(photoPath);
@@ -834,7 +854,7 @@ async function handleGrade(req: Request): Promise<Response> {
     usedAI = true;
   } catch (err) {
     // Fall back to mock weighted random grade on any failure
-    console.error("AI grading failed, falling back to mock:", err);
+    fallbackError = err;
     grade = getWeightedRandomGrade();
     usedAI = false;
   }
@@ -857,6 +877,16 @@ async function handleGrade(req: Request): Promise<Response> {
   if (!user && photoPath) {
     await deleteAnonUpload(photoPath);
   }
+  logInfo(
+    EVENTS.GRADE_COMPLETED,
+    {
+      user_type: user ? "authenticated" : "anonymous",
+      method: usedAI ? "ai" : "fallback",
+      grade,
+      ...(fallbackError !== null ? { err: fallbackError } : {}),
+    },
+    usedAI ? undefined : "AI grading unavailable — used deterministic fallback",
+  );
   return response;
 }
 
@@ -985,6 +1015,7 @@ async function handleGradePhotos(req: Request): Promise<Response> {
   for (const photoPath of photoPaths) {
     const nsfwResult = await nsfwCheck(photoPath);
     if (nsfwResult === "NSFW") {
+      logWarn(EVENTS.GRADE_NSFW_BLOCKED, { user_type: "authenticated", user_id: user.id });
       try {
         await deletePhoto(photoPath);
       } catch { /* ignore */ }
@@ -1011,7 +1042,7 @@ async function handleGradePhotos(req: Request): Promise<Response> {
       grade = result.grade;
       feedback = result.feedback;
     } catch (err) {
-      console.error("AI grading failed for photo, using fallback:", err);
+      logWarn(EVENTS.GRADE_COMPLETED, { user_id: user.id, method: "fallback", photo_index: i, err });
       fallbackCount++;
       grade = fallbackGrade(); // 3-8 fallback
       feedback = FALLBACK_FEEDBACK; // honest: does not claim the photo was analyzed
@@ -1067,6 +1098,13 @@ async function handleGradePhotos(req: Request): Promise<Response> {
   const topLabel = percentileResult
     ? `${topPercentLabel(percentileResult.percentile)} in ${percentileResult.percentile_city}`
     : "Not enough users in your city for percentile ranking yet";
+
+  logInfo(EVENTS.GRADE_PHOTOS_COMPLETED, {
+    user_id: user.id,
+    photo_count: photoPaths.length,
+    fallback_count: fallbackCount,
+    best_grade: highestGrade >= 0 ? highestGrade : null,
+  });
 
   return json({
     grades: grades.map(g => ({
@@ -1254,6 +1292,7 @@ async function handleLike(req: Request): Promise<Response> {
     if (match) {
       matched = true;
       matchId = match.id;
+      logInfo(EVENTS.MATCH_CREATED, { match_id: match.id, user_ids: [user.id, likedId] });
 
       // Calculate Mutual League Score
       const otherUser = await getUserById(likedId);
@@ -1299,13 +1338,13 @@ async function handleLike(req: Request): Promise<Response> {
         title: "New Match! 💘",
         body: `${leagueText}You have a new match! Start chatting now.`,
         url: `/chat/${match.id}`,
-      }).catch((err) => console.error("Push notification failed (liker):", err));
+      }).catch((err) => logWarn(EVENTS.CHAT_PUSH_FAILED, { err, target: "liker" }));
 
       sendPushNotification(likedId, {
         title: "New Match! 💘",
         body: `${leagueText}Someone in your range just matched with you!`,
         url: `/chat/${match.id}`,
-      }).catch((err) => console.error("Push notification failed (liked):", err));
+      }).catch((err) => logWarn(EVENTS.CHAT_PUSH_FAILED, { err, target: "liked" }));
     }
   }
 
@@ -1328,6 +1367,7 @@ async function handleLike(req: Request): Promise<Response> {
     }
   }
 
+  logInfo(EVENTS.MATCH_LIKE, { actor_id: user.id, matched });
   return json({ ok: true, matched, match_id: matchId, other_user: otherUser, league_score: leagueScore });
 }
 
@@ -1396,7 +1436,9 @@ async function handleSendMessage(req: Request): Promise<Response> {
     title: `New message from ${user.display_name || "someone"}`,
     body: content.trim().slice(0, 128),
     url: `/chat/${match_id}`,
-  }).catch((err) => console.error("Push notification failed (message):", err));
+  }).catch((err) => logWarn(EVENTS.CHAT_PUSH_FAILED, { err, target: "message" }));
+
+  logInfo(EVENTS.CHAT_MESSAGE_SENT, { user_id: user.id, match_id });
 
   return json({
     ok: true,
@@ -1542,6 +1584,7 @@ async function handleReport(req: Request): Promise<Response> {
   }
 
   await reportUser(user.id, targetId, reason);
+  logInfo(EVENTS.MODERATION_REPORT_RECEIVED, { reporter_id: user.id, reason });
   return json({ success: true });
 }
 
@@ -1725,7 +1768,7 @@ async function handleLikedMe(req: Request): Promise<Response> {
 function getStripe(): Stripe | null {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) {
-    console.warn("STRIPE_SECRET_KEY not configured — Stripe features disabled");
+    logWarn(EVENTS.STRIPE_UNCONFIGURED, {});
     return null;
   }
   return new Stripe(key);
@@ -1743,7 +1786,7 @@ async function handleStripeWebhook(req: Request): Promise<Response> {
   const rawBody = await req.text();
 
   if (!webhookSecret) {
-    console.error("STRIPE_WEBHOOK_SECRET not configured — rejecting webhook");
+    logError(EVENTS.STRIPE_WEBHOOK_SECRET_MISSING, {});
     return json({ error: "Webhook secret not configured" }, 500);
   }
 
@@ -1760,11 +1803,11 @@ async function handleStripeWebhook(req: Request): Promise<Response> {
       webhookSecret,
     );
   } catch (err) {
-    console.error("Stripe webhook signature verification failed:", err);
+    logWarn(EVENTS.STRIPE_WEBHOOK_SIGNATURE_FAILED, { err });
     return json({ error: "Invalid signature" }, 400);
   }
 
-  console.log(`Stripe webhook received: ${event.type}`);
+  logInfo(EVENTS.STRIPE_WEBHOOK_RECEIVED, { type: event.type });
 
   try {
     switch (event.type) {
@@ -1798,9 +1841,7 @@ async function handleStripeWebhook(req: Request): Promise<Response> {
         }
 
         if (!user) {
-          console.warn(
-            `checkout.session.completed: no user found for email=${customerEmail}, client_ref=${clientReferenceId}`,
-          );
+          logWarn(EVENTS.STRIPE_WEBHOOK_NO_USER, { type: event.type });
           break;
         }
 
@@ -1809,22 +1850,18 @@ async function handleStripeWebhook(req: Request): Promise<Response> {
         const upsellProduct = session.metadata?.product as PaidUpsellProduct | undefined;
         if (session.mode === "payment" && upsellProduct && session.payment_status === "paid" && session.metadata?.user_id === String(user.id) && UPSELL_PRICES[upsellProduct]) {
           await grantPaidUpsell(user.id, upsellProduct, session.id);
-          console.log(`Upsell ${upsellProduct} granted to user ${user.id} from Stripe session ${session.id}`);
+          logInfo(EVENTS.STRIPE_UPSELL_GRANTED, { user_id: user.id, product: upsellProduct });
           break;
         }
 
 
         if (customerId && subscriptionId) {
           await updateUserStripeInfo(user.id, customerId, subscriptionId);
-          console.log(
-            `Subscription activated for user ${user.id} (${customerEmail}) — sub: ${subscriptionId}`,
-          );
+          logInfo(EVENTS.STRIPE_SUBSCRIPTION_ACTIVATED, { user_id: user.id, stored_stripe_ids: true });
         } else {
           // Fallback: just activate without storing Stripe IDs
           await updateSubscriptionStatus(user.id, "active");
-          console.log(
-            `Subscription activated for user ${user.id} (${customerEmail}) — no Stripe IDs stored`,
-          );
+          logInfo(EVENTS.STRIPE_SUBSCRIPTION_ACTIVATED, { user_id: user.id, stored_stripe_ids: false });
         }
 
         // Founders Club: assign sequential founder_number if spots remain
@@ -1832,21 +1869,24 @@ async function handleStripeWebhook(req: Request): Promise<Response> {
         if (spotsRemaining.remaining > 0) {
           const founderNum = await assignFounderNumber(user.id);
           if (founderNum !== null) {
-            console.log(
-              `🎉 Founders Club #${founderNum} assigned to user ${user.id} (${customerEmail}) — ${spotsRemaining.remaining - 1} spots remaining`,
-            );
+            logInfo(EVENTS.STRIPE_FOUNDERS_ASSIGNED, {
+              user_id: user.id,
+              founder_number: founderNum,
+              spots_remaining: spotsRemaining.remaining - 1,
+            });
           }
         } else {
-          console.log(
-            `Founders Club full — user ${user.id} subscribed but no founder spot available`,
-          );
+          logInfo(EVENTS.STRIPE_FOUNDERS_FULL, { user_id: user.id });
         }
 
         // Check and apply referral reward
         const pendingReward = await getReferralRewardForReferee(user.id);
         if (pendingReward && !pendingReward.applied) {
           await applyReferralReward(pendingReward.id);
-          console.log(`Referral reward applied via Stripe: referrer=${pendingReward.referrer_user_id}, referee=${user.id}`);
+          logInfo(EVENTS.STRIPE_REFERRAL_REWARD_APPLIED, {
+            referrer_user_id: pendingReward.referrer_user_id,
+            referee_user_id: user.id,
+          });
         }
         break;
       }
@@ -1859,33 +1899,27 @@ async function handleStripeWebhook(req: Request): Promise<Response> {
             : null;
 
         if (!customerId) {
-          console.warn(
-            "customer.subscription.deleted: no customer ID in subscription",
-          );
+          logWarn(EVENTS.STRIPE_WEBHOOK_INCOMPLETE, { type: event.type, detail: "no_customer" });
           break;
         }
 
         const user = await getUserByStripeCustomerId(customerId);
         if (!user) {
-          console.warn(
-            `customer.subscription.deleted: no user found for customer ${customerId}`,
-          );
+          logWarn(EVENTS.STRIPE_WEBHOOK_NO_USER, { type: event.type });
           break;
         }
 
         await updateSubscriptionStatus(user.id, "inactive");
-        console.log(
-          `Subscription cancelled for user ${user.id} (stripe customer: ${customerId})`,
-        );
+        logInfo(EVENTS.STRIPE_SUBSCRIPTION_CANCELLED, { user_id: user.id });
         break;
       }
 
       default:
         // Ignore other event types
-        console.log(`Unhandled Stripe event type: ${event.type}`);
+        logInfo(EVENTS.STRIPE_WEBHOOK_UNHANDLED, { type: event.type });
     }
   } catch (err) {
-    console.error("Error processing Stripe webhook:", err);
+    logError(EVENTS.STRIPE_WEBHOOK_PROCESSING_FAILED, { err });
     return json({ error: "Webhook processing error" }, 500);
   }
 
@@ -2339,7 +2373,7 @@ async function handleGradeCard(req: Request): Promise<Response> {
         },
       });
     } catch (e: any) {
-      console.error("PNG conversion failed:", e?.message || e);
+      logError(EVENTS.GRADE_CARD_PNG_FAILED, { err: e });
       // Return error as SVG with error message for debugging
       const errSvg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
@@ -2385,11 +2419,44 @@ function checkCsrf(req: Request): Response | null {
   return null;
 }
 
+// ── Health & Readiness ─────────────────────────────────────────
+
+/**
+ * Cheap liveness probe: no dependencies, no database, no auth. Exists so
+ * load balancers / uptime checks can distinguish "process up" from anything
+ * else. For dependency health, use /api/ready.
+ */
+async function handleHealth(_req: Request): Promise<Response> {
+  return json({ ok: true, status: "ok" });
+}
+
+/**
+ * Minimal readiness probe: verifies the database answers a trivial query.
+ * Never leaks configuration: on any failure (missing DATABASE_URL, invalid
+ * connection string, or query error) it returns a coarse 503 with a stable
+ * reason code and no error detail, connection string, or stack trace.
+ */
+async function handleReady(_req: Request): Promise<Response> {
+  const result = await checkDatabaseReady();
+  if (!result.ok) {
+    return json({ ok: false, status: "unavailable", reason: result.reason }, 503);
+  }
+  return json({ ok: true, status: "ready" });
+}
+
 export async function handleApiRoute(
   req: Request,
 ): Promise<Response | null> {
   const url = new URL(req.url);
   const { method, pathname } = { method: req.method, pathname: url.pathname };
+
+  // Health & readiness — public, unauthenticated, no CSRF (GET only)
+  if (pathname === "/api/health" && method === "GET") {
+    return handleHealth(req);
+  }
+  if (pathname === "/api/ready" && method === "GET") {
+    return handleReady(req);
+  }
 
   // CSRF token endpoint — allows anonymous users to get a token before POST requests
   if (pathname === "/api/csrf" && method === "GET") {
