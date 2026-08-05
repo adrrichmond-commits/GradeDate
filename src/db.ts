@@ -159,6 +159,18 @@ export async function initTables(): Promise<void> {
   } catch { /* ignore */ }
 
   await sql()`
+    CREATE TABLE IF NOT EXISTS paid_upsell_entitlements (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      product TEXT NOT NULL,
+      stripe_session_id TEXT UNIQUE NOT NULL,
+      status TEXT NOT NULL DEFAULT 'granted',
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      consumed_at TIMESTAMPTZ
+    )
+  `;
+
+  await sql()`
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -1697,6 +1709,29 @@ export async function updateUserPassword(
 }
 
 // ── Upsells ──────────────────────────────────────────────────────
+
+export type PaidUpsellProduct = "re-grade" | "boost" | "reveal-likes" | "like-pack";
+
+/** Grant a Stripe-verified purchase exactly once. The unique session id makes
+ * webhook retries and activation retries harmless. */
+export async function grantPaidUpsell(
+  userId: number,
+  product: PaidUpsellProduct,
+  stripeSessionId: string,
+): Promise<boolean> {
+  const inserted = await sql()`
+    INSERT INTO paid_upsell_entitlements (user_id, product, stripe_session_id)
+    VALUES (${userId}, ${product}, ${stripeSessionId})
+    ON CONFLICT (stripe_session_id) DO NOTHING
+    RETURNING id
+  `;
+  if (inserted.length === 0) return false;
+  if (product === "re-grade") await addReGrade(userId);
+  else if (product === "boost") await activateBoost(userId);
+  else if (product === "reveal-likes") await revealLikes(userId);
+  else await addLikePacks(userId, 5);
+  return true;
+}
 
 export async function addReGrade(userId: number): Promise<void> {
   await sql()`

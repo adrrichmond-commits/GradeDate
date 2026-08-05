@@ -108,32 +108,48 @@ function StorePage() {
   const [error, setError] = useState("");
   const [foundersCount, setFoundersCount] = useState<{ count: number; remaining: number } | null>(null);
   const [foundersCheckingOut, setFoundersCheckingOut] = useState(false);
+  const [checkoutProduct, setCheckoutProduct] = useState<string | null>(null);
+  const [paymentState, setPaymentState] = useState<string | null>(null);
 
-  // Fetch founders count on mount
+  // Fetch founders count on mount and activate only the Stripe session returned
+  // by our checkout. The server re-checks ownership and payment status.
   useEffect(() => {
     fetch("/api/founders/count")
       .then((r) => r.json())
       .then((data) => setFoundersCount(data))
       .catch(() => {});
-  }, []);
+    const params = new URLSearchParams(window.location.search);
+    const sessionId = params.get("session_id");
+    const product = products.find((item) => item.id === params.get("product"));
+    if (sessionId && product && user) handleActivate(product, sessionId);
+    else if (params.get("payment") === "success") setPaymentState("Payment received. Verifying your purchase…");
+  }, [user]);
 
-  const handleActivate = async (product: Product) => {
+  const handleCheckout = async (product: Product) => {
+    setCheckoutProduct(product.id);
+    setError("");
+    try {
+      const res = await fetch("/api/store/create-checkout", {
+        method: "POST", headers: { "Content-Type": "application/json", "X-CSRF-Token": getCsrfToken() || "" },
+        body: JSON.stringify({ product: product.id }),
+      });
+      const data = await res.json();
+      if (res.ok && data.url) window.location.href = data.url;
+      else setError(data.error || "Unable to start secure checkout.");
+    } catch { setError("Network error. Please try again."); }
+    finally { setCheckoutProduct(null); }
+  };
+
+  const handleActivate = async (product: Product, sessionId: string) => {
     setActivating(product.id);
     setError("");
     try {
-      const res = await fetch(product.endpoint, { method: "POST", headers: { "X-CSRF-Token": getCsrfToken() || "" } });
+      const res = await fetch("/api/store/activate", { method: "POST", headers: { "Content-Type": "application/json", "X-CSRF-Token": getCsrfToken() || "" }, body: JSON.stringify({ session_id: sessionId }) });
       const data = await res.json();
-      if (res.ok && data.ok) {
-        setActivated(product.id);
-        await refetch();
-      } else {
-        setError(data.error || "Failed to activate. Make sure you completed the Stripe payment first.");
-      }
-    } catch {
-      setError("Network error. Please try again.");
-    } finally {
-      setActivating(null);
-    }
+      if (res.ok && data.ok) { setActivated(product.id); await refetch(); }
+      else setError(data.error || "Payment is still pending. Please try again shortly.");
+    } catch { setError("Network error. Please try again."); }
+    finally { setActivating(null); }
   };
 
   const handleFoundersCheckout = async () => {
@@ -176,7 +192,7 @@ function StorePage() {
         </div>
         <h1 className="text-3xl font-bold sm:text-4xl">Power Up Your Profile</h1>
         <p className="mt-3 text-gray-400 max-w-lg mx-auto">
-          One-time purchases to get more out of GradeDate. Active subscription required.
+          One-time purchases for everyone. Free-tier limits still apply, and every payment is verified securely by Stripe.
         </p>
       </div>
 
@@ -184,7 +200,7 @@ function StorePage() {
       {user && user.subscription_status !== "active" && (
         <div className="mb-8 rounded-xl border border-amber-500/30 bg-amber-500/10 p-5 text-center">
           <p className="text-amber-400 font-semibold text-sm">
-            ⚡ An active subscription unlocks everything. Like packs are available to everyone!
+            Free accounts can buy power ups too. Your normal free-tier limits remain in place; purchases only unlock the item shown.
           </p>
           <Link
             to="/subscribe"
@@ -360,33 +376,16 @@ function StorePage() {
               {!isOwned && !justActivated && (
                 <div className="mt-4 space-y-3">
                   {/* Step 1: Pay on Stripe */}
-                  <a
-                    href={product.paymentLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block w-full rounded-full bg-rose-600 px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:bg-rose-500"
-                  >
-                    Buy {product.name} — {product.price} on Stripe →
-                  </a>
-
-                  {/* Step 2: Activate */}
-                  <p className="text-center text-xs text-gray-500">
-                    After paying, come back and click below to activate.
-                  </p>
                   <button
-                    onClick={() => handleActivate(product)}
-                    disabled={activating === product.id || (user?.subscription_status !== "active" && product.id !== "like-pack")}
-                    className="block w-full rounded-full border border-green-500/50 bg-green-600/20 px-4 py-2.5 text-sm font-semibold text-green-400 transition hover:bg-green-600/30 disabled:opacity-40 disabled:cursor-not-allowed"
+                    onClick={() => handleCheckout(product)}
+                    disabled={checkoutProduct === product.id}
+                    className="block w-full rounded-full bg-rose-600 px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:bg-rose-500 disabled:opacity-50"
                   >
-                    {activating === product.id ? (
-                      <span className="flex items-center justify-center gap-2">
-                        <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-green-400 border-t-transparent" />
-                        Activating...
-                      </span>
-                    ) : (
-                      `Activate ${product.name}`
-                    )}
+                    {checkoutProduct === product.id ? "Opening secure checkout…" : `Buy ${product.name} — ${product.price}`}
                   </button>
+                  <p className="text-center text-xs text-gray-500">
+                    You'll return here after Stripe confirms payment. Activation is server-verified and safe to retry.
+                  </p>
                 </div>
               )}
             </div>

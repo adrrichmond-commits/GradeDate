@@ -79,6 +79,8 @@ import {
   getFounderSpotsRemaining,
   assignFounderNumber,
   setFounder,
+  grantPaidUpsell,
+  type PaidUpsellProduct,
   type User,
   type UserPhoto,
   type PhotoGrade,
@@ -1623,49 +1625,49 @@ async function handleCreateCheckout(req: Request): Promise<Response> {
   return json({ url: session.url });
 }
 
-// ── Upsell Activation ──────────────────────────────────────────
+// ── Upsell checkout and activation ─────────────────────────────
+const UPSELL_PRICES: Record<PaidUpsellProduct, string | undefined> = {
+  "re-grade": process.env.STRIPE_REGRADE_PRICE_ID,
+  boost: process.env.STRIPE_BOOST_PRICE_ID,
+  "reveal-likes": process.env.STRIPE_REVEAL_LIKES_PRICE_ID,
+  "like-pack": process.env.STRIPE_LIKE_PACK_PRICE_ID,
+};
 
-async function handleActivateReGrade(req: Request): Promise<Response> {
+async function handleUpsellCheckout(req: Request): Promise<Response> {
   const user = await getCurrentUser(req);
-  if (!user) {
-    return json({ error: "Unauthorized" }, 401);
-  }
-
-  if (user.subscription_status !== "active") {
-    return json({ error: "An active subscription is required to purchase upsells", code: "NO_SUBSCRIPTION" }, 402);
-  }
-
-  await addReGrade(user.id);
-  return json({ ok: true, message: "Re-grade activated! You can now re-grade your photo.", regrades_available: user.regrades_available + 1 });
+  if (!user) return json({ error: "Unauthorized" }, 401);
+  const body = await req.json().catch(() => null);
+  const product = body?.product as PaidUpsellProduct;
+  if (!Object.prototype.hasOwnProperty.call(UPSELL_PRICES, product)) return json({ error: "Invalid product" }, 400);
+  const price = UPSELL_PRICES[product];
+  const stripe = getStripe();
+  if (!stripe || !price) return json({ error: "This purchase is not configured yet" }, 503);
+  const session = await stripe.checkout.sessions.create({
+    mode: "payment", line_items: [{ price, quantity: 1 }],
+    success_url: `${new URL(req.url).origin}/store?payment=success&product=${encodeURIComponent(product)}&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${new URL(req.url).origin}/store?payment=cancelled`,
+    client_reference_id: String(user.id), customer_email: user.email,
+    metadata: { user_id: String(user.id), product },
+  });
+  return json({ url: session.url });
 }
 
-async function handleActivateBoost(req: Request): Promise<Response> {
+async function handleActivateUpsell(req: Request): Promise<Response> {
   const user = await getCurrentUser(req);
-  if (!user) {
-    return json({ error: "Unauthorized" }, 401);
+  if (!user) return json({ error: "Unauthorized" }, 401);
+  const body = await req.json().catch(() => null);
+  const sessionId = typeof body?.session_id === "string" ? body.session_id : "";
+  if (!sessionId || !/^cs_[A-Za-z0-9_]+$/.test(sessionId)) return json({ error: "A valid Stripe checkout session is required" }, 400);
+  const stripe = getStripe();
+  if (!stripe) return json({ error: "Stripe is not configured" }, 503);
+  let session: Stripe.Checkout.Session;
+  try { session = await stripe.checkout.sessions.retrieve(sessionId); } catch { return json({ error: "Unable to verify payment" }, 400); }
+  const product = session.metadata?.product as PaidUpsellProduct | undefined;
+  if (session.payment_status !== "paid" || session.metadata?.user_id !== String(user.id) || !product || !UPSELL_PRICES[product]) {
+    return json({ error: "Payment is not verified yet", code: "PAYMENT_PENDING" }, 409);
   }
-
-  if (user.subscription_status !== "active") {
-    return json({ error: "An active subscription is required to purchase upsells", code: "NO_SUBSCRIPTION" }, 402);
-  }
-
-  await activateBoost(user.id);
-  const until = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-  return json({ ok: true, message: "Profile boosted for 24 hours!", boost_until: until });
-}
-
-async function handleActivateRevealLikes(req: Request): Promise<Response> {
-  const user = await getCurrentUser(req);
-  if (!user) {
-    return json({ error: "Unauthorized" }, 401);
-  }
-
-  if (user.subscription_status !== "active") {
-    return json({ error: "An active subscription is required to purchase upsells", code: "NO_SUBSCRIPTION" }, 402);
-  }
-
-  await revealLikes(user.id);
-  return json({ ok: true, message: "You can now see who liked you!", likes_revealed: 1 });
+  const granted = await grantPaidUpsell(user.id, product, session.id);
+  return json({ ok: true, granted, message: granted ? "Purchase activated!" : "Purchase was already activated." });
 }
 
 // ── Daily Likes ──────────────────────────────────────────────
@@ -1812,6 +1814,15 @@ async function handleStripeWebhook(req: Request): Promise<Response> {
           console.warn(
             `checkout.session.completed: no user found for email=${customerEmail}, client_ref=${clientReferenceId}`,
           );
+          break;
+        }
+
+        // One-time upsells are granted only from a paid Checkout Session. The
+        // entitlement table makes webhook retries and manual activation idempotent.
+        const upsellProduct = session.metadata?.product as PaidUpsellProduct | undefined;
+        if (session.mode === "payment" && upsellProduct && session.payment_status === "paid" && session.metadata?.user_id === String(user.id) && UPSELL_PRICES[upsellProduct]) {
+          await grantPaidUpsell(user.id, upsellProduct, session.id);
+          console.log(`Upsell ${upsellProduct} granted to user ${user.id} from Stripe session ${session.id}`);
           break;
         }
 
@@ -2607,26 +2618,17 @@ export async function handleApiRoute(
     return handleLikesRemaining(req);
   }
 
-  // Upsell activations — CSRF required
-  if (pathname === "/api/store/activate-re-grade" && method === "POST") {
+  // Upsell checkout / activation — CSRF required. Stripe verifies payment;
+  // entitlement grants never trust client-supplied product or payment state.
+  if (pathname === "/api/store/create-checkout" && method === "POST") {
     const csrfErr = checkCsrf(req);
     if (csrfErr) return csrfErr;
-    return handleActivateReGrade(req);
+    return handleUpsellCheckout(req);
   }
-  if (pathname === "/api/store/activate-boost" && method === "POST") {
+  if (pathname === "/api/store/activate" && method === "POST") {
     const csrfErr = checkCsrf(req);
     if (csrfErr) return csrfErr;
-    return handleActivateBoost(req);
-  }
-  if (pathname === "/api/store/activate-reveal-likes" && method === "POST") {
-    const csrfErr = checkCsrf(req);
-    if (csrfErr) return csrfErr;
-    return handleActivateRevealLikes(req);
-  }
-  if (pathname === "/api/store/activate-like-pack" && method === "POST") {
-    const csrfErr = checkCsrf(req);
-    if (csrfErr) return csrfErr;
-    return handleActivateLikePack(req);
+    return handleActivateUpsell(req);
   }
 
   // Founders Club
