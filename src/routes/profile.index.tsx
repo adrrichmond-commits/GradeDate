@@ -3,6 +3,7 @@ import { useEffect, useState, useRef } from "react";
 import { useAuth } from "~/auth-context";
 import { getCsrfToken } from "~/csrf-client";
 import { useRequireSubscription, SubscriptionBanner } from "~/subscription-guard";
+import { photoFromUploadResponse } from "~/photo-upload";
 
 export const Route = createFileRoute("/profile/")({
   component: ProfilePage,
@@ -182,7 +183,7 @@ function ProfilePage() {
   const { user, loading, refetch } = useAuth();
   const [grading, setGrading] = useState(false);
   const [gradeError, setGradeError] = useState("");
-  const { isSubscribed, checking } = useRequireSubscription();
+  const { checking } = useRequireSubscription();
 
   // Edit mode state
   const [editing, setEditing] = useState(false);
@@ -314,7 +315,13 @@ function ProfilePage() {
         setSaveError(data.error || "Upload failed");
         return;
       }
-      setEditPhotos((prev) => [...prev, data.photo]);
+      // Authenticated /api/upload returns { photos: [...] }; legacy { photo } also accepted
+      const uploaded = photoFromUploadResponse(data);
+      if (!uploaded) {
+        setSaveError("Upload failed. Please try again.");
+        return;
+      }
+      setEditPhotos((prev) => [...prev, uploaded as PhotoItem]);
     } catch {
       setSaveError("Photo upload failed. Please try again.");
     } finally {
@@ -522,7 +529,7 @@ function ProfilePage() {
     );
   }
 
-  if (!user || !isSubscribed) return null;
+  if (!user) return null;
 
   // Current photo to display (view mode)
   const displayPhoto = user.photo_path;
@@ -531,6 +538,7 @@ function ProfilePage() {
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-12">
+      <SubscriptionBanner />
       {/* Success Toast */}
       {saveSuccess && (
         <div className="fixed top-6 left-1/2 z-50 -translate-x-1/2 animate-[fadeInUp_0.3s_ease-out]">
