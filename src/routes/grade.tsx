@@ -5,6 +5,7 @@ import { getCsrfToken } from "~/csrf-client";
 import { gradeAnonymousPhotos } from "~/anonymous-grading";
 
 import { resolveSiteOrigin, resolveSiteUrl } from "~/site-url";
+import { fileToDataUrl, resolveGradePhotoSrc } from "~/grade-photo-source";
 export const Route = createFileRoute("/grade")({
   component: GradePage,
 });
@@ -33,6 +34,8 @@ type UIState =
 interface PhotoEntry {
   file: File;
   previewUrl: string;
+  /** Durable base64 source, read async after selection (anonymous preview). */
+  dataUrl?: string;
   photoPath?: string; // set after upload
 }
 
@@ -47,6 +50,45 @@ interface CoachingTip {
   id: string;
   text: string;
   source: "rule";
+}
+
+/**
+ * Result-card photo: renders the actual uploaded photo with accessible alt
+ * text and a graceful placeholder on load/error instead of a broken-image
+ * glyph. `src` is resolved by the caller (data URL > blob preview > path).
+ */
+function ResultPhoto({ src, alt }: { src: string; alt: string }) {
+  const [loaded, setLoaded] = useState(false);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    setLoaded(false);
+    setFailed(false);
+  }, [src]);
+  if (!src || failed) {
+    return (
+      <div
+        role="img"
+        aria-label={alt}
+        className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg border border-gray-700/60 bg-gray-800/60 p-1 text-center text-[10px] font-semibold text-gray-500"
+      >
+        {alt}
+      </div>
+    );
+  }
+  return (
+    <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-gray-800/60">
+      {!loaded && (
+        <div className="h-full w-full animate-pulse bg-gray-800" aria-hidden="true" />
+      )}
+      <img
+        src={src}
+        alt={alt}
+        onLoad={() => setLoaded(true)}
+        onError={() => setFailed(true)}
+        className={`h-full w-full object-cover ${loaded ? "" : "hidden"}`}
+      />
+    </div>
+  );
 }
 
 function GradePage() {
@@ -142,6 +184,24 @@ function GradePage() {
 
     setPhotos((prev) => [...prev, ...newPhotos]);
     setErrorMessage("");
+
+    // Anonymous previews have no server-side persistence: the upload is
+    // deleted right after grading and blob: preview URLs can be invalidated,
+    // so read a durable base64 source for each photo now. Result cards use
+    // it first and fall back to the blob preview / server path.
+    if (!isAuthenticated) {
+      for (const entry of newPhotos) {
+        fileToDataUrl(entry.file)
+          .then((dataUrl) => {
+            setPhotos((prev) =>
+              prev.map((ph) => (ph.file === entry.file ? { ...ph, dataUrl } : ph))
+            );
+          })
+          .catch(() => {
+            // Non-fatal: result cards fall back to the blob preview / path.
+          });
+      }
+    }
 
     // Reset the file input so the same file can be added again
     if (fileInputRef.current) {
@@ -415,7 +475,7 @@ function GradePage() {
                     {photos.map((photo, i) => (
                       <div key={i} className="relative">
                         <img
-                          src={photo.previewUrl}
+                          src={resolveGradePhotoSrc(photo.dataUrl, photo.previewUrl, photo.photoPath)}
                           alt={`Photo ${i + 1}`}
                           className="h-20 w-20 rounded-lg object-cover ring-2 ring-rose-500/20"
                         />
@@ -611,11 +671,10 @@ function GradePage() {
                           : "border-gray-700/50 bg-gray-800/30"
                       }`}
                     >
-                      {/* Photo thumbnail */}
-                      <img
-                        src={photos[i]?.previewUrl || pg.photo_path}
+                      {/* Photo thumbnail (durable source: data URL > blob preview > path) */}
+                      <ResultPhoto
+                        src={resolveGradePhotoSrc(photos[i]?.dataUrl, photos[i]?.previewUrl, pg.photo_path)}
                         alt={`Photo ${i + 1}`}
-                        className="h-14 w-14 shrink-0 rounded-lg object-cover"
                       />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
@@ -646,7 +705,7 @@ function GradePage() {
                       <ShareCard
                         grade={pg.grade}
                         percentileLabel={null}
-                        photoUrl={photos[i]?.previewUrl || pg.photo_path}
+                        photoUrl={resolveGradePhotoSrc(photos[i]?.dataUrl, photos[i]?.previewUrl, pg.photo_path)}
                         compact
                       />
                     </div>
