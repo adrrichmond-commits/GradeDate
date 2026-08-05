@@ -113,6 +113,7 @@ import { mkdirSync, existsSync, writeFileSync, readFileSync, unlinkSync } from "
 import path from "node:path";
 import { webcrypto } from "node:crypto";
 import { storePhoto, readPhotoBuffer, deletePhoto, isExternalUrl } from "../src/blob-store.ts";
+import { deleteAnonUpload, maybeSweepExpiredAnonUploads } from "./anon-upload-retention";
 
 // ── Stripe constants ──────────────────────────────────────────
 
@@ -465,6 +466,9 @@ async function handleUpload(req: Request): Promise<Response> {
       const storageFilename = `anon_${anonId}.${ext}`;
       const storedPath = await storePhoto(storageFilename, buffer, file.type);
       uploadResults.push({ photo_path: storedPath });
+      // Opportunistic TTL sweep (throttled): clears out anonymous uploads
+      // abandoned before grading. Fire-and-forget — never blocks the upload.
+      maybeSweepExpiredAnonUploads().catch(() => {});
     }
   }
 
@@ -839,11 +843,19 @@ async function handleGrade(req: Request): Promise<Response> {
     await checkAndAwardBadges(user.id);
   }
 
-  return json({
+  const response = json({
     grade,
     ...(analysis ? { analysis } : {}),
     grading_method: aggregateGradingMethod(usedAI ? 1 : 0, 1),
   });
+  // Anonymous free-preview: the uploaded photo is only needed server-side
+  // while grading runs (the client renders results from local object URLs),
+  // so delete it immediately after the response is built. Authenticated
+  // profile photos are never touched here.
+  if (!user && photoPath) {
+    await deleteAnonUpload(photoPath);
+  }
+  return response;
 }
 
 // ── Multi-Photo Grading (Rebrand) ─────────────────────────────

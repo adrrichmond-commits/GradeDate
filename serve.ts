@@ -12,6 +12,7 @@
 import handler from "./dist/server/server.js";
 import { handleApiRoute } from "./src/api-handler.ts";
 import { initTables } from "./src/db.ts";
+import { sweepExpiredAnonUploads } from "./src/anon-upload-retention.ts";
 import { existsSync } from "node:fs";
 import path from "node:path";
 
@@ -125,3 +126,15 @@ for (let attempt = 1; ; attempt++) {
 }
 
 console.log(`team-site serving on http://${HOST}:${String(PORT)}`);
+
+// Anonymous upload retention: sweep expired anon_* uploads (abandoned before
+// grading) at startup and every 6 hours. Only anon_* files are ever touched;
+// authenticated/profile photos are recorded in the database and never matched.
+const ANON_SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const runAnonSweep = () => {
+  sweepExpiredAnonUploads().catch((err) => {
+    console.error("[serve] Anonymous upload sweep failed:", err);
+  });
+};
+runAnonSweep();
+setInterval(runAnonSweep, ANON_SWEEP_INTERVAL_MS);
