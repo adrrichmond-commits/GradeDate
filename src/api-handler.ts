@@ -110,8 +110,9 @@ import Stripe from "stripe";
 import { mkdirSync, existsSync, writeFileSync, readFileSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { webcrypto } from "node:crypto";
-import { storePhoto, readPhotoBuffer, deletePhoto, isExternalUrl } from "../src/blob-store.ts";
+import { storePhoto, readPhotoBuffer, deletePhoto, isStoragePhotoPath } from "../src/blob-store.ts";
 import { deleteAnonUpload, maybeSweepExpiredAnonUploads } from "./anon-upload-retention";
+import { resolveOwnedPhotoPaths, validateAnonymousGradePath } from "./photo-access";
 import {
   EVENTS,
   logError,
@@ -542,6 +543,22 @@ async function handleUpdateProfile(req: Request): Promise<Response> {
     }
   }
 
+  // photo_path must reference this app's own storage (a local /uploads path or
+  // a URL on our storage origin) — never an arbitrary external URL or another
+  // user's photo. Prevents SSRF and unauthorized reads via later grading, and
+  // deletion abuse via NSFW cleanup, from a poisoned profile field.
+  if (
+    photo_path !== undefined &&
+    photo_path !== null &&
+    String(photo_path) !== "" &&
+    !isStoragePhotoPath(String(photo_path))
+  ) {
+    return json(
+      { error: "photo_path must reference an uploaded photo", code: "INVALID_PHOTO_PATH" },
+      400,
+    );
+  }
+
   // Profanity filter for bio and expanded text fields
   const textFieldsToFilter: Record<string, string | undefined> = {
     bio: bio !== undefined && typeof bio === "string" ? bio.trim() : undefined,
@@ -802,25 +819,54 @@ async function handleGrade(req: Request): Promise<Response> {
       photoPath = user.photo_path;
     }
   } else {
-    // Anonymous: read photo_path from request body
+    // Anonymous: accept ONLY a server-issued anonymous upload handle from the
+    // upload flow. Arbitrary paths (external URLs, other users' photos, file
+    // system paths) are rejected before any read, NSFW check, or deletion.
     const body = await req.json().catch(() => null);
-    if (!body?.photo_path || typeof body.photo_path !== "string") {
-      return json({ error: "photo_path is required for anonymous grading" }, 400);
+    const anonPath = validateAnonymousGradePath(body?.photo_path);
+    if (!anonPath.ok) {
+      return json(
+        {
+          error: anonPath.error,
+          ...(anonPath.code ? { code: anonPath.code } : {}),
+        },
+        400,
+      );
     }
-    photoPath = body.photo_path;
+    photoPath = anonPath.path;
   }
 
   if (!photoPath) {
     return json({ error: "No photo available for grading" }, 400);
   }
 
+  // Defense-in-depth for authenticated grading: `photo_path` must reference
+  // this app's own storage (a local /uploads path or a URL on our storage
+  // origin). This also neutralizes any legacy rows poisoned with arbitrary
+  // URLs before this hardening existed.
+  if (user && !isStoragePhotoPath(photoPath)) {
+    return json(
+      {
+        error: "Your profile photo reference is invalid. Please re-upload your photo.",
+        code: "INVALID_PHOTO_PATH",
+      },
+      400,
+    );
+  }
+
   // NSFW screening before grading
   const nsfwResult = await nsfwCheck(photoPath);
   if (nsfwResult === "NSFW") {
     logWarn(EVENTS.GRADE_NSFW_BLOCKED, { user_type: user ? "authenticated" : "anonymous" });
-    // Clean up the file
+    // Clean up the file — deletion is ownership-scoped: anonymous grades only
+    // delete the validated anon upload handle; authenticated grades only ever
+    // delete the user's own profile photo (validated above).
     try {
-      await deletePhoto(photoPath);
+      if (user) {
+        await deletePhoto(photoPath);
+      } else {
+        await deleteAnonUpload(photoPath);
+      }
     } catch {
       // Best effort cleanup
     }
@@ -986,10 +1032,25 @@ async function handleGradePhotos(req: Request): Promise<Response> {
     return json({ error: "photo_paths array is required (1-5 photos)" }, 400);
   }
 
-  const photoPaths: string[] = body.photo_paths;
-  if (photoPaths.length < 1 || photoPaths.length > 5) {
-    return json({ error: "Provide 1-5 photo paths" }, 400);
+  // Resolve submitted paths ONLY to photos the current user owns. Any
+  // cross-user, external, or fabricated path rejects the whole request, so
+  // grading and NSFW cleanup below can never read or delete anything that is
+  // not this user's own photo.
+  const ownedPhotos = await getUserPhotos(user.id);
+  const resolution = resolveOwnedPhotoPaths(
+    body.photo_paths,
+    ownedPhotos.map((p) => p.photo_path),
+  );
+  if (!resolution.ok) {
+    return json(
+      {
+        error: resolution.error,
+        ...(resolution.code ? { code: resolution.code } : {}),
+      },
+      400,
+    );
   }
+  const photoPaths = resolution.paths;
 
   // A repeat authenticated grading run consumes one paid regrade credit.
   // New free users retain one run per seven-day window.

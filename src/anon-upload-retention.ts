@@ -15,7 +15,13 @@
  */
 import { readdirSync, statSync, unlinkSync } from "node:fs";
 import path from "node:path";
-import { deletePhoto, listBlobs, uploadsDir } from "./blob-store";
+import {
+  deletePhoto,
+  isAllowedStorageUrl,
+  isStoragePhotoPath,
+  listBlobs,
+  uploadsDir,
+} from "./blob-store";
 import { EVENTS, logError, logInfo, logWarn } from "./observability";
 
 /** Filename prefix that identifies an anonymous free-preview upload. */
@@ -36,6 +42,45 @@ export function isAnonUploadPath(photoPath: string): boolean {
   if (!photoPath) return false;
   const withoutQuery = photoPath.split("?")[0] ?? photoPath;
   return path.basename(withoutQuery).startsWith(ANON_UPLOAD_PREFIX);
+}
+
+/**
+ * STRICT validation for a photo path submitted to anonymous grading. Only
+ * server-issued anonymous upload handles are accepted:
+ *
+ * - Local: `/uploads/anon_<id>.<ext>` — a safe uploads-dir filename whose
+ *   basename starts with `anon_` (rejects path traversal, other users' photos,
+ *   and any file outside the uploads directory).
+ * - External: an https URL on GradeDate's OWN storage (Vercel Blob public
+ *   domain when Blob is configured, or an explicitly configured origin) whose
+ *   pathname basename starts with `anon_`.
+ *
+ * Everything else — arbitrary external URLs (SSRF), internal/cloud-metadata
+ * hosts, `file:`/`data:` schemes, authenticated user photos, fabricated
+ * paths — is rejected. Anonymous uploads intentionally have no database
+ * record, so the naming convention plus the storage-origin allowlist is the
+ * enforcement boundary.
+ */
+export function isServerIssuedAnonPhotoPath(photoPath: string): boolean {
+  if (
+    typeof photoPath !== "string" ||
+    photoPath.length === 0 ||
+    photoPath.length > 1024
+  ) {
+    return false;
+  }
+  if (photoPath.startsWith("http://") || photoPath.startsWith("https://")) {
+    if (!isAllowedStorageUrl(photoPath)) return false;
+    let pathname = "";
+    try {
+      pathname = new URL(photoPath).pathname;
+    } catch {
+      return false;
+    }
+    return path.basename(pathname).startsWith(ANON_UPLOAD_PREFIX);
+  }
+  if (!isStoragePhotoPath(photoPath)) return false;
+  return path.basename(photoPath).startsWith(ANON_UPLOAD_PREFIX);
 }
 
 /**
