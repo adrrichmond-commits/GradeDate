@@ -629,6 +629,24 @@ export async function deleteUserPhoto(
   return rows.length > 0 ? (rows[0] as unknown as UserPhoto) : null;
 }
 
+export async function removeModeratedUserPhoto(userId: number, photoPath: string): Promise<UserPhoto | null> {
+  const matches = await sql()`SELECT * FROM user_photos WHERE user_id = ${userId} AND photo_path = ${photoPath} LIMIT 1`;
+  if (!matches.length) return null;
+  const photo = matches[0] as unknown as UserPhoto;
+  await sql()`DELETE FROM photo_grades WHERE user_id = ${userId} AND photo_path = ${photoPath}`;
+  await sql()`DELETE FROM user_photos WHERE id = ${photo.id} AND user_id = ${userId}`;
+  if (photo.is_primary) {
+    const sibling = await sql()`SELECT * FROM user_photos WHERE user_id = ${userId} ORDER BY sort_order ASC, id ASC LIMIT 1`;
+    if (sibling.length) {
+      await sql()`UPDATE user_photos SET is_primary = (id = ${sibling[0].id}) WHERE user_id = ${userId}`;
+      await sql()`UPDATE users SET photo_path = ${sibling[0].photo_path} WHERE id = ${userId}`;
+    } else {
+      await sql()`UPDATE users SET photo_path = '' WHERE id = ${userId}`;
+    }
+  }
+  return photo;
+}
+
 export async function reorderUserPhotos(
   userId: number,
   photoIds: number[],

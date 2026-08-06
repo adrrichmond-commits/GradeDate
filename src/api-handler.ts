@@ -57,6 +57,7 @@ import {
   updateUserPassword,
   addUserPhoto,
   deleteUserPhoto,
+  removeModeratedUserPhoto,
   reorderUserPhotos,
   setPrimaryPhoto,
   getUserPhotos,
@@ -113,6 +114,7 @@ import { webcrypto } from "node:crypto";
 import { storePhoto, readPhotoBuffer, deletePhoto, isStoragePhotoPath } from "../src/blob-store.ts";
 import { deleteAnonUpload, maybeSweepExpiredAnonUploads } from "./anon-upload-retention";
 import { resolveOwnedPhotoPaths, validateAnonymousGradePath } from "./photo-access";
+import { parseModerationContent, MODERATION_UNAVAILABLE_CODE, type ModerationResult } from "./moderation";
 import {
   EVENTS,
   logError,
@@ -625,17 +627,17 @@ function getWeightedRandomGrade(): number {
   return Math.max(1, Math.min(10, raw));
 }
 
-async function nsfwCheck(photoPath: string): Promise<"SAFE" | "NSFW"> {
+async function nsfwCheck(photoPath: string): Promise<ModerationResult> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
-    return "SAFE";
+    return "UNKNOWN";
   }
 
   let buffer: Buffer;
   try {
     buffer = await readPhotoBuffer(photoPath);
   } catch {
-    return "SAFE";
+    return "UNKNOWN";
   }
 
   const filename = path.basename(photoPath);
@@ -679,7 +681,7 @@ async function nsfwCheck(photoPath: string): Promise<"SAFE" | "NSFW"> {
 
     if (!response.ok) {
       logWarn(EVENTS.MODERATION_NSFW_HTTP_ERROR, { status: response.status });
-      return "SAFE";
+      return "UNKNOWN";
     }
 
     const data = (await response.json()) as {
@@ -687,14 +689,10 @@ async function nsfwCheck(photoPath: string): Promise<"SAFE" | "NSFW"> {
     };
 
     const content = data.choices?.[0]?.message?.content;
-    if (!content) {
-      return "SAFE";
-    }
-
-    return content.toUpperCase().includes("NSFW") ? "NSFW" : "SAFE";
+    return parseModerationContent(content);
   } catch (err) {
     logWarn(EVENTS.MODERATION_NSFW_FAILED, { err });
-    return "SAFE";
+    return "UNKNOWN";
   }
 }
 
@@ -856,6 +854,10 @@ async function handleGrade(req: Request): Promise<Response> {
 
   // NSFW screening before grading
   const nsfwResult = await nsfwCheck(photoPath);
+  if (nsfwResult === "UNKNOWN") {
+    logWarn(EVENTS.MODERATION_UNAVAILABLE, { user_type: user ? "authenticated" : "anonymous" });
+    return json({ error: "Photo moderation is temporarily unavailable. Please try again.", code: MODERATION_UNAVAILABLE_CODE }, 503);
+  }
   if (nsfwResult === "NSFW") {
     logWarn(EVENTS.GRADE_NSFW_BLOCKED, { user_type: user ? "authenticated" : "anonymous" });
     // Clean up the file — deletion is ownership-scoped: anonymous grades only
@@ -1075,16 +1077,18 @@ async function handleGradePhotos(req: Request): Promise<Response> {
   // NSFW check all photos first
   for (const photoPath of photoPaths) {
     const nsfwResult = await nsfwCheck(photoPath);
+    if (nsfwResult === "UNKNOWN") {
+      logWarn(EVENTS.MODERATION_UNAVAILABLE, { user_type: "authenticated", user_id: user.id });
+      return json({ error: "Photo moderation is temporarily unavailable. Please try again.", code: MODERATION_UNAVAILABLE_CODE }, 503);
+    }
     if (nsfwResult === "NSFW") {
       logWarn(EVENTS.GRADE_NSFW_BLOCKED, { user_type: "authenticated", user_id: user.id });
-      try {
-        await deletePhoto(photoPath);
-      } catch { /* ignore */ }
-
-      return json({
-        error: "One of your photos appears to contain inappropriate content. Please upload different photos.",
-        code: "NSFW",
-      }, 400);
+      const removed = await removeModeratedUserPhoto(user.id, photoPath);
+      if (removed) {
+        await deletePhoto(removed.photo_path).catch(() => false);
+        logInfo(EVENTS.MODERATION_REJECTED_CLEANUP, { user_id: user.id, reason: "nsfw", primary: removed.is_primary });
+      }
+      return json({ error: "One of your photos appears to contain inappropriate content. Please upload different photos.", code: "NSFW" }, 400);
     }
   }
 

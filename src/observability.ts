@@ -44,6 +44,8 @@ export const EVENTS = {
   GRADE_COMPLETED: "grade.completed",
   GRADE_PHOTOS_COMPLETED: "grade.photos_completed",
   GRADE_NSFW_BLOCKED: "grade.nsfw_blocked",
+  MODERATION_UNAVAILABLE: "moderation.unavailable",
+  MODERATION_REJECTED_CLEANUP: "moderation.rejected_cleanup",
   MODERATION_NSFW_HTTP_ERROR: "moderation.nsfw.http_error",
   MODERATION_NSFW_FAILED: "moderation.nsfw.failed",
   MODERATION_REPORT_RECEIVED: "moderation.report_received",
