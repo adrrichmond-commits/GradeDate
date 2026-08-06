@@ -169,7 +169,8 @@ describe("gradeAnonymousPhotos", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.kind).toBe("error");
-    expect(result.message).toContain("Too many requests");
+    expect(result.message).toContain("rate-limited");
+    expect(result.message).toContain("few minutes");
   });
 
   test("returns an error for an empty photo list", async () => {

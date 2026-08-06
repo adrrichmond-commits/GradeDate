@@ -150,10 +150,13 @@ export async function gradeAnonymousPhotos(
           message: data.error || "This photo appears to contain inappropriate content.",
         };
       }
+      const retryAfter = res.headers.get("Retry-After") || (typeof data?.retry_after_sec === "number" ? String(data.retry_after_sec) : null);
       return {
         ok: false,
         kind: "error",
-        message: data?.error || "Grading failed. Please try again.",
+        message: res.status === 429
+          ? `Grading is temporarily rate-limited. Please try again in ${retryAfter ? `${retryAfter} seconds` : "a few minutes"}.`
+          : (data?.error || "Grading failed. Please try again."),
       };
     }
 
