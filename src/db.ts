@@ -1375,17 +1375,37 @@ export async function useDailyLike(userId: number): Promise<number> {
 
 // ── Likes ────────────────────────────────────────────────────
 
+/** A stable advisory lock serializes block/relationship mutations for a pair. */
+function relationshipLockKey(a: number, b: number): number {
+  const low = Math.min(a, b);
+  const high = Math.max(a, b);
+  return Math.abs(Math.imul(low, 1000003) + high);
+}
+
 export async function recordLike(
   likerId: number,
   likedId: number,
   action: string = "like",
-): Promise<void> {
-  await sql()`
-    INSERT INTO likes (liker_id, liked_id, action)
-    VALUES (${likerId}, ${likedId}, ${action})
-    ON CONFLICT (liker_id, liked_id)
-    DO UPDATE SET action = ${action}, created_at = NOW()
-  `;
+): Promise<boolean> {
+  const key = relationshipLockKey(likerId, likedId);
+  const results = await sql().transaction((txn) => [
+    txn`SELECT pg_advisory_xact_lock(${key})`,
+    txn`SELECT 1 FROM blocks
+        WHERE (blocker_id = ${likerId} AND blocked_id = ${likedId})
+           OR (blocker_id = ${likedId} AND blocked_id = ${likerId})
+        LIMIT 1`,
+    txn`INSERT INTO likes (liker_id, liked_id, action)
+        SELECT ${likerId}, ${likedId}, ${action}
+        WHERE NOT EXISTS (
+          SELECT 1 FROM blocks
+          WHERE (blocker_id = ${likerId} AND blocked_id = ${likedId})
+             OR (blocker_id = ${likedId} AND blocked_id = ${likerId})
+        )
+        ON CONFLICT (liker_id, liked_id)
+        DO UPDATE SET action = ${action}, created_at = NOW()`,
+  ]);
+  // The INSERT result is empty when a block exists (including a stale block).
+  return Array.isArray(results) && Array.isArray(results[2]) && results[2].length > 0;
 }
 
 export async function getLike(likerId: number, likedId: number): Promise<Like | null> {
@@ -1419,6 +1439,7 @@ export async function getLikers(
     JOIN users u ON u.id = l.liker_id
     WHERE l.liked_id = ${userId}
       AND l.action = 'like'
+      AND NOT EXISTS (SELECT 1 FROM blocks b WHERE (b.blocker_id = ${userId} AND b.blocked_id = u.id) OR (b.blocker_id = u.id AND b.blocked_id = ${userId}))
       AND NOT EXISTS (
         SELECT 1 FROM likes l2
         WHERE l2.liker_id = ${userId} AND l2.liked_id = u.id AND l2.action = 'like'
@@ -1441,20 +1462,30 @@ export async function getLikers(
 
 export async function createMatch(user1Id: number, user2Id: number): Promise<Match | null> {
   const [a, b] = user1Id < user2Id ? [user1Id, user2Id] : [user2Id, user1Id];
-  const rows = await sql()`
-    INSERT INTO matches (user1_id, user2_id)
-    VALUES (${a}, ${b})
-    ON CONFLICT (user1_id, user2_id) DO NOTHING
-    RETURNING *
-  `;
-  if (rows.length > 0) {
-    return rows[0] as unknown as Match;
+  const key = relationshipLockKey(a, b);
+  const transaction = await sql().transaction((txn) => [
+    txn`SELECT pg_advisory_xact_lock(${key})`,
+    txn`INSERT INTO matches (user1_id, user2_id)
+        SELECT ${a}, ${b}
+        WHERE NOT EXISTS (
+          SELECT 1 FROM blocks
+          WHERE (blocker_id = ${a} AND blocked_id = ${b})
+             OR (blocker_id = ${b} AND blocked_id = ${a})
+        )
+        ON CONFLICT (user1_id, user2_id) DO NOTHING
+        RETURNING *`,
+  ]);
+  const rows = transaction[1] as unknown as any[];
+  if (!rows || rows.length === 0) {
+    // A blocked pair must never expose or recreate a match.
+    const blocked = await isBlocked(a, b);
+    if (blocked) return null;
+    const existing = await sql()`
+      SELECT * FROM matches WHERE user1_id = ${a} AND user2_id = ${b}
+    `;
+    return existing.length > 0 ? (existing[0] as unknown as Match) : null;
   }
-  // Already exists — fetch the existing match
-  const existing = await sql()`
-    SELECT * FROM matches WHERE user1_id = ${a} AND user2_id = ${b}
-  `;
-  return existing.length > 0 ? (existing[0] as unknown as Match) : null;
+  return rows[0] as unknown as Match;
 }
 
 /**
@@ -1527,7 +1558,8 @@ export async function getMatchesForUser(userId: number): Promise<MatchWithUser[]
       m.mutual_league_score
     FROM matches m
     JOIN users u ON u.id = CASE WHEN m.user1_id = ${userId} THEN m.user2_id ELSE m.user1_id END
-    WHERE m.user1_id = ${userId} OR m.user2_id = ${userId}
+    WHERE (m.user1_id = ${userId} OR m.user2_id = ${userId})
+      AND NOT EXISTS (SELECT 1 FROM blocks b WHERE (b.blocker_id = ${userId} AND b.blocked_id = CASE WHEN m.user1_id = ${userId} THEN m.user2_id ELSE m.user1_id END) OR (b.blocker_id = CASE WHEN m.user1_id = ${userId} THEN m.user2_id ELSE m.user1_id END AND b.blocked_id = ${userId}))
     ORDER BY COALESCE(last_message_at, m.created_at) DESC
   `;
   return rows as unknown as MatchWithUser[];
@@ -1598,25 +1630,18 @@ export async function markMessagesRead(matchId: number, readerId: number): Promi
 // ── Blocking ───────────────────────────────────────────────────
 
 export async function blockUser(blockerId: number, blockedId: number): Promise<void> {
-  await sql()`
-    INSERT INTO blocks (blocker_id, blocked_id)
-    VALUES (${blockerId}, ${blockedId})
-    ON CONFLICT (blocker_id, blocked_id) DO NOTHING
-  `;
-
-  // Remove all likes between the two users in both directions
-  await sql()`
-    DELETE FROM likes
-    WHERE (liker_id = ${blockerId} AND liked_id = ${blockedId})
-       OR (liker_id = ${blockedId} AND liked_id = ${blockerId})
-  `;
-
-  // Dissolve any existing match between the two users
   const [a, b] = blockerId < blockedId ? [blockerId, blockedId] : [blockedId, blockerId];
-  await sql()`
-    DELETE FROM matches
-    WHERE user1_id = ${a} AND user2_id = ${b}
-  `;
+  const key = relationshipLockKey(a, b);
+  await sql().transaction((txn) => [
+    txn`SELECT pg_advisory_xact_lock(${key})`,
+    txn`INSERT INTO blocks (blocker_id, blocked_id)
+        VALUES (${blockerId}, ${blockedId})
+        ON CONFLICT (blocker_id, blocked_id) DO NOTHING`,
+    txn`DELETE FROM likes
+        WHERE (liker_id = ${blockerId} AND liked_id = ${blockedId})
+           OR (liker_id = ${blockedId} AND liked_id = ${blockerId})`,
+    txn`DELETE FROM matches WHERE user1_id = ${a} AND user2_id = ${b}`,
+  ]);
 }
 
 export async function isBlocked(userId: number, otherUserId: number): Promise<boolean> {
