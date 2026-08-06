@@ -640,8 +640,9 @@ function ProfilePage() {
                       >
                         <input
                           type="file"
+                          aria-label={`Add photo ${i + 1}`}
                           accept="image/*"
-                          className="hidden"
+                          className="sr-only"
                           onChange={(e) => {
                             const file = e.target.files?.[0];
                             if (file) {

@@ -558,10 +558,11 @@ function GradePage() {
                     <input
                       ref={fileInputRef}
                       type="file"
+                      aria-label="Upload photos"
                       accept="image/jpeg,image/png,image/webp"
                       multiple
                       onChange={handleAddPhotos}
-                      className="hidden"
+                      className="sr-only"
                     />
                   </label>
                 )}

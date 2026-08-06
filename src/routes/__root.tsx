@@ -162,7 +162,11 @@ function AppShell() {
     document.body.style.overflow = "hidden";
     const firstLink = document.querySelector<HTMLElement>("#mobile-navigation a, #mobile-navigation button");
     const timer = window.setTimeout(() => firstLink?.focus(), 0);
+    const media = window.matchMedia("(min-width: 768px)");
+    const closeOnDesktop = () => { if (media.matches) setMenuOpen(false); };
+    media.addEventListener("change", closeOnDesktop);
     return () => {
+      media.removeEventListener("change", closeOnDesktop);
       window.clearTimeout(timer);
       document.body.style.overflow = previousOverflow;
       menuButtonRef.current?.focus();
@@ -249,6 +253,7 @@ function AppShell() {
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100">
       {/* Navbar */}
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-lg focus:bg-rose-600 focus:px-4 focus:py-3 focus:text-white">Skip to main content</a>
       <nav className="fixed inset-x-0 top-0 z-50 border-b border-white/5 bg-gray-950/80 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4">
           <Link to="/" className="flex items-center gap-2 text-xl font-bold tracking-tight">
@@ -476,7 +481,7 @@ function AppShell() {
             </div>
           </div>
         )}
-        <Outlet />
+        <main id="main-content" tabIndex={-1}><Outlet /></main>
       </div>
 
       {/* Footer */}

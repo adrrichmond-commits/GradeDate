@@ -83,9 +83,10 @@ function DemoGrader() {
             <span className="text-xs text-gray-500">PNG, JPG — demo only, no real analysis</span>
             <input
               type="file"
+              aria-label="Upload a selfie for the demo"
               accept="image/*"
               onChange={handleFile}
-              className="hidden"
+              className="sr-only"
             />
           </label>
         )}

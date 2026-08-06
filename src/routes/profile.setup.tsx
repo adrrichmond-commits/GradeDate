@@ -333,8 +333,9 @@ function ProfileSetup() {
                       >
                         <input
                           type="file"
+                          aria-label={`Add photo ${i + 1}`}
                           accept="image/*"
-                          className="hidden"
+                          className="sr-only"
                           ref={(el) => {
                             fileInputRefs.current[i] = el;
                           }}
