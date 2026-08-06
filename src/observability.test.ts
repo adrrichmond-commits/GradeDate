@@ -218,3 +218,11 @@ describe("level configuration", () => {
     setLogLevel("info");
   });
 });
+
+describe("degraded grading event categories", () => {
+  test("uses stable safe categories for moderation and fallback", async () => {
+    const { EVENTS } = await import("./observability");
+    expect(EVENTS.MODERATION_UNAVAILABLE).toBe("moderation.unavailable");
+    expect(EVENTS.GRADE_FALLBACK).toBe("grade.fallback");
+  });
+});

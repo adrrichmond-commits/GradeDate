@@ -369,6 +369,11 @@ function GradePage() {
           setState("nsfw");
           return;
         }
+        if (gradeData.code === "MODERATION_UNAVAILABLE") {
+          setErrorMessage(gradeData.error || "This photo was not approved or graded yet because moderation is temporarily unavailable. Please try again; this does not mean the photo is unsafe.");
+          setState("error");
+          return;
+        }
         if (gradeData.code === "FREE_REGRADE_USED") {
           setErrorMessage(gradeData.error || "Free regrade already used this week.");
           setState("error");
@@ -745,6 +750,7 @@ function GradePage() {
                         grade={pg.grade}
                         percentileLabel={null}
                         photoUrl={resolveGradePhotoSrc(pg.dataUrl, pg.previewUrl, pg.photo_path)}
+                        gradingMethod={gradingMethod}
                         compact
                       />
                     </div>
@@ -818,6 +824,7 @@ function GradePage() {
                 <ShareCard
                   grade={grade}
                   percentileLabel={percentileLabel}
+                  gradingMethod={gradingMethod}
                   handleShare={handleShare}
                   handleCopyGrade={handleCopyGrade}
                 />
@@ -1053,12 +1060,14 @@ function ShareCard({
   percentileLabel,
   percentileCity,
   photoUrl,
+  gradingMethod,
   compact,
 }: {
   grade: number | null;
   percentileLabel: string | null;
   percentileCity?: string | null;
   photoUrl?: string;
+  gradingMethod?: string | null;
   compact?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -1072,14 +1081,15 @@ function ShareCard({
     setSiteOrigin(resolveSiteOrigin());
   }, []);
   const tagline = siteOrigin ? `Craft your confidence at ${siteOrigin}` : "Craft your confidence";
+  const methodLabel = gradingMethod && gradingMethod !== "ai" ? (gradingMethod === "mock" ? "Simulated grade — AI unavailable" : "Some grades simulated — AI unavailable") : "AI-assisted grade";
 
   const displayGrade = grade ?? "?";
 
   const shareText =
     percentileLabel && grade !== null
-      ? `I scored ${grade}/10 — ${percentileLabel}${percentileCity ? ` in ${percentileCity}` : ""}. ${tagline}`
+      ? `I scored ${grade}/10 — ${percentileLabel}${percentileCity ? ` in ${percentileCity}` : ""}. ${methodLabel}. ${tagline}`
       : grade !== null
-        ? `I scored ${grade}/10. ${tagline}`
+        ? `I scored ${grade}/10. ${methodLabel}. ${tagline}`
         : tagline;
 
   const showFeedback = (msg: string) => {
@@ -1221,6 +1231,7 @@ function ShareCard({
     // Tagline
     ctx.fillStyle = "rgba(255,255,255,0.55)";
     ctx.font = "24px Inter, system-ui, sans-serif";
+    ctx.fillText(methodLabel, textX, 500);
     ctx.fillText("Craft your confidence at", textX, 530);
 
     // ── Bottom branding ──

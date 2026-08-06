@@ -42,6 +42,7 @@ export const EVENTS = {
   VERCEL_DB_INIT_FAILED: "vercel.db.init_failed",
   // Grading
   GRADE_COMPLETED: "grade.completed",
+  GRADE_FALLBACK: "grade.fallback",
   GRADE_PHOTOS_COMPLETED: "grade.photos_completed",
   GRADE_NSFW_BLOCKED: "grade.nsfw_blocked",
   MODERATION_UNAVAILABLE: "moderation.unavailable",

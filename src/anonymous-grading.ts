@@ -48,7 +48,7 @@ export interface AnonymousGradingSuccess {
 
 export interface AnonymousGradingFailure {
   ok: false;
-  kind: "nsfw" | "error";
+  kind: "nsfw" | "moderation_unavailable" | "error";
   message: string;
 }
 
@@ -143,6 +143,9 @@ export async function gradeAnonymousPhotos(
     }
 
     if (!res.ok) {
+      if (data?.code === "MODERATION_UNAVAILABLE") {
+        return { ok: false, kind: "moderation_unavailable", message: data.error || "This photo was not approved or graded yet because moderation is temporarily unavailable. Please try again; this does not mean the photo is unsafe." };
+      }
       if (data?.code === "NSFW") {
         return {
           ok: false,
