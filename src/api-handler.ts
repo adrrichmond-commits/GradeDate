@@ -1344,7 +1344,8 @@ async function handleLike(req: Request): Promise<Response> {
     }
   }
 
-  await recordLike(user.id, likedId, "like");
+  const likeRecorded = await recordLike(user.id, likedId, "like");
+  if (!likeRecorded) return json({ error: "This relationship is unavailable" }, 403);
 
   // Check if this creates a mutual match
   const theirLike = await getLike(likedId, user.id);
@@ -1535,6 +1536,10 @@ async function handleGetMessages(req: Request, matchId: number): Promise<Respons
     return json({ error: "You are not a participant in this match" }, 403);
   }
 
+  const otherUserId = match.user1_id === user.id ? match.user2_id : match.user1_id;
+  if (await isBlocked(user.id, otherUserId)) {
+    return json({ error: "This relationship is unavailable" }, 403);
+  }
   // Support ?before= query param for pagination
   const url = new URL(req.url);
   const beforeParam = url.searchParams.get("before");
