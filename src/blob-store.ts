@@ -46,6 +46,72 @@ export function isExternalUrl(photoPath: string): boolean {
   return photoPath.startsWith("https://") || photoPath.startsWith("http://");
 }
 
+/** A local uploads-dir photo reference: `/uploads/<safe filename>`. */
+const LOCAL_UPLOAD_PATH_RE = /^\/uploads\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+/**
+ * Origins explicitly allowed for stored photo URLs (comma-separated env
+ * `GRADEDATE_STORAGE_ORIGINS`, e.g. a custom Blob store domain). Vercel Blob's
+ * public domain is additionally allowed whenever Blob is configured.
+ */
+export function configuredStorageOrigins(): string[] {
+  const raw = process.env.GRADEDATE_STORAGE_ORIGINS;
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+/**
+ * True when `url` is a photo URL on GradeDate's OWN storage — Vercel Blob's
+ * public domain (`https://<store>.public.blob.vercel-storage.com/...`) when
+ * Blob is configured, or an origin explicitly listed in
+ * `GRADEDATE_STORAGE_ORIGINS`. Every other URL (internal hosts, cloud
+ * metadata endpoints, arbitrary external sites) is rejected, which closes the
+ * SSRF vector in readPhotoBuffer and the deletion-abuse vector in deletePhoto.
+ */
+export function isAllowedStorageUrl(url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "https:") return false;
+  const origin = parsed.origin.toLowerCase();
+  if (configuredStorageOrigins().includes(origin)) return true;
+  const host = parsed.host.toLowerCase();
+  if (
+    isVercelBlob() &&
+    (host === "public.blob.vercel-storage.com" ||
+      host.endsWith(".public.blob.vercel-storage.com"))
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * True when a stored photo reference is one this app may read or delete: a
+ * local `/uploads/...` path (safe filename, no traversal) or an https URL on
+ * GradeDate's own storage. Used to validate client-submitted photo paths
+ * before any grading, NSFW check, or deletion runs.
+ */
+export function isStoragePhotoPath(photoPath: string): boolean {
+  if (
+    typeof photoPath !== "string" ||
+    photoPath.length === 0 ||
+    photoPath.length > 1024
+  ) {
+    return false;
+  }
+  if (photoPath.startsWith("http://") || photoPath.startsWith("https://")) {
+    return isAllowedStorageUrl(photoPath);
+  }
+  return LOCAL_UPLOAD_PATH_RE.test(photoPath);
+}
+
 /**
  * Get the local uploads directory.
  */
@@ -98,9 +164,18 @@ export async function storePhoto(
 
 /**
  * Read a photo as a Buffer, whether it's stored locally or on Vercel Blob.
+ *
+ * SSRF-hardened: external URLs are fetched ONLY when they are on GradeDate's
+ * own storage (see isAllowedStorageUrl); anything else — internal hosts,
+ * cloud metadata endpoints, arbitrary external sites — throws before any
+ * network request. Local reads are limited to `/uploads/...` paths.
  */
 export async function readPhotoBuffer(photoPath: string): Promise<Buffer> {
   if (isExternalUrl(photoPath)) {
+    if (!isAllowedStorageUrl(photoPath)) {
+      logWarn(EVENTS.BLOB_STORE_UNSAFE_PATH, { target: "external" });
+      throw new Error("Refusing to read photo from an external URL");
+    }
     const response = await fetch(photoPath);
     if (!response.ok) {
       throw new Error(`Failed to fetch photo from URL: ${response.status}`);
@@ -109,7 +184,12 @@ export async function readPhotoBuffer(photoPath: string): Promise<Buffer> {
     return Buffer.from(arrayBuffer);
   }
 
-  // Local filesystem
+  // Local filesystem — only uploads-dir paths (strict: safe filename, no
+  // traversal)
+  if (!isStoragePhotoPath(photoPath)) {
+    logWarn(EVENTS.BLOB_STORE_UNSAFE_PATH, { target: "local" });
+    throw new Error("Refusing to read photo outside the uploads directory");
+  }
   const dir = uploadsDir();
   const filename = path.basename(photoPath);
   const filePath = path.join(dir, filename);
@@ -127,6 +207,12 @@ export async function readPhotoBuffer(photoPath: string): Promise<Buffer> {
  */
 export async function deletePhoto(photoPath: string): Promise<boolean> {
   if (isExternalUrl(photoPath)) {
+    // Deletion-abuse guard: never pass an arbitrary URL to the blob client —
+    // only URLs on GradeDate's own storage are deletable.
+    if (!isAllowedStorageUrl(photoPath)) {
+      logWarn(EVENTS.BLOB_STORE_UNSAFE_PATH, { target: "external" });
+      return false;
+    }
     if (isVercelBlob()) {
       const client = await getBlobClient();
       if (!client) {
@@ -145,7 +231,12 @@ export async function deletePhoto(photoPath: string): Promise<boolean> {
     return true;
   }
 
-  // Local filesystem
+  // Local filesystem — only uploads-dir paths (strict: safe filename, no
+  // traversal)
+  if (!isStoragePhotoPath(photoPath)) {
+    logWarn(EVENTS.BLOB_STORE_UNSAFE_PATH, { target: "local" });
+    return false;
+  }
   try {
     const dir = uploadsDir();
     const filename = path.basename(photoPath);

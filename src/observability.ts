@@ -62,6 +62,7 @@ export const EVENTS = {
   BLOB_STORE_TOKEN_MISSING: "blob_store.token_missing",
   BLOB_STORE_CLIENT_UNAVAILABLE: "blob_store.client_unavailable",
   BLOB_STORE_DELETE_FAILED: "blob_store.delete_failed",
+  BLOB_STORE_UNSAFE_PATH: "blob_store.unsafe_path",
   // Email & geo providers
   EMAIL_PROVIDER_UNCONFIGURED: "email.provider_unconfigured",
   EMAIL_SEND_FAILED: "email.send_failed",
