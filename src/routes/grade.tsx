@@ -3,6 +3,11 @@ import { useState, useEffect, useRef } from "react";
 import { useAuth } from "~/auth-context";
 import { getCsrfToken } from "~/csrf-client";
 import { gradeAnonymousPhotos } from "~/anonymous-grading";
+import { EXPERIMENTS } from "~/experiment";
+import {
+  getExperimentVariant,
+  recordExperimentEvent,
+} from "~/experiment-client";
 
 import { resolveSiteOrigin, resolveSiteUrl } from "~/site-url";
 import {
@@ -153,6 +158,39 @@ function GradePage() {
   const isSubscribed = user?.subscription_status === "active";
   const isAuthenticated = !!user;
   const maxPhotos = 5; // All users can upload up to 5 photos
+
+  // ── Conversion experiment: grade-result CTA (anonymous signup + Premium) ──
+  const ctaExperiment = EXPERIMENTS.GRADE_CTA.name; // "grade-cta"
+  const ctaRoute = EXPERIMENTS.GRADE_CTA.routes[0]!; // "grade.result"
+  // The variant resolves after mount (it derives from the anonymous cookie);
+  // until then the control copy renders, which matches the server render so
+  // there is no hydration mismatch.
+  const [ctaVariant, setCtaVariant] = useState<string | null>(null);
+  useEffect(() => {
+    setCtaVariant(getExperimentVariant(ctaExperiment));
+  }, [ctaExperiment]);
+  // One exposure per result view per visitor state (anon vs free user).
+  const ctaExposureKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (authLoading || state !== "done" || ctaVariant === null || isSubscribed) return;
+    const key = user ? "free" : "anon";
+    if (ctaExposureKey.current === key) return;
+    ctaExposureKey.current = key;
+    void recordExperimentEvent(ctaExperiment, "exposure", { route: ctaRoute });
+  }, [authLoading, state, ctaVariant, user, isSubscribed, ctaExperiment, ctaRoute]);
+  const recordSignupClick = () => {
+    void recordExperimentEvent(ctaExperiment, "conversion", {
+      route: ctaRoute,
+      conversion: "signup_click",
+    });
+  };
+  const recordSubscribeClick = () => {
+    void recordExperimentEvent(ctaExperiment, "conversion", {
+      route: ctaRoute,
+      conversion: "subscribe_click",
+    });
+  };
+  const showTreatmentCta = ctaVariant === "treatment";
 
   // For anonymous users, fetch a CSRF token on mount so upload/grade POSTs work
   useEffect(() => {
@@ -420,6 +458,8 @@ function GradePage() {
     setPercentileCity(null);
     setPercentileLabel(null);
     setCoachingTips([]);
+    // Allow the next result view to record a fresh CTA exposure.
+    ctaExposureKey.current = null;
     // Revoke preview URLs
     photos.forEach((p) => URL.revokeObjectURL(p.previewUrl));
     setPhotos([]);
@@ -850,21 +890,25 @@ function GradePage() {
                 {!user && (
                   <div className="w-full rounded-xl border border-rose-500/30 bg-gradient-to-b from-gray-900 to-gray-950 p-6 text-center shadow-lg shadow-rose-500/5">
                     <div className="mb-3 text-sm font-medium text-gray-200">
-                      Like your grade?
+                      {showTreatmentCta ? "Sign up free" : "Like your grade?"}
                     </div>
                     <p className="mb-1 text-2xl font-extrabold">
                       <span className="text-rose-400">$5.99</span>
                       <span className="text-lg text-gray-500">/month</span>
                     </p>
                     <p className="mb-5 text-sm text-gray-400">
-                      Sign up to find matches at your level, chat, and connect
-                      with real people.
+                      {showTreatmentCta
+                        ? "Create your profile for free, see matches at your level, and chat with real people. Upgrade to Premium for $5.99/mo anytime."
+                        : "Sign up to find matches at your level, chat, and connect with real people."}
                     </p>
                     <Link
                       to="/signup"
+                      onClick={recordSignupClick}
                       className="inline-block w-full rounded-full bg-rose-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-rose-600/25 transition hover:bg-rose-500 hover:shadow-rose-500/30"
                     >
-                      Sign Up to Find Your Matches
+                      {showTreatmentCta
+                        ? "Create Your Free Profile"
+                        : "Sign Up to Find Your Matches"}
                     </Link>
                     <button
                       onClick={reset}
@@ -878,21 +922,27 @@ function GradePage() {
                 {user && !isSubscribed && (
                   <div className="w-full rounded-xl border border-rose-500/30 bg-gradient-to-b from-gray-900 to-gray-950 p-6 text-center shadow-lg shadow-rose-500/5">
                     <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-rose-400">
-                      See Your Best Matches
+                      {showTreatmentCta
+                        ? "Unlock your matches"
+                        : "See Your Best Matches"}
                     </div>
                     <p className="mb-1 text-2xl font-extrabold">
                       <span className="text-rose-400">$5.99</span>
                       <span className="text-lg text-gray-500">/month</span>
                     </p>
                     <p className="mb-5 text-sm text-gray-400">
-                      Subscribe to browse matches at your grade level, chat,
-                      and connect with real people.
+                      {showTreatmentCta
+                        ? "Subscribe to browse matches at your grade level, chat, and connect with real people. $5.99/mo — cancel anytime."
+                        : "Subscribe to browse matches at your grade level, chat, and connect with real people."}
                     </p>
                     <Link
                       to="/subscribe"
+                      onClick={recordSubscribeClick}
                       className="inline-block w-full rounded-full bg-rose-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-rose-600/25 transition hover:bg-rose-500 hover:shadow-rose-500/30"
                     >
-                      Subscribe to See Your Matches — $5.99/mo
+                      {showTreatmentCta
+                        ? "Subscribe — $5.99/mo"
+                        : "Subscribe to See Your Matches — $5.99/mo"}
                     </Link>
                     <button
                       onClick={reset}
@@ -987,21 +1037,25 @@ function GradePage() {
                 {!user && (
                   <div className="w-full rounded-xl border border-rose-500/30 bg-gradient-to-b from-gray-900 to-gray-950 p-6 text-center shadow-lg shadow-rose-500/5">
                     <div className="mb-3 text-sm font-medium text-gray-200">
-                      Like your grade?
+                      {showTreatmentCta ? "Sign up free" : "Like your grade?"}
                     </div>
                     <p className="mb-1 text-2xl font-extrabold">
                       <span className="text-rose-400">$5.99</span>
                       <span className="text-lg text-gray-500">/month</span>
                     </p>
                     <p className="mb-5 text-sm text-gray-400">
-                      Sign up to find matches at your level, chat, and connect
-                      with real people.
+                      {showTreatmentCta
+                        ? "Create your profile for free, see matches at your level, and chat with real people. Upgrade to Premium for $5.99/mo anytime."
+                        : "Sign up to find matches at your level, chat, and connect with real people."}
                     </p>
                     <Link
                       to="/signup"
+                      onClick={recordSignupClick}
                       className="inline-block w-full rounded-full bg-rose-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-rose-600/25 transition hover:bg-rose-500 hover:shadow-rose-500/30"
                     >
-                      Sign Up to Find Your Matches
+                      {showTreatmentCta
+                        ? "Create Your Free Profile"
+                        : "Sign Up to Find Your Matches"}
                     </Link>
                     <button
                       onClick={reset}
@@ -1015,21 +1069,27 @@ function GradePage() {
                 {user && !isSubscribed && (
                   <div className="w-full rounded-xl border border-rose-500/30 bg-gradient-to-b from-gray-900 to-gray-950 p-6 text-center shadow-lg shadow-rose-500/5">
                     <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-rose-400">
-                      See Your Best Matches
+                      {showTreatmentCta
+                        ? "Unlock your matches"
+                        : "See Your Best Matches"}
                     </div>
                     <p className="mb-1 text-2xl font-extrabold">
                       <span className="text-rose-400">$5.99</span>
                       <span className="text-lg text-gray-500">/month</span>
                     </p>
                     <p className="mb-5 text-sm text-gray-400">
-                      Subscribe to browse matches at your grade level, chat,
-                      and connect with real people.
+                      {showTreatmentCta
+                        ? "Subscribe to browse matches at your grade level, chat, and connect with real people. $5.99/mo — cancel anytime."
+                        : "Subscribe to browse matches at your grade level, chat, and connect with real people."}
                     </p>
                     <Link
                       to="/subscribe"
+                      onClick={recordSubscribeClick}
                       className="inline-block w-full rounded-full bg-rose-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-rose-600/25 transition hover:bg-rose-500 hover:shadow-rose-500/30"
                     >
-                      Subscribe to See Your Matches — $5.99/mo
+                      {showTreatmentCta
+                        ? "Subscribe — $5.99/mo"
+                        : "Subscribe to See Your Matches — $5.99/mo"}
                     </Link>
                     <button
                       onClick={reset}

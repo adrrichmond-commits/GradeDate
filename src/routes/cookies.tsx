@@ -13,7 +13,7 @@ function CookiePolicy() {
           Cookie Policy
         </h1>
         <p className="text-gray-400">
-          Last updated: July 20, 2026
+          Last updated: August 6, 2026
         </p>
       </div>
 
@@ -53,6 +53,13 @@ function CookiePolicy() {
               of inactivity, or when you log out.
             </li>
           </ul>
+          <p className="mt-3 leading-relaxed">
+            We also use one first-party cookie (<code>gd_exp_id</code>) that holds a random,
+            anonymous identifier. It exists only to keep your experience consistent when we
+            test different versions of a page — for example, the wording of a signup button.
+            It contains no personal information, is never shared with anyone, and is never
+            sent to our servers: we only record which version of the page you saw.
+          </p>
         </section>
 
         {/* What We Don't Use */}
