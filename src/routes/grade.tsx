@@ -5,7 +5,13 @@ import { getCsrfToken } from "~/csrf-client";
 import { gradeAnonymousPhotos } from "~/anonymous-grading";
 
 import { resolveSiteOrigin, resolveSiteUrl } from "~/site-url";
-import { fileToDataUrl, resolveGradePhotoSrc } from "~/grade-photo-source";
+import {
+  attachPhotoSources,
+  ensurePhotoDataUrls,
+  fileToDataUrl,
+  resolveGradePhotoSrc,
+  type GradePhotoEntry,
+} from "~/grade-photo-source";
 export const Route = createFileRoute("/grade")({
   component: GradePage,
 });
@@ -63,9 +69,32 @@ interface CoachingTip {
 function ResultPhoto({ src, alt }: { src: string; alt: string }) {
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
+  const imgRef = useRef<HTMLImageElement | null>(null);
   useEffect(() => {
     setLoaded(false);
     setFailed(false);
+  }, [src]);
+  // Belt-and-braces: never let the reveal depend on React's onLoad event. For
+  // data: URLs the load event can fire before React's delegation listener is
+  // ready, which previously left the img permanently `hidden` (display:none)
+  // behind a skeleton even though the image had fully decoded. If the img is
+  // already complete on mount — or hasn't raised onLoad within a short grace
+  // period — derive the state from the img's actual decode status.
+  useEffect(() => {
+    const el = imgRef.current;
+    if (!el || !src) return;
+    if (el.complete) {
+      if (el.naturalWidth > 0) setLoaded(true);
+      else setFailed(true);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      if (el.complete) {
+        if (el.naturalWidth > 0) setLoaded(true);
+        else setFailed(true);
+      }
+    }, 1500);
+    return () => window.clearTimeout(timer);
   }, [src]);
   if (!src || failed) {
     return (
@@ -79,16 +108,17 @@ function ResultPhoto({ src, alt }: { src: string; alt: string }) {
     );
   }
   return (
-    <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-gray-800/60">
+    <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-gray-800/60">
       {!loaded && (
-        <div className="h-full w-full animate-pulse bg-gray-800" aria-hidden="true" />
+        <div className="absolute inset-0 animate-pulse bg-gray-800" aria-hidden="true" />
       )}
       <img
+        ref={imgRef}
         src={src}
         alt={alt}
         onLoad={() => setLoaded(true)}
         onError={() => setFailed(true)}
-        className={`h-full w-full object-cover ${loaded ? "" : "hidden"}`}
+        className="relative h-full w-full object-cover"
       />
     </div>
   );
@@ -188,22 +218,21 @@ function GradePage() {
     setPhotos((prev) => [...prev, ...newPhotos]);
     setErrorMessage("");
 
-    // Anonymous previews have no server-side persistence: the upload is
-    // deleted right after grading and blob: preview URLs can be invalidated,
-    // so read a durable base64 source for each photo now. Result cards use
-    // it first and fall back to the blob preview / server path.
-    if (!isAuthenticated) {
-      for (const entry of newPhotos) {
-        fileToDataUrl(entry.file)
-          .then((dataUrl) => {
-            setPhotos((prev) =>
-              prev.map((ph) => (ph.file === entry.file ? { ...ph, dataUrl } : ph))
-            );
-          })
-          .catch(() => {
-            // Non-fatal: result cards fall back to the blob preview / path.
-          });
-      }
+    // Read a durable base64 source for each photo now (all users). The upload
+    // is deleted right after anonymous grading, and blob: preview URLs are
+    // CSP-blocked (`img-src` has no blob:) and can be invalidated, so result
+    // cards must not depend on either. The data URL is the only page-lifetime
+    // source that is guaranteed to render.
+    for (const entry of newPhotos) {
+      fileToDataUrl(entry.file)
+        .then((dataUrl) => {
+          setPhotos((prev) =>
+            prev.map((ph) => (ph.file === entry.file ? { ...ph, dataUrl } : ph))
+          );
+        })
+        .catch(() => {
+          // Non-fatal: result cards fall back to the blob preview / path.
+        });
     }
 
     // Reset the file input so the same file can be added again
@@ -228,29 +257,14 @@ function GradePage() {
     setErrorMessage("");
 
     try {
-      // Snapshot durable sources before starting the request. FileReader is
-      // asynchronous; if grading finishes first, the result card can render
-      // after the anonymous upload has been deleted while its data URL is
-      // still missing from React state. Awaiting here makes the source
+      // Snapshot durable sources before starting the request (all users).
+      // FileReader is asynchronous; if grading finishes first, the result card
+      // can render after the anonymous upload has been deleted while its data
+      // URL is still missing from React state. Awaiting here makes the source
       // available for the first result render instead of relying on a later
       // state update (or a now-dead blob/server URL).
-      const photosForGrade = !isAuthenticated
-        ? await Promise.all(
-            photos.map(async (photo) => {
-              if (photo.dataUrl) return photo;
-              try {
-                const dataUrl = await fileToDataUrl(photo.file);
-                return { ...photo, dataUrl };
-              } catch {
-                return photo;
-              }
-            })
-          )
-        : photos;
-
-      if (!isAuthenticated) {
-        setPhotos(photosForGrade);
-      }
+      const photosForGrade = await ensurePhotoDataUrls(photos);
+      setPhotos(photosForGrade);
 
       // Step 1: Upload all photos
       const uploadPaths: string[] = [];
@@ -316,14 +330,11 @@ function GradePage() {
           return;
         }
 
-        // Build photo grades with preview URLs
-        const gradesWithPreviews: PhotoGradeResult[] = result.grades.map(
-          (g, i) => ({
-            ...g,
-            // Match preview URL by index
-            previewUrl: photosForGrade[i]?.previewUrl || "",
-            dataUrl: photosForGrade[i]?.dataUrl,
-          })
+        // Build photo grades with their durable render sources (data URL >
+        // blob preview > server path), matched by index.
+        const gradesWithPreviews: PhotoGradeResult[] = attachPhotoSources(
+          result.grades,
+          photosForGrade
         );
 
         setPhotoGrades(gradesWithPreviews);
@@ -367,13 +378,11 @@ function GradePage() {
         return;
       }
 
-      // Build photo grades with preview URLs
-      const gradesWithPreviews: PhotoGradeResult[] = (gradeData.grades || []).map(
-        (g: PhotoGradeResult, i: number) => ({
-          ...g,
-          // Match preview URL by index
-          previewUrl: photos[i]?.previewUrl || "",
-        })
+      // Build photo grades with their durable render sources (data URL >
+      // blob preview > server path), matched by index.
+      const gradesWithPreviews: PhotoGradeResult[] = attachPhotoSources(
+        gradeData.grades || [],
+        photosForGrade
       );
 
       setPhotoGrades(gradesWithPreviews);
