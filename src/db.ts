@@ -8,6 +8,9 @@ import {
 } from "./matching";
 import { leagueRangeScore, type LeagueValue } from "./mutual-league";
 import { PREMIUM_PRICE_ID, founderPriceLockApplies } from "./canonical-entitlements";
+import { deletePhoto } from "./blob-store";
+import { buildAccountDeletionQueries, collectOwnedPhotoPaths } from "./account-deletion";
+import { EVENTS, logInfo } from "./observability";
 
 let _sql: NeonQueryFunction<false, false> | null = null;
 
@@ -1646,28 +1649,56 @@ export async function reportUser(reporterId: number, reportedId: number, reason:
 
 // ── Account Deletion ───────────────────────────────────────────
 
+/**
+ * Permanently delete a user and every user-owned record, transactionally.
+ *
+ * 1. Collect owned photo storage paths BEFORE the rows are deleted
+ *    (ownership is scoped to rows belonging to this user only).
+ * 2. Delete every user-owned row in a single Postgres transaction: either
+ *    all of it is deleted or none of it is — no partial deletion on failure.
+ *    The final DELETE FROM users invalidates all sessions (full session
+ *    invalidation across devices).
+ * 3. Best-effort storage cleanup AFTER the DB commit, so a storage failure
+ *    can never roll back (or partially apply) account deletion. Each failed
+ *    file deletion is logged by deletePhoto; a summary line makes the
+ *    cleanup outcome observable to operators.
+ */
 export async function deleteUserAccount(userId: number): Promise<void> {
-  // Delete from user_photos
-  await sql()`DELETE FROM user_photos WHERE user_id = ${userId}`;
-  // Delete from photo_grades
-  await sql()`DELETE FROM photo_grades WHERE user_id = ${userId}`;
-  // Delete from blocks where user is involved
-  await sql()`DELETE FROM blocks WHERE blocker_id = ${userId} OR blocked_id = ${userId}`;
-  // Delete from reports where user is involved
-  await sql()`DELETE FROM reports WHERE reporter_id = ${userId} OR reported_id = ${userId}`;
-  // Delete messages sent by user
-  await sql()`DELETE FROM messages WHERE sender_id = ${userId}`;
-  // Delete matches involving user (cascades to messages in those matches)
-  await sql()`DELETE FROM matches WHERE user1_id = ${userId} OR user2_id = ${userId}`;
-  // Delete likes
-  await sql()`DELETE FROM likes WHERE liker_id = ${userId} OR liked_id = ${userId}`;
-  // Delete referral data
-  await sql()`DELETE FROM referral_rewards WHERE referrer_user_id = ${userId} OR referee_user_id = ${userId}`;
-  await sql()`DELETE FROM referral_codes WHERE user_id = ${userId}`;
-  // Delete sessions
-  await sql()`DELETE FROM sessions WHERE user_id = ${userId}`;
-  // Delete the user record itself
-  await sql()`DELETE FROM users WHERE id = ${userId}`;
+  // 1. Collect owned photo paths before the rows are gone.
+  const [profileRows, galleryRows, gradeRows] = await Promise.all([
+    sql()`SELECT photo_path FROM users WHERE id = ${userId}`,
+    sql()`SELECT photo_path FROM user_photos WHERE user_id = ${userId}`,
+    sql()`SELECT photo_path FROM photo_grades WHERE user_id = ${userId}`,
+  ]);
+  const photoPaths = collectOwnedPhotoPaths(
+    (profileRows[0] as { photo_path?: string | null } | undefined)?.photo_path,
+    (galleryRows as Array<{ photo_path: string }>).map((r) => r.photo_path),
+    (gradeRows as Array<{ photo_path: string }>).map((r) => r.photo_path),
+  );
+
+  // 2. Atomic deletion of all user-owned rows.
+  await sql().transaction((txn) =>
+    buildAccountDeletionQueries(
+      userId,
+      txn as unknown as (strings: TemplateStringsArray, ...params: unknown[]) => unknown,
+    ),
+  );
+
+  // 3. Best-effort storage cleanup with observable outcomes.
+  let deleted = 0;
+  let failed = 0;
+  for (const photoPath of photoPaths) {
+    if (await deletePhoto(photoPath)) deleted += 1;
+    else failed += 1;
+  }
+  if (photoPaths.length > 0) {
+    logInfo(EVENTS.ACCOUNT_PHOTO_CLEANUP, {
+      user_id: userId,
+      total: photoPaths.length,
+      deleted,
+      failed,
+    });
+  }
 }
 
 // ── Password Reset ────────────────────────────────────────────────

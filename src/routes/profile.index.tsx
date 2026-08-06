@@ -1,9 +1,10 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useAuth } from "~/auth-context";
 import { getCsrfToken } from "~/csrf-client";
 import { useRequireSubscription, SubscriptionBanner } from "~/subscription-guard";
 import { photoFromUploadResponse } from "~/photo-upload";
+import { useModalAccessibility } from "~/modal-accessibility";
 
 export const Route = createFileRoute("/profile/")({
   component: ProfilePage,
@@ -227,6 +228,14 @@ function ProfilePage() {
   // Delete account
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+  const deleteCancelRef = useRef<HTMLButtonElement>(null);
+  const closeDeleteConfirm = useCallback(() => setShowDeleteConfirm(false), []);
+  const deleteConfirmA11y = useModalAccessibility<HTMLDivElement>(
+    showDeleteConfirm,
+    closeDeleteConfirm,
+    deleteCancelRef,
+  );
 
   useEffect(() => {
     if (!loading && !user) {
@@ -426,11 +435,28 @@ function ProfilePage() {
 
   const handleDeleteAccount = async () => {
     setDeleting(true);
+    setDeleteError("");
     try {
-      await fetch("/api/account/delete", { method: "POST", headers: { "X-CSRF-Token": getCsrfToken() || "" } });
-      await refetch();
+      const res = await fetch("/api/account/delete", {
+        method: "POST",
+        headers: { "X-CSRF-Token": getCsrfToken() || "" },
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setDeleteError(
+          data?.error ||
+            "Something went wrong and your account was not deleted. Please try again.",
+        );
+        setDeleting(false);
+        return;
+      }
+      // Account is gone: clear local auth state, then leave the app.
+      await refetch().catch(() => {});
       navigate({ to: "/" });
     } catch {
+      setDeleteError(
+        "Network error. Your account was not deleted. Please try again.",
+      );
       setDeleting(false);
     }
   };
@@ -1439,35 +1465,65 @@ function ProfilePage() {
             <div className="mt-12 border-t border-red-500/20 pt-8">
               <h3 className="text-lg font-semibold text-red-400">Danger Zone</h3>
               <p className="mt-1 text-sm text-gray-500">
-                Permanently delete your account and all associated data. This action cannot be undone.
+                Permanently delete your account, photos, grade, and all associated
+                data. This action cannot be undone.
               </p>
-              {!showDeleteConfirm ? (
-                <button
-                  onClick={() => setShowDeleteConfirm(true)}
-                  className="mt-4 rounded-full border border-red-500/40 px-6 py-2.5 text-sm font-semibold text-red-400 transition hover:bg-red-500/10 hover:border-red-400"
+              <button
+                type="button"
+                onClick={() => {
+                  setDeleteError("");
+                  setShowDeleteConfirm(true);
+                }}
+                className="mt-4 rounded-full border border-red-500/40 px-6 py-2.5 text-sm font-semibold text-red-400 transition hover:border-red-400 hover:bg-red-500/10"
+              >
+                Delete Account
+              </button>
+
+              {showDeleteConfirm && (
+                <div
+                  {...deleteConfirmA11y}
+                  aria-labelledby="delete-account-title"
+                  className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm"
                 >
-                  Delete Account
-                </button>
-              ) : (
-                <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/5 p-5">
-                  <p className="text-sm font-semibold text-red-400">
-                    Are you sure? This permanently deletes your account and all data.
-                  </p>
-                  <div className="mt-4 flex gap-3">
-                    <button
-                      onClick={() => setShowDeleteConfirm(false)}
-                      disabled={deleting}
-                      className="flex-1 rounded-full border border-gray-600 px-4 py-2 text-sm text-gray-300 transition hover:border-gray-500 disabled:opacity-50"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleDeleteAccount}
-                      disabled={deleting}
-                      className="flex-1 rounded-full bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-500 disabled:opacity-50"
-                    >
-                      {deleting ? "Deleting..." : "Yes, Delete My Account"}
-                    </button>
+                  <div
+                    ref={deleteConfirmA11y.containerRef}
+                    tabIndex={-1}
+                    className="mx-4 w-full max-w-sm rounded-2xl bg-gray-900 p-6 shadow-2xl"
+                  >
+                    <h2 id="delete-account-title" className="text-lg font-bold text-white">
+                      Delete your account?
+                    </h2>
+                    <p className="mt-2 text-sm text-gray-400">
+                      This permanently deletes your account, photos, grade, matches,
+                      and messages. This action cannot be undone.
+                    </p>
+                    {deleteError && (
+                      <p
+                        role="alert"
+                        className="mt-3 rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-400"
+                      >
+                        {deleteError}
+                      </p>
+                    )}
+                    <div className="mt-5 flex gap-3">
+                      <button
+                        type="button"
+                        ref={deleteCancelRef}
+                        onClick={closeDeleteConfirm}
+                        disabled={deleting}
+                        className="flex-1 rounded-full border border-gray-600 px-4 py-2 text-sm text-gray-300 transition hover:border-gray-500 disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleDeleteAccount}
+                        disabled={deleting}
+                        className="flex-1 rounded-full bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-500 disabled:opacity-50"
+                      >
+                        {deleting ? "Deleting..." : "Yes, Delete My Account"}
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}

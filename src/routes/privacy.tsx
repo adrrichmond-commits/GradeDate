@@ -233,8 +233,12 @@ function PrivacyPolicy() {
         <section>
           <h2 className="mb-3 text-xl font-bold text-white">6. Data Retention and Account Deletion</h2>
           <p className="leading-relaxed">
-            We retain your personal data for as long as your account is active. You may request
-            account deletion at any time by contacting us at{" "}
+            We retain your personal data for as long as your account is active. You can
+            delete your account at any time using the Delete Account control on your{" "}
+            <Link to="/profile/" className="text-rose-400 underline hover:text-rose-300">
+              Profile
+            </Link>{" "}
+            page (Danger Zone), or by contacting us at{" "}
             <a
               href="mailto:support@gradedate.app"
               className="text-rose-400 underline hover:text-rose-300"
