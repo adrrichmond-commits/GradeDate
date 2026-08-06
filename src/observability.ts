@@ -48,6 +48,9 @@ export const EVENTS = {
   MODERATION_NSFW_FAILED: "moderation.nsfw.failed",
   MODERATION_REPORT_RECEIVED: "moderation.report_received",
   GRADE_CARD_PNG_FAILED: "grade_card.png_conversion_failed",
+  // Account lifecycle
+  ACCOUNT_DELETED: "account.deleted",
+  ACCOUNT_PHOTO_CLEANUP: "account.photo_cleanup",
   // Uploads & retention
   UPLOAD_COMPLETED: "upload.completed",
   UPLOAD_REJECTED: "upload.rejected",

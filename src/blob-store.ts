@@ -118,21 +118,31 @@ export async function readPhotoBuffer(photoPath: string): Promise<Buffer> {
 
 /**
  * Delete a photo. Handles both blob URLs and local paths.
+ * Best-effort: failures are logged via BLOB_STORE_DELETE_FAILED and reported
+ * to the caller through the boolean return so cleanup outcomes are observable
+ * (e.g. account deletion can count successes vs failures).
+ *
+ * Returns true when the file no longer exists (deleted, or external URL that
+ * is not stored by us), false when deletion was attempted but failed.
  */
-export async function deletePhoto(photoPath: string): Promise<void> {
+export async function deletePhoto(photoPath: string): Promise<boolean> {
   if (isExternalUrl(photoPath)) {
     if (isVercelBlob()) {
       const client = await getBlobClient();
-      if (client) {
-        try {
-          await client.del(photoPath);
-        } catch (err) {
-          logWarn(EVENTS.BLOB_STORE_DELETE_FAILED, { err, target: "blob" });
-        }
+      if (!client) {
+        logWarn(EVENTS.BLOB_STORE_CLIENT_UNAVAILABLE, {});
+        return false;
+      }
+      try {
+        await client.del(photoPath);
+        return true;
+      } catch (err) {
+        logWarn(EVENTS.BLOB_STORE_DELETE_FAILED, { err, target: "blob" });
+        return false;
       }
     }
     // If not using blob but path is external, it's not stored by us — nothing to delete
-    return;
+    return true;
   }
 
   // Local filesystem
@@ -140,8 +150,10 @@ export async function deletePhoto(photoPath: string): Promise<void> {
     const dir = uploadsDir();
     const filename = path.basename(photoPath);
     unlinkSync(path.join(dir, filename));
+    return true;
   } catch (err) {
     logWarn(EVENTS.BLOB_STORE_DELETE_FAILED, { err, target: "local" });
+    return false;
   }
 }
 

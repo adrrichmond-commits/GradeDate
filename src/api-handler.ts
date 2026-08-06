@@ -1594,9 +1594,8 @@ async function handleDeleteAccount(req: Request): Promise<Response> {
     return json({ error: "Unauthorized" }, 401);
   }
 
-  const sessionId = getSessionId(req);
   await deleteUserAccount(user.id);
-
+  logInfo(EVENTS.ACCOUNT_DELETED, { user_id: user.id });
   return clearSessionCookie(json({ success: true }));
 }
 
