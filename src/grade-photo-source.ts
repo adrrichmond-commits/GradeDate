@@ -102,3 +102,11 @@ export function attachPhotoSources<T extends { photo_path: string }>(
     dataUrl: entries[i]?.dataUrl,
   }));
 }
+
+/** Resolve the best `<img>` src for a grading-state photo entry (dataUrl first). */
+export function resolveEntryPhotoSrc(
+  entry: GradePhotoEntry | undefined | null
+): string {
+  if (!entry) return "";
+  return resolveGradePhotoSrc(entry.dataUrl, entry.previewUrl, entry.photoPath);
+}
