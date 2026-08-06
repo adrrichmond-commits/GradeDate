@@ -1,8 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState, useEffect, type ReactNode } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import { useAuth } from "~/auth-context";
 import { getCsrfToken } from "~/csrf-client";
 import { parseStoreReturnState } from "~/checkout-return";
+import {
+  nextStoreConfirmationState,
+  STORE_CONFIRMATION_INTERVAL_MS,
+  type StoreConfirmationState,
+} from "~/store-confirmation";
 
 const RE_GRADE_LINK = "https://buy.stripe.com/5kQ7sL3gq0CW4edfxt7Re02";
 const BOOST_LINK = "https://buy.stripe.com/14A9AT2cm3P8265etp7Re03";
@@ -84,18 +89,32 @@ export const Route = createFileRoute("/store")({
 
 function StorePage() {
   const { user, loading, refetch } = useAuth();
-  const [activating, setActivating] = useState<string | null>(null);
   const [activated, setActivated] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [foundersCount, setFoundersCount] = useState<{ count: number; remaining: number } | null>(null);
   const [foundersCheckingOut, setFoundersCheckingOut] = useState(false);
   const [checkoutProduct, setCheckoutProduct] = useState<string | null>(null);
-  const [paymentState, setPaymentState] = useState<string | null>(null);
+  const [showCanceled, setShowCanceled] = useState(false);
+  const [genericPending, setGenericPending] = useState(false);
   const [foundersState, setFoundersState] = useState<{ kind: "success" | "canceled"; message: string } | null>(null);
-  // Fetch founders count on mount and handle the Stripe return query. The
-  // parser (unit-tested in checkout-return.test.ts) only reports what the
-  // return URL says; actual entitlements come from the Stripe webhook and the
-  // server-verified activate call below.
+  // Confirmation state machine for the purchase the user just returned from
+  // Stripe with: pending → confirmed (only after the server reports the
+  // entitlement) | timeout | error, with manual retry/check-again.
+  const [confirmation, setConfirmation] = useState<StoreConfirmationState>("idle");
+  const [confirmationProduct, setConfirmationProduct] = useState<string | null>(null);
+  const [confirmationSession, setConfirmationSession] = useState<string | null>(null);
+  // Dedupe re-entry: refetch() inside the confirmation loop changes `user`,
+  // which re-runs the mount effect; don't start a second loop for the same
+  // purchase. Kept set on confirmed so re-runs stay deduped; cleared on
+  // timeout/error so Check again / Retry can re-run.
+  const activeRun = useRef<{ productId: string; sessionId: string } | null>(null);
+
+  const productName = (id: string | null) => products.find((p) => p.id === id)?.name ?? "item";
+
+  // Stripe's return URL is not fulfillment. For a real return (session id +
+  // product present) the server verifies + grants the session, then the
+  // authenticated entitlement status is polled with a bounded timeout; success
+  // is only shown once the server confirms the entitlement.
   useEffect(() => {
     fetch("/api/founders/count")
       .then((r) => r.json())
@@ -104,11 +123,15 @@ function StorePage() {
     const state = parseStoreReturnState(window.location.search);
     if (state.kind === "activate" && user) {
       const product = products.find((item) => item.id === state.productId);
-      if (product) handleActivate(product, state.sessionId);
+      if (product) void runPurchaseConfirmation(product.id, state.sessionId);
     } else if (state.kind === "payment-success") {
-      setPaymentState("Payment received. Verifying your purchase…");
+      // No session id to verify against (Stripe always appends one, so this is
+      // a hand-crafted URL). Show honest pending copy and refresh so any
+      // already-granted entitlement surfaces on its item card.
+      setGenericPending(true);
+      void refetch();
     } else if (state.kind === "payment-cancelled") {
-      setPaymentState("Payment was canceled. No charges were made.");
+      setShowCanceled(true);
     } else if (state.kind === "founders-success") {
       setFoundersState({
         kind: "success",
@@ -120,6 +143,7 @@ function StorePage() {
     } else if (state.kind === "founders-cancelled") {
       setFoundersState({ kind: "canceled", message: "Payment was canceled. No charges were made." });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   const handleCheckout = async (product: Product) => {
@@ -137,16 +161,69 @@ function StorePage() {
     finally { setCheckoutProduct(null); }
   };
 
-  const handleActivate = async (product: Product, sessionId: string) => {
-    setActivating(product.id);
+  const runPurchaseConfirmation = async (productId: string, sessionId: string) => {
+    if (activeRun.current && activeRun.current.productId === productId && activeRun.current.sessionId === sessionId) {
+      return;
+    }
+    activeRun.current = { productId, sessionId };
+    setConfirmationProduct(productId);
+    setConfirmationSession(sessionId);
+    setConfirmation("pending");
     setError("");
+    const started = Date.now();
+    // First ask the server to verify + grant the session (idempotent — the
+    // webhook may have already granted it). Only a server `ok` counts as
+    // confirmed; a 409 (payment not yet verified) falls through to polling.
+    let serverConfirmed = false;
     try {
-      const res = await fetch("/api/store/activate", { method: "POST", headers: { "Content-Type": "application/json", "X-CSRF-Token": getCsrfToken() || "" }, body: JSON.stringify({ session_id: sessionId }) });
+      const res = await fetch("/api/store/activate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": getCsrfToken() || "" },
+        body: JSON.stringify({ session_id: sessionId }),
+      });
       const data = await res.json();
-      if (res.ok && data.ok) { setActivated(product.id); await refetch(); }
-      else setError(data.error || "Payment is still pending. Please try again shortly.");
-    } catch { setError("Network error. Please try again."); }
-    finally { setActivating(null); }
+      serverConfirmed = res.ok && Boolean(data.ok);
+    } catch {
+      serverConfirmed = false;
+    }
+    const poll = async () => {
+      if (serverConfirmed) {
+        await refetch();
+        setActivated(productId);
+        setConfirmation("confirmed");
+        return; // keep activeRun set so re-renders don't restart this loop
+      }
+      try {
+        const res = await fetch(
+          `/api/store/entitlement-status?product=${encodeURIComponent(productId)}&session_id=${encodeURIComponent(sessionId)}`,
+        );
+        if (!res.ok) throw new Error("status unavailable");
+        const data = (await res.json()) as { entitled?: boolean };
+        const next = nextStoreConfirmationState(Boolean(data.entitled), Date.now() - started);
+        if (next === "confirmed") {
+          await refetch();
+          setActivated(productId);
+        }
+        setConfirmation(next);
+        if (next === "pending") {
+          window.setTimeout(poll, STORE_CONFIRMATION_INTERVAL_MS);
+        } else {
+          activeRun.current = null;
+        }
+      } catch {
+        setConfirmation("error");
+        activeRun.current = null;
+      }
+    };
+    void poll();
+  };
+
+  const retryConfirmation = () => {
+    if (confirmationProduct && confirmationSession) {
+      void runPurchaseConfirmation(confirmationProduct, confirmationSession);
+    } else {
+      window.location.reload();
+    }
   };
 
   const handleFoundersCheckout = async () => {
@@ -223,13 +300,59 @@ function StorePage() {
       )}
 
       {/* Stripe return-state banners (from ?payment=… / ?founders=… query).
-          Copy never claims payment succeeded — fulfillment is webhook-driven. */}
-      {paymentState && (
-        <div className="mb-8 rounded-xl border border-green-500/30 bg-green-500/10 p-4 text-center">
-          <p className="text-sm font-semibold text-green-400">{paymentState}</p>
-          <p className="mt-1 text-xs text-green-400/70">
-            Purchases are activated once Stripe confirms payment — usually a few seconds.
+          Success is only claimed after the server confirms the entitlement. */}
+      {confirmation === "pending" && confirmationProduct && (
+        <div className="mb-8 rounded-xl border border-blue-500/30 bg-blue-500/10 p-4 text-center" role="status">
+          <p className="text-sm font-semibold text-blue-400">
+            Payment received — confirming your {productName(confirmationProduct)} purchase…
           </p>
+          <p className="mt-1 text-xs text-blue-400/70">
+            We're waiting for Stripe to finish activation. This usually takes a few seconds.
+          </p>
+        </div>
+      )}
+      {confirmation === "timeout" && confirmationProduct && (
+        <div className="mb-8 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-center" role="alert">
+          <p className="text-sm font-semibold text-amber-400">
+            Confirming your {productName(confirmationProduct)} purchase is taking longer than expected.
+          </p>
+          <button
+            onClick={retryConfirmation}
+            className="mt-2 rounded-full border border-amber-400/50 px-4 py-2 text-sm font-semibold text-amber-300"
+          >
+            Check again
+          </button>
+        </div>
+      )}
+      {confirmation === "error" && confirmationProduct && (
+        <div className="mb-8 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-center" role="alert">
+          <p className="text-sm font-semibold text-red-400">We couldn't confirm your purchase.</p>
+          <button
+            onClick={retryConfirmation}
+            className="mt-2 rounded-full border border-red-400/50 px-4 py-2 text-sm font-semibold text-red-300"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+      {genericPending && (
+        <div className="mb-8 rounded-xl border border-blue-500/30 bg-blue-500/10 p-4 text-center" role="status">
+          <p className="text-sm font-semibold text-blue-400">Payment received — confirming your purchase…</p>
+          <p className="mt-1 text-xs text-blue-400/70">
+            Your purchase will appear on the item card below once Stripe confirms it.
+          </p>
+          <button
+            onClick={() => { setGenericPending(false); void refetch(); }}
+            className="mt-2 rounded-full border border-blue-400/50 px-4 py-2 text-sm font-semibold text-blue-300"
+          >
+            Check purchases
+          </button>
+        </div>
+      )}
+      {showCanceled && (
+        <div className="mb-8 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-center">
+          <p className="text-sm font-semibold text-amber-400">Payment was canceled. No charges were made.</p>
+          <p className="mt-1 text-xs text-amber-400/70">You can try again whenever you're ready.</p>
         </div>
       )}
       {foundersState && (
@@ -343,6 +466,7 @@ function StorePage() {
             (product.id === "boost" && user?.boost_until && new Date(user.boost_until) > new Date()) ||
             (product.id === "like-pack" && false); // always purchasable
           const justActivated = activated === product.id;
+          const purchasePending = confirmationProduct === product.id && confirmation === "pending";
 
           return (
             <div
@@ -383,7 +507,7 @@ function StorePage() {
                 </div>
               )}
 
-              {/* Just activated */}
+              {/* Just activated (only reached after server-confirmed entitlement) */}
               {justActivated && !isOwned && (
                 <div className="mt-4 rounded-lg border border-green-500/20 bg-green-500/10 px-3 py-2 text-center">
                   <span className="text-xs font-semibold text-green-400">
@@ -398,10 +522,16 @@ function StorePage() {
                   {/* Step 1: Pay on Stripe */}
                   <button
                     onClick={() => handleCheckout(product)}
-                    disabled={checkoutProduct === product.id}
+                    disabled={checkoutProduct === product.id || purchasePending}
                     className="block w-full rounded-full bg-rose-600 px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:bg-rose-500 disabled:opacity-50"
                   >
-                    {checkoutProduct === product.id ? "Opening secure checkout…" : `Buy ${product.name} — ${product.price}`}
+                    {purchasePending ? (
+                      "Confirming purchase…"
+                    ) : checkoutProduct === product.id ? (
+                      "Opening secure checkout…"
+                    ) : (
+                      `Buy ${product.name} — ${product.price}`
+                    )}
                   </button>
                   <p className="text-center text-xs text-gray-500">
                     You'll return here after Stripe confirms payment. Activation is server-verified and safe to retry.

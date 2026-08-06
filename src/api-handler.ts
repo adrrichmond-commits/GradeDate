@@ -90,6 +90,8 @@ import {
   getFounderSpotsRemaining,
   assignFounderNumber,
   grantPaidUpsell,
+  createPendingUpsell,
+  getUpsellEntitlementState,
   checkDatabaseReady,
   type PaidUpsellProduct,
   type User,
@@ -115,6 +117,7 @@ import { storePhoto, readPhotoBuffer, deletePhoto, isStoragePhotoPath } from "..
 import { deleteAnonUpload, maybeSweepExpiredAnonUploads } from "./anon-upload-retention";
 import { resolveOwnedPhotoPaths, validateAnonymousGradePath } from "./photo-access";
 import { isCheckoutBlocked } from "./subscription-confirmation";
+import { isStorePurchaseBlocked } from "./store-confirmation";
 import { parseModerationContent, MODERATION_UNAVAILABLE_CODE, type ModerationResult } from "./moderation";
 import {
   EVENTS,
@@ -1743,6 +1746,20 @@ async function handleUpsellCheckout(req: Request): Promise<Response> {
   const body = await req.json().catch(() => null);
   const product = body?.product as PaidUpsellProduct;
   if (!Object.prototype.hasOwnProperty.call(UPSELL_PRICES, product)) return json({ error: "Invalid product" }, 400);
+  // Duplicate-purchase guard: an in-flight (pending) checkout for the same
+  // product blocks a new one, and an active re-grade/boost blocks a new one.
+  // Like-packs stay stackable (canonical product decision), so only a pending
+  // like-pack purchase blocks.
+  const entitlement = await getUpsellEntitlementState(user.id, product);
+  if (isStorePurchaseBlocked(product, entitlement.entitled, entitlement.pending)) {
+    const code = entitlement.pending ? "UPSELL_ALREADY_PENDING" : "UPSELL_ALREADY_ACTIVE";
+    return json({
+      error: entitlement.pending
+        ? "A purchase for this item is already being confirmed. Wait for it to finish, then try again if needed."
+        : "This item is already active on your account.",
+      code,
+    }, 409);
+  }
   const price = UPSELL_PRICES[product];
   const stripe = getStripe();
   if (!stripe || !price) return json({ error: "This purchase is not configured yet" }, 503);
@@ -1752,7 +1769,32 @@ async function handleUpsellCheckout(req: Request): Promise<Response> {
     client_reference_id: String(user.id), customer_email: user.email,
     metadata: { user_id: String(user.id), product },
   });
+  const recorded = await createPendingUpsell(user.id, product, session.id);
+  if (!recorded) {
+    // A concurrent checkout recorded the pending entitlement while this
+    // session was being created. Expire the duplicate session so the user
+    // can't pay twice, and report the in-flight purchase.
+    await stripe.checkout.sessions.expire(session.id).catch(() => {});
+    return json({ error: "A purchase for this item is already being confirmed.", code: "UPSELL_ALREADY_PENDING" }, 409);
+  }
   return json({ url: session.url });
+}
+
+/** Authenticated entitlement status for a one-time product. Polled by the
+ * store page after a Stripe return so success is only shown once the server
+ * confirms the entitlement (webhook or activate grant). Never claims payment
+ * success itself. */
+async function handleUpsellEntitlementStatus(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user) return json({ error: "Unauthorized" }, 401);
+  const url = new URL(req.url);
+  const product = url.searchParams.get("product") as PaidUpsellProduct | null;
+  if (!product || !Object.prototype.hasOwnProperty.call(UPSELL_PRICES, product)) {
+    return json({ error: "Invalid product" }, 400);
+  }
+  const sessionId = url.searchParams.get("session_id");
+  const state = await getUpsellEntitlementState(user.id, product, sessionId);
+  return json({ product, entitled: state.entitled, pending: state.pending });
 }
 
 async function handleActivateUpsell(req: Request): Promise<Response> {
@@ -2718,6 +2760,9 @@ export async function handleApiRoute(
     const csrfErr = checkCsrf(req);
     if (csrfErr) return csrfErr;
     return handleActivateUpsell(req);
+  }
+  if (pathname === "/api/store/entitlement-status" && method === "GET") {
+    return handleUpsellEntitlementStatus(req);
   }
 
   // Founders Club

@@ -205,7 +205,16 @@ export async function initTables(): Promise<void> {
       consumed_at TIMESTAMPTZ
     )
   `;
-
+  // At most one in-flight (pending) checkout per user per product. Completed
+  // (granted) entitlements are not constrained: like-packs stack and re-grade
+  // credits can accumulate over time.
+  try {
+    await sql()`
+      CREATE UNIQUE INDEX IF NOT EXISTS paid_upsell_pending_user_product_idx
+      ON paid_upsell_entitlements(user_id, product)
+      WHERE status = 'pending'
+    `;
+  } catch { /* older deployments may not have pending rows yet */ }
   await sql()`
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
@@ -1793,29 +1802,101 @@ export async function updateUserPassword(
 }
 
 // ── Upsells ──────────────────────────────────────────────────────
-
 export type PaidUpsellProduct = "re-grade" | "boost" | "like-pack";
+/** Record a checkout session created for a one-time purchase. The entitlement
+ * starts "pending" (payment not yet verified) so the duplicate-purchase check
+ * can block a second checkout for the same product until this one resolves.
+ * Returns false if another pending entitlement for the same product already
+ * exists (enforced by the partial unique index). Abandoned pending rows are
+ * dropped after one hour so they never block a purchase forever. */
+export async function createPendingUpsell(
+  userId: number,
+  product: PaidUpsellProduct,
+  stripeSessionId: string,
+): Promise<boolean> {
+  await sql()`
+    DELETE FROM paid_upsell_entitlements
+    WHERE user_id = ${userId} AND product = ${product} AND status = 'pending'
+      AND created_at <= NOW() - INTERVAL '1 hour'
+  `;
+  const inserted = await sql()`
+    INSERT INTO paid_upsell_entitlements (user_id, product, stripe_session_id, status)
+    VALUES (${userId}, ${product}, ${stripeSessionId}, 'pending')
+    ON CONFLICT (stripe_session_id) DO NOTHING
+    RETURNING id
+  `;
+  return inserted.length > 0;
+}
+
+/** Authenticated entitlement state for a one-time product, used by the store
+ * page's bounded confirmation polling and by the duplicate-purchase check.
+ * - "entitled" means the product is currently usable: an unused re-grade
+ *   credit, an active boost, or (for like-packs, which stack) a granted row
+ *   for the specific checkout session being confirmed.
+ * - "pending" means a checkout is still waiting for Stripe confirmation. */
+export async function getUpsellEntitlementState(
+  userId: number,
+  product: PaidUpsellProduct,
+  sessionId?: string | null,
+): Promise<{ entitled: boolean; pending: boolean }> {
+  const pendingRows = await sql()`
+    SELECT 1 FROM paid_upsell_entitlements
+    WHERE user_id = ${userId} AND product = ${product} AND status = 'pending'
+      AND created_at > NOW() - INTERVAL '1 hour'
+    LIMIT 1
+  `;
+  const pending = pendingRows.length > 0;
+  let entitled = false;
+  if (product === "re-grade") {
+    const rows = await sql()`SELECT regrades_available FROM users WHERE id = ${userId}`;
+    entitled = rows.length > 0 && Number((rows[0] as { regrades_available: number }).regrades_available) > 0;
+  } else if (product === "boost") {
+    const rows = await sql()`SELECT boost_until FROM users WHERE id = ${userId}`;
+    if (rows.length > 0) {
+      const boostUntil = (rows[0] as { boost_until: string | null }).boost_until;
+      entitled = boostUntil !== null && new Date(boostUntil).getTime() > Date.now();
+    }
+  } else if (sessionId) {
+    const rows = await sql()`
+      SELECT 1 FROM paid_upsell_entitlements
+      WHERE user_id = ${userId} AND product = ${product} AND status = 'granted'
+        AND stripe_session_id = ${sessionId}
+      LIMIT 1
+    `;
+    entitled = rows.length > 0;
+  }
+  return { entitled, pending };
+}
 
 /** Grant a Stripe-verified purchase exactly once. The unique session id makes
- * webhook retries and activation retries harmless. */
+ * webhook retries and activation retries harmless; a checkout-time "pending"
+ * row (created by createPendingUpsell) is flipped to "granted" rather than
+ * inserting a duplicate. */
 export async function grantPaidUpsell(
   userId: number,
   product: PaidUpsellProduct,
   stripeSessionId: string,
 ): Promise<boolean> {
-  const inserted = await sql()`
-    INSERT INTO paid_upsell_entitlements (user_id, product, stripe_session_id)
-    VALUES (${userId}, ${product}, ${stripeSessionId})
-    ON CONFLICT (stripe_session_id) DO NOTHING
+  const flipped = await sql()`
+    UPDATE paid_upsell_entitlements SET status = 'granted'
+    WHERE user_id = ${userId} AND product = ${product}
+      AND stripe_session_id = ${stripeSessionId} AND status = 'pending'
     RETURNING id
   `;
-  if (inserted.length === 0) return false;
+  if (flipped.length === 0) {
+    const inserted = await sql()`
+      INSERT INTO paid_upsell_entitlements (user_id, product, stripe_session_id)
+      VALUES (${userId}, ${product}, ${stripeSessionId})
+      ON CONFLICT (stripe_session_id) DO NOTHING
+      RETURNING id
+    `;
+    if (inserted.length === 0) return false;
+  }
   if (product === "re-grade") await addReGrade(userId);
   else if (product === "boost") await activateBoost(userId);
   else await addLikePacks(userId, 5);
   return true;
 }
-
 export async function addReGrade(userId: number): Promise<void> {
   await sql()`
     UPDATE users SET regrades_available = regrades_available + 1 WHERE id = ${userId}
