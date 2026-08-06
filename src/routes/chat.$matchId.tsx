@@ -56,6 +56,9 @@ function ChatPage() {
   // Safety modals
   const [showMenu, setShowMenu] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
+  const closeReport = useCallback(() => setShowReportModal(false), []);
+  const reportCancelRef = useRef<HTMLButtonElement>(null);
+  const reportA11y = useModalAccessibility<HTMLDivElement>(showReportModal, closeReport, reportCancelRef);
   const [reportReason, setReportReason] = useState("");
   const [reporting, setReporting] = useState(false);
   const [reportDone, setReportDone] = useState(false);
@@ -280,6 +283,9 @@ function ChatPage() {
         <div className="relative">
           <button
             onClick={() => setShowMenu(!showMenu)}
+            aria-label="Chat actions"
+            aria-expanded={showMenu}
+            aria-haspopup="menu"
             className="rounded-full p-1.5 text-gray-400 transition hover:bg-gray-800 hover:text-white"
           >
             <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -287,7 +293,7 @@ function ChatPage() {
             </svg>
           </button>
           {showMenu && (
-            <div className="absolute right-0 top-10 z-20 w-44 rounded-xl border border-gray-700 bg-gray-900 py-1.5 shadow-2xl">
+            <div role="menu" className="absolute right-0 top-10 z-20 w-44 rounded-xl border border-gray-700 bg-gray-900 py-1.5 shadow-2xl">
               <button
                 onClick={handleBlock}
                 disabled={blocking}
@@ -358,7 +364,7 @@ function ChatPage() {
       </div>
 
       {error && (
-        <div className="mx-4 mb-2 rounded-lg bg-red-500/10 px-3 py-2 text-center text-xs text-red-400">
+        <div role="alert" aria-live="assertive" className="mx-4 mb-2 rounded-lg bg-red-500/10 px-3 py-2 text-center text-xs text-red-400">
           {error}
         </div>
       )}
@@ -370,6 +376,7 @@ function ChatPage() {
             type="text"
             value={newMsg}
             onChange={(e) => setNewMsg(e.target.value)}
+            aria-label="Message"
             placeholder="Type a message..."
             maxLength={2000}
             className="flex-1 rounded-full border border-white/10 bg-gray-900 px-4 py-3 text-sm text-gray-100 placeholder-gray-500 outline-none transition focus:border-rose-500/50"
@@ -378,6 +385,7 @@ function ChatPage() {
           <button
             type="submit"
             disabled={!newMsg.trim() || sending}
+            aria-label={sending ? "Sending message" : "Send message"}
             className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-rose-600 text-white transition hover:bg-rose-500 hover:scale-105 active:scale-95 disabled:opacity-40"
           >
             {sending ? (
@@ -393,9 +401,9 @@ function ChatPage() {
 
       {/* Report Modal */}
       {showReportModal && otherUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-          <div className="mx-4 w-full max-w-sm rounded-2xl bg-gray-900 p-6 shadow-2xl">
-            <h3 className="text-lg font-bold">Report {otherUser.display_name || "User"}</h3>
+        <div {...reportA11y} aria-labelledby="chat-report-title" className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div ref={reportA11y.containerRef} tabIndex={-1} className="mx-4 w-full max-w-sm rounded-2xl bg-gray-900 p-6 shadow-2xl">
+            <h3 id="chat-report-title" className="text-lg font-bold">Report {otherUser.display_name || "User"}</h3>
             <p className="mt-1 text-sm text-gray-400">
               {reportDone
                 ? "Thank you. Your report has been submitted."
@@ -429,7 +437,8 @@ function ChatPage() {
 
                 <div className="mt-5 flex gap-3">
                   <button
-                    onClick={() => setShowReportModal(false)}
+                    onClick={closeReport}
+                    ref={reportCancelRef}
                     className="flex-1 rounded-full border border-gray-600 px-4 py-2 text-sm text-gray-300 transition hover:border-gray-500"
                   >
                     Cancel
@@ -460,10 +469,10 @@ function ChatPage() {
             )}
 
             {reportDone && (
-              <div className="mt-5">
+              <div className="mt-5" role="status" aria-live="polite">
                 <button
                   onClick={() => {
-                    setShowReportModal(false);
+                    closeReport();
                     setReportDone(false);
                   }}
                   className="w-full rounded-full border border-gray-600 px-4 py-2 text-sm text-gray-300 transition hover:border-gray-500"
