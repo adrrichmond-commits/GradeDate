@@ -180,3 +180,13 @@ describe("gradeAnonymousPhotos", () => {
     expect(result.kind).toBe("error");
   });
 });
+
+describe("moderation unavailable parsing", () => {
+  test("returns a retryable degraded state without treating it as NSFW", async () => {
+    const result = await gradeAnonymousPhotos(["/uploads/a.jpg"], "csrf", async () =>
+      new Response(JSON.stringify({ code: "MODERATION_UNAVAILABLE", error: "Photo was not approved or graded yet; please try again." }), { status: 503 }),
+    );
+    expect(result).toMatchObject({ ok: false, kind: "moderation_unavailable" });
+    if (!result.ok) expect(result.message).not.toContain("inappropriate");
+  });
+});

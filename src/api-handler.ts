@@ -859,8 +859,8 @@ async function handleGrade(req: Request): Promise<Response> {
   // NSFW screening before grading
   const nsfwResult = await nsfwCheck(photoPath);
   if (nsfwResult === "UNKNOWN") {
-    logWarn(EVENTS.MODERATION_UNAVAILABLE, { user_type: user ? "authenticated" : "anonymous" });
-    return json({ error: "Photo moderation is temporarily unavailable. Please try again.", code: MODERATION_UNAVAILABLE_CODE }, 503);
+    logWarn(EVENTS.MODERATION_UNAVAILABLE, { user_type: user ? "authenticated" : "anonymous", reason: "provider_unavailable" });
+    return json({ error: "This photo was not approved or graded yet because moderation is temporarily unavailable. Please try again; this does not mean the photo is unsafe.", code: MODERATION_UNAVAILABLE_CODE, retryable: true }, 503);
   }
   if (nsfwResult === "NSFW") {
     logWarn(EVENTS.GRADE_NSFW_BLOCKED, { user_type: user ? "authenticated" : "anonymous" });
@@ -930,12 +930,13 @@ async function handleGrade(req: Request): Promise<Response> {
     await deleteAnonUpload(photoPath);
   }
   logInfo(
-    EVENTS.GRADE_COMPLETED,
+    usedAI ? EVENTS.GRADE_COMPLETED : EVENTS.GRADE_FALLBACK,
     {
       user_type: user ? "authenticated" : "anonymous",
+      ...(usedAI ? {} : { reason: "ai_provider_unavailable" }),
       method: usedAI ? "ai" : "fallback",
       grade,
-      ...(fallbackError !== null ? { err: fallbackError } : {}),
+      
     },
     usedAI ? undefined : "AI grading unavailable — used deterministic fallback",
   );
@@ -1082,8 +1083,8 @@ async function handleGradePhotos(req: Request): Promise<Response> {
   for (const photoPath of photoPaths) {
     const nsfwResult = await nsfwCheck(photoPath);
     if (nsfwResult === "UNKNOWN") {
-      logWarn(EVENTS.MODERATION_UNAVAILABLE, { user_type: "authenticated", user_id: user.id });
-      return json({ error: "Photo moderation is temporarily unavailable. Please try again.", code: MODERATION_UNAVAILABLE_CODE }, 503);
+      logWarn(EVENTS.MODERATION_UNAVAILABLE, { user_type: "authenticated", user_id: user.id, reason: "provider_unavailable" });
+      return json({ error: "This photo was not approved or graded yet because moderation is temporarily unavailable. Please try again; this does not mean the photo is unsafe.", code: MODERATION_UNAVAILABLE_CODE, retryable: true }, 503);
     }
     if (nsfwResult === "NSFW") {
       logWarn(EVENTS.GRADE_NSFW_BLOCKED, { user_type: "authenticated", user_id: user.id });
@@ -1111,7 +1112,7 @@ async function handleGradePhotos(req: Request): Promise<Response> {
       grade = result.grade;
       feedback = result.feedback;
     } catch (err) {
-      logWarn(EVENTS.GRADE_COMPLETED, { user_id: user.id, method: "fallback", photo_index: i, err });
+      logWarn(EVENTS.GRADE_FALLBACK, { user_id: user.id, reason: "ai_provider_unavailable", photo_index: i });
       fallbackCount++;
       grade = fallbackGrade(); // 3-8 fallback
       feedback = FALLBACK_FEEDBACK; // honest: does not claim the photo was analyzed

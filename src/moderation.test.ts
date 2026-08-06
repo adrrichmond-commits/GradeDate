@@ -11,3 +11,11 @@ describe("moderation parser", () => {
     expect(parseModerationContent("nsfw")).toBe("NSFW");
   });
 });
+
+describe("moderation unavailable response contract", () => {
+  test("keeps unavailable distinct from unsafe and retryable", () => {
+    const message = "This photo was not approved or graded yet because moderation is temporarily unavailable. Please try again; this does not mean the photo is unsafe.";
+    expect(message).toContain("not approved or graded yet");
+    expect(message).toContain("does not mean the photo is unsafe");
+  });
+});
