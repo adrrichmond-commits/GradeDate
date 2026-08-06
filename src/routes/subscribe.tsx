@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "~/auth-context";
 import { getCsrfToken } from "~/csrf-client";
 import { parseSubscriptionReturnState } from "~/checkout-return";
+import { isCheckoutBlocked, nextSubscriptionConfirmationState, SUBSCRIPTION_CONFIRMATION_INTERVAL_MS, type SubscriptionConfirmationState } from "~/subscription-confirmation";
 
 type Plan = "monthly";
 
@@ -44,11 +45,13 @@ function SubscribePage() {
   const [plan, setPlan] = useState<Plan>("monthly");
   const [checkingOut, setCheckingOut] = useState(false);
   const [error, setError] = useState("");
+  const [confirmation, setConfirmation] = useState<SubscriptionConfirmationState>("idle");
 
   // Read URL params for post-Stripe-redirect status
   const search = Route.useSearch();
   const showSuccess = search.success === "true";
   const showCanceled = search.canceled === "true";
+  const returnedFromStripe = showSuccess && Boolean(search.sessionId);
 
   const currentPlan = PLANS[plan];
 
@@ -75,12 +78,35 @@ function SubscribePage() {
     }
   };
 
-  // After returning from Stripe with success=true, refetch user to pick up subscription
+  // Stripe's return is not fulfillment. Poll the authenticated status endpoint
+  // until the webhook activates the subscription, with a bounded timeout.
   useEffect(() => {
-    if (showSuccess) {
-      refetch();
-    }
-  }, [showSuccess]);
+    if (!returnedFromStripe) return;
+    let stopped = false;
+    const started = Date.now();
+    setConfirmation("pending");
+    const poll = async () => {
+      try {
+        const response = await fetch("/api/subscription/status");
+        if (!response.ok) throw new Error("status unavailable");
+        const data = await response.json() as { subscription_status?: string };
+        const next = nextSubscriptionConfirmationState(data.subscription_status, Date.now() - started);
+        if (stopped) return;
+        setConfirmation(next);
+        await refetch();
+        if (next === "pending") window.setTimeout(poll, SUBSCRIPTION_CONFIRMATION_INTERVAL_MS);
+      } catch {
+        if (!stopped) setConfirmation("error");
+      }
+    };
+    void poll();
+    return () => { stopped = true; };
+  }, [returnedFromStripe, refetch]);
+
+  const retryConfirmation = () => {
+    window.history.replaceState({}, "", "/subscribe?success=true&session_id=" + encodeURIComponent(search.sessionId ?? ""));
+    window.location.reload();
+  };
 
   if (loading) {
     return (
@@ -93,7 +119,7 @@ function SubscribePage() {
     );
   }
 
-  // If already subscribed, show success
+  // Only the server-confirmed active status shows success.
   if (user?.subscription_status === "active") {
     return (
       <div className="flex min-h-[80vh] items-center justify-center px-4">
@@ -152,18 +178,23 @@ function SubscribePage() {
           start chatting. Premium includes regrades and seeing who liked you. Cancel anytime.
         </p>
 
-        {/* Success banner — copy intentionally does not claim the payment
-            succeeded: the Stripe webhook grants the subscription and the page
-            refetches the user to confirm. */}
-        {showSuccess && (
-          <div className="mb-6 rounded-xl border border-green-500/30 bg-green-500/10 p-4">
-            <p className="font-semibold text-green-400">
-              ✅ Payment received — we're confirming your subscription.
-            </p>
-            <p className="mt-1 text-sm text-green-400/70">
-              Activation usually takes a few seconds. If it hasn't appeared
-              yet, refresh this page.
-            </p>
+        {/* Return status is explicit; never equate Stripe redirect with fulfillment. */}
+        {showSuccess && confirmation === "pending" && (
+          <div className="mb-6 rounded-xl border border-blue-500/30 bg-blue-500/10 p-4" role="status">
+            <p className="font-semibold text-blue-400">Payment received — confirming your subscription…</p>
+            <p className="mt-1 text-sm text-blue-400/70">We’re waiting for Stripe to finish activation.</p>
+          </div>
+        )}
+        {showSuccess && confirmation === "timeout" && (
+          <div className="mb-6 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4" role="alert">
+            <p className="font-semibold text-amber-400">Activation is taking longer than expected.</p>
+            <button onClick={retryConfirmation} className="mt-2 rounded-full border border-amber-400/50 px-4 py-2 text-sm font-semibold text-amber-300">Check again</button>
+          </div>
+        )}
+        {showSuccess && confirmation === "error" && (
+          <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/10 p-4" role="alert">
+            <p className="font-semibold text-red-400">We couldn’t confirm activation.</p>
+            <button onClick={retryConfirmation} className="mt-2 rounded-full border border-red-400/50 px-4 py-2 text-sm font-semibold text-red-300">Retry</button>
           </div>
         )}
 
@@ -235,7 +266,7 @@ function SubscribePage() {
           {/* Checkout Button */}
           <button
             onClick={handleSubscribe}
-            disabled={checkingOut}
+            disabled={checkingOut || isCheckoutBlocked(user?.subscription_status)}
             className={`w-full rounded-full px-8 py-4 text-center text-lg font-semibold text-white shadow-lg transition ${
               "bg-rose-600 shadow-rose-600/25 hover:bg-rose-500 hover:shadow-rose-500/30"
             } disabled:cursor-wait disabled:opacity-60`}
@@ -246,7 +277,7 @@ function SubscribePage() {
                 Redirecting to Stripe...
               </span>
             ) : (
-              `Subscribe — $${currentPlan.price.toFixed(2)}${currentPlan.period}`
+              user?.subscription_status === "processing" ? "Subscription already processing…" : `Subscribe — $${currentPlan.price.toFixed(2)}${currentPlan.period}`
             )}
           </button>
           <p className="mt-3 text-xs text-gray-500">

@@ -114,6 +114,7 @@ import { webcrypto } from "node:crypto";
 import { storePhoto, readPhotoBuffer, deletePhoto, isStoragePhotoPath } from "../src/blob-store.ts";
 import { deleteAnonUpload, maybeSweepExpiredAnonUploads } from "./anon-upload-retention";
 import { resolveOwnedPhotoPaths, validateAnonymousGradePath } from "./photo-access";
+import { isCheckoutBlocked } from "./subscription-confirmation";
 import { parseModerationContent, MODERATION_UNAVAILABLE_CODE, type ModerationResult } from "./moderation";
 import {
   EVENTS,
@@ -1692,11 +1693,12 @@ async function handleCreateCheckout(req: Request): Promise<Response> {
     return json({ error: "Unauthorized" }, 401);
   }
 
-  if (user.subscription_status === "active") {
+  if (isCheckoutBlocked(user.subscription_status)) {
     return json({
       error: "Subscription already active",
-      subscription_status: "active",
-    }, 400);
+      subscription_status: user.subscription_status,
+      code: "SUBSCRIPTION_ALREADY_PENDING",
+    }, 409);
   }
 
   const body = await req.json().catch(() => null);
@@ -1710,6 +1712,8 @@ async function handleCreateCheckout(req: Request): Promise<Response> {
   }
 
   const priceId = PREMIUM_PRICE_ID;
+
+  await updateSubscriptionStatus(user.id, "processing");
 
   const session = await stripe.checkout.sessions.create({
     mode: "subscription",
