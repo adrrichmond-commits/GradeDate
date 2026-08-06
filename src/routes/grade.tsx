@@ -9,6 +9,7 @@ import {
   attachPhotoSources,
   ensurePhotoDataUrls,
   fileToDataUrl,
+  resolveEntryPhotoSrc,
   resolveGradePhotoSrc,
   type GradePhotoEntry,
 } from "~/grade-photo-source";
@@ -899,9 +900,9 @@ function GradePage() {
             {/* ── Done: Single-Photo / Anonymous Results ──────── */}
             {state === "done" && !photoGrades && grade !== null && (
               <div className="flex flex-col items-center gap-6 py-4">
-                {photos[0]?.previewUrl && (
+                {resolveEntryPhotoSrc(photos[0]) && (
                   <img
-                    src={photos[0].previewUrl}
+                    src={resolveEntryPhotoSrc(photos[0])}
                     alt="Preview"
                     className="h-32 w-32 rounded-full object-cover ring-3 ring-rose-500/15 ring-offset-2 ring-offset-gray-950"
                   />
