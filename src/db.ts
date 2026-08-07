@@ -344,6 +344,14 @@ export async function initTables(): Promise<void> {
   try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS resolution_notes TEXT`; } catch {}
   try { await sql()`CREATE UNIQUE INDEX IF NOT EXISTS reports_id_unique ON reports(id)`; } catch {}
   try { await sql()`CREATE INDEX IF NOT EXISTS reports_queue_idx ON reports(status, priority, created_at)`; } catch {}
+  await sql()`CREATE TABLE IF NOT EXISTS photo_moderation_cases (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(), photo_id INTEGER NOT NULL REFERENCES user_photos(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, status TEXT NOT NULL DEFAULT 'pending',
+    source TEXT NOT NULL, result TEXT NOT NULL DEFAULT 'unknown', reason TEXT, actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), reviewed_at TIMESTAMPTZ,
+    retention_until TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '30 days')
+  )`;
+  try { await sql()`CREATE INDEX IF NOT EXISTS photo_moderation_queue_idx ON photo_moderation_cases(status, created_at)`; } catch {}
   await sql()`
     CREATE TABLE IF NOT EXISTS password_reset_tokens (
       id TEXT PRIMARY KEY,
@@ -772,9 +780,10 @@ export async function setPrimaryPhoto(
 
 export async function getUserPhotos(userId: number): Promise<UserPhoto[]> {
   const rows = await sql()`
-    SELECT * FROM user_photos
-    WHERE user_id = ${userId}
-    ORDER BY sort_order ASC
+    SELECT p.* FROM user_photos p
+    WHERE p.user_id = ${userId}
+      AND NOT EXISTS (SELECT 1 FROM photo_moderation_cases c WHERE c.photo_id=p.id AND c.status IN ('pending','quarantined','removed'))
+    ORDER BY p.sort_order ASC
   `;
   return rows as unknown as UserPhoto[];
 }
@@ -1775,8 +1784,14 @@ export async function getBlockedUserIds(userId: number): Promise<number[]> {
 export async function reportUser(reporterId: number, reportedId: number, reason: string, targetPhotoId?: number | null, details?: string | null): Promise<string> {
   const rows = await sql()`
     INSERT INTO reports (reporter_id, reported_id, reason, target_photo_id, details)
-    VALUES (${reporterId}, ${reportedId}, ${reason}, ${targetPhotoId ?? null}, ${details ?? null}) RETURNING id
+    VALUES (${reporterId}, ${reportedId}, ${reason}, (SELECT id FROM user_photos WHERE id=${targetPhotoId ?? null} AND user_id=${reportedId}), ${details ?? null}) RETURNING id
   `;
+  if (targetPhotoId) {
+    await sql()`INSERT INTO photo_moderation_cases (photo_id, user_id, source, result, reason, status)
+      SELECT id, user_id, 'user_report', 'unknown', ${reason}, 'pending' FROM user_photos
+      WHERE id=${targetPhotoId} AND user_id=${reportedId}
+      AND NOT EXISTS (SELECT 1 FROM photo_moderation_cases WHERE photo_id=${targetPhotoId} AND status IN ('pending','quarantined'))`;
+  }
   return String(rows[0].id);
 }
 export async function getReportQueue(status?: string) {
@@ -1792,6 +1807,18 @@ export async function transitionReport(id: string, status: string, actorId: numb
   else await sql()`UPDATE reports SET status=${status} WHERE id=${id}`;
   return actorId;
 }
+
+export async function createPhotoModerationCase(photoId: number, userId: number, source: string, result = "unknown", reason?: string | null) {
+  const rows = await sql()`INSERT INTO photo_moderation_cases (photo_id,user_id,source,result,reason,status) VALUES (${photoId},${userId},${source},${result},${reason ?? null},${result === "unsafe" ? "quarantined" : "pending"}) RETURNING id, photo_id, user_id, status, source, result, reason, created_at, updated_at, reviewed_at, retention_until`;
+  return rows[0] ?? null;
+}
+export async function getPhotoModerationQueue(status?: string) { return sql()`SELECT id, photo_id, user_id, status, source, result, reason, actor_user_id, created_at, updated_at, reviewed_at, retention_until FROM photo_moderation_cases WHERE (${status ?? null} IS NULL OR status=${status ?? null}) ORDER BY created_at ASC LIMIT 200`; }
+export async function getPhotoModerationCase(id: string) { const rows = await sql()`SELECT id, photo_id, user_id, status, source, result, reason, actor_user_id, created_at, updated_at, reviewed_at, retention_until FROM photo_moderation_cases WHERE id=${id}`; return rows[0] ?? null; }
+export async function transitionPhotoModerationCase(id: string, status: string, actorId: number, result?: string) {
+  const rows = await sql()`UPDATE photo_moderation_cases SET status=${status}, result=COALESCE(${result ?? null}, result), actor_user_id=${actorId}, updated_at=NOW(), reviewed_at=NOW() WHERE id=${id} RETURNING photo_id,user_id,status`;
+  return rows[0] ?? null;
+}
+export async function photoIsQuarantined(photoId: number) { const rows = await sql()`SELECT 1 FROM photo_moderation_cases WHERE photo_id=${photoId} AND status IN ('pending','quarantined','removed') LIMIT 1`; return rows.length > 0; }
 
 // ── Account Deletion ───────────────────────────────────────────
 
