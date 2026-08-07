@@ -63,6 +63,7 @@ function ChatPage() {
   const [reporting, setReporting] = useState(false);
   const [reportDone, setReportDone] = useState(false);
   const [blocking, setBlocking] = useState(false);
+  const [blockError, setBlockError] = useState("");
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -172,18 +173,23 @@ function ChatPage() {
   const handleBlock = async () => {
     if (!otherUser) return;
     setBlocking(true);
+    setBlockError("");
+    let blocked = false;
     try {
-      await fetch("/api/users/block", {
+      const blockRes = await fetch("/api/users/block", {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-CSRF-Token": getCsrfToken() || "" },
         body: JSON.stringify({ user_id: otherUser.id }),
       });
+      if (!blockRes.ok) { const data = await blockRes.json().catch(() => null); setBlockError(data?.error || "Could not block this user. Please try again."); return; }
+      blocked = true;
       navigate({ to: "/connections" });
     } catch {
-      // ignore
+      setBlockError("Network error. Please try again.");
+    } finally {
+      setBlocking(false);
     }
-    setBlocking(false);
-    setShowMenu(false);
+    if (blocked) setShowMenu(false);
   };
 
   const requestUnmatch = () => {
@@ -292,7 +298,8 @@ function ChatPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
             </svg>
           </button>
-          {showMenu && (
+          {blockError && <p role="alert" className="mt-2 text-sm text-red-400">{blockError}</p>}
+      {showMenu && (
             <div role="menu" className="absolute right-0 top-10 z-20 w-44 rounded-xl border border-gray-700 bg-gray-900 py-1.5 shadow-2xl">
               <button
                 onClick={handleBlock}

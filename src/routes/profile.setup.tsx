@@ -294,7 +294,7 @@ function ProfileSetup() {
     }
   };
 
-  const totalSlots = 6;
+  const totalSlots = 5;
   const photoCount = photos.length;
 
   return (
@@ -321,7 +321,7 @@ function ProfileSetup() {
             {/* ── Multi-Photo Grid (3×2) ── */}
             <div>
               <label className="mb-3 block text-sm font-medium text-gray-300">
-                Photos ({photoCount}/6)
+                Photos ({photoCount}/5)
               </label>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {Array.from({ length: totalSlots }).map((_, i) => {
@@ -421,7 +421,7 @@ function ProfileSetup() {
                 })}
               </div>
               <p className="mt-1.5 text-xs text-gray-500">
-                Upload up to 6 photos. Tap the ★ to set your primary photo.
+                Upload up to 5 photos. Tap the ★ to set your primary photo.
               </p>
             </div>
 
