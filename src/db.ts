@@ -352,6 +352,20 @@ export async function initTables(): Promise<void> {
     retention_until TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '30 days')
   )`;
   try { await sql()`CREATE INDEX IF NOT EXISTS photo_moderation_queue_idx ON photo_moderation_cases(status, created_at)`; } catch {}
+  await sql()`CREATE TABLE IF NOT EXISTS user_suspensions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    reason TEXT NOT NULL, duration TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active',
+    starts_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), ends_at TIMESTAMPTZ, actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    source_report_id UUID REFERENCES reports(id) ON DELETE SET NULL, source_case_id UUID, revoked_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`;
+  await sql()`CREATE INDEX IF NOT EXISTS user_suspensions_active_idx ON user_suspensions(user_id, status, ends_at)`;
+  await sql()`CREATE TABLE IF NOT EXISTS appeals (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(), suspension_id UUID NOT NULL REFERENCES user_suspensions(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, text TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
+    actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), reviewed_at TIMESTAMPTZ
+  )`;
+  await sql()`CREATE UNIQUE INDEX IF NOT EXISTS appeals_one_per_suspension ON appeals(suspension_id)`;
   await sql()`
     CREATE TABLE IF NOT EXISTS password_reset_tokens (
       id TEXT PRIMARY KEY,
@@ -917,6 +931,12 @@ export async function deleteSession(sessionId: string): Promise<void> {
   await sql()`DELETE FROM sessions WHERE id = ${sessionId}`;
 }
 
+export async function createSuspension(input: { userId:number; reason:string; duration:string; endsAt:string|null; actorUserId:number; sourceReportId?:string|null; sourceCaseId?:string|null }): Promise<any> { const rows=await sql()`INSERT INTO user_suspensions (user_id,reason,duration,ends_at,actor_user_id,source_report_id,source_case_id) VALUES (${input.userId},${input.reason},${input.duration},${input.endsAt},${input.actorUserId},${input.sourceReportId??null},${input.sourceCaseId??null}) RETURNING id,user_id,reason,duration,status,starts_at,ends_at,created_at`; await sql()`UPDATE users SET suspended_until=${input.endsAt}, suspension_reason=${input.reason} WHERE id=${input.userId}`; return rows[0]; }
+export async function revokeSuspension(id:string, actorUserId:number): Promise<boolean> { const r=await sql()`UPDATE user_suspensions SET status='revoked',revoked_at=NOW(),actor_user_id=${actorUserId} WHERE id=${id} AND status='active' RETURNING user_id`; if(!r.length)return false; await sql()`UPDATE users SET suspended_until=NULL,suspension_reason=NULL WHERE id=${(r[0] as any).user_id}`; return true; }
+export async function getActiveSuspension(userId:number): Promise<any|null> { const r=await sql()`UPDATE user_suspensions SET status='expired' WHERE user_id=${userId} AND status='active' AND ends_at IS NOT NULL AND ends_at<=NOW()`; void r; const rows=await sql()`SELECT * FROM user_suspensions WHERE user_id=${userId} AND status='active' AND (ends_at IS NULL OR ends_at>NOW()) ORDER BY starts_at DESC LIMIT 1`; return rows[0]??null; }
+export async function createAppeal(suspensionId:string,userId:number,text:string):Promise<any>{const r=await sql()`INSERT INTO appeals(suspension_id,user_id,text) SELECT ${suspensionId},${userId},${text} WHERE EXISTS(SELECT 1 FROM user_suspensions WHERE id=${suspensionId} AND user_id=${userId} AND status='active' AND created_at>=NOW()-INTERVAL '14 days') RETURNING id,suspension_id,status,created_at`; return r[0]??null;}
+export async function getAppeals(userId?:number):Promise<any[]>{const r= userId===undefined ? await sql()`SELECT id,suspension_id,user_id,status,created_at,reviewed_at FROM appeals ORDER BY created_at DESC` : await sql()`SELECT id,suspension_id,status,created_at,reviewed_at FROM appeals WHERE user_id=${userId} ORDER BY created_at DESC`; return r as any[];}
+export async function reviewAppeal(id:string,status:string,actorUserId:number):Promise<any|null>{const r=await sql()`UPDATE appeals SET status=${status},actor_user_id=${actorUserId},reviewed_at=NOW() WHERE id=${id} AND status='pending' AND user_id<>${actorUserId} RETURNING suspension_id,user_id`; if(!r.length)return null; if(status==='granted'){await revokeSuspension(String((r[0] as any).suspension_id),actorUserId);} return r[0];}
 // ── Safety foundation ───────────────────────────────────────
 export async function recordAdminAuditEvent(event: { actorUserId: number | null; action: string; targetType?: string; targetId?: string; requestId?: string; metadata?: Record<string, unknown> }): Promise<void> {
   await sql()`INSERT INTO admin_audit_events (actor_user_id, action, target_type, target_id, request_id, metadata) VALUES (${event.actorUserId}, ${event.action}, ${event.targetType ?? null}, ${event.targetId ?? null}, ${event.requestId ?? null}, ${JSON.stringify(event.metadata ?? {})}::jsonb)`;

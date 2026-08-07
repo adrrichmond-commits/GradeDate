@@ -1,0 +1,3 @@
+import { describe, expect, test } from "bun:test";
+import { canTransitionAppeal, durationEnds, isSuspensionReason, isSuspensionDuration, APPEAL_TEXT_MAX } from "./suspensions";
+describe("suspension policy", () => { test("allowlists", () => { expect(isSuspensionReason("underage")).toBe(true); expect(isSuspensionReason("ban")).toBe(false); expect(isSuspensionDuration("30d")).toBe(true); }); test("durations", () => { expect(durationEnds("indefinite")).toBeNull(); expect(durationEnds("24h")).toBeTruthy(); }); test("appeals only pending transition", () => { expect(canTransitionAppeal("pending", "granted")).toBe(true); expect(canTransitionAppeal("granted", "denied")).toBe(false); expect(APPEAL_TEXT_MAX).toBe(2000); }); });

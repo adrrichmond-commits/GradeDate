@@ -16,7 +16,7 @@ export function isSuspended(user: Pick<SafetyUser, "suspended_until"> | null, no
 }
 /** Suspended users may only inspect/submit their own appeal; all other protected actions fail closed. */
 export function isSuspensionException(pathname: string, method: string): boolean {
-  return method === "GET" && pathname === "/api/suspension/appeal-status";
+  return (method === "GET" || method === "POST") && pathname === "/api/suspension/appeal-status";
 }
 /** Production privileged access must provide an actual MFA assertion. Never infer MFA from email/role. */
 export function privilegedMfaReady(env: Record<string, string | undefined> = process.env): boolean {
