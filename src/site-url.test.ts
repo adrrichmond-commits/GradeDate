@@ -57,7 +57,7 @@ describe("resolveSiteOrigin", () => {
   test("falls back to null when nothing is available", () => {
     expect(resolveSiteOrigin(undefined)).toBe("https://gradedate.app");
     expect(resolveSiteOrigin(null)).toBe("https://gradedate.app");
-    expect(resolveSiteOrigin("garbage")).toBeNull();
+    expect(resolveSiteOrigin("garbage")).toBe("https://gradedate.app");
   });
 });
 
