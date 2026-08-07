@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+process.env.PUBLIC_SITE_ORIGIN = "https://gradedate.app";
+
 import { PUBLIC_INDEXABLE_PATHS, requestOrigin, robotsResponse, seoResponse, shouldNoIndex, sitemapResponse } from "./seo";
 
 describe("crawlability policy", () => {
@@ -29,7 +31,7 @@ describe("crawlability policy", () => {
   });
 
   test("machine endpoints derive origin from current request", () => {
-    expect(requestOrigin("https://site.example/robots.txt?x=1")).toBe("https://site.example");
+    expect(requestOrigin("http://private.proxy/robots.txt?x=1")).toBe("https://gradedate.app");
     expect(seoResponse(new Request("https://site.example/sitemap.xml"))).not.toBeNull();
     expect(seoResponse(new Request("https://site.example/"))).toBeNull();
   });
