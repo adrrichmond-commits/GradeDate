@@ -46,6 +46,7 @@ import {
   getBlockedUserIds,
   unmatchUser,
   reportUser,
+  getReportQueue, getReportById, assignReport, transitionReport,
   deleteUserAccount,
   addReGrade,
   useReGrade,
@@ -119,6 +120,7 @@ import { webcrypto } from "node:crypto";
 import { storePhoto, readPhotoBuffer, deletePhoto, isStoragePhotoPath } from "../src/blob-store.ts";
 import { deleteAnonUpload, maybeSweepExpiredAnonUploads } from "./anon-upload-retention";
 import { resolveOwnedPhotoPaths, validateAnonymousGradePath } from "./photo-access";
+import { canManageReport, canUseOwnerAction, canTransition, isReportStatus, isReportPriority, isReportReason, REPORT_DETAILS_MAX, REPORT_RATE_LIMIT } from "./report-queue";
 import { isCheckoutBlocked } from "./subscription-confirmation";
 import { isStorePurchaseBlocked } from "./store-confirmation";
 import { parseModerationContent, MODERATION_UNAVAILABLE_CODE, type ModerationResult } from "./moderation";
@@ -1679,8 +1681,10 @@ async function handleReport(req: Request): Promise<Response> {
   const body = await req.json().catch(() => null);
   const targetId = body?.user_id;
   const reason = body?.reason;
+  const details = body?.details;
+  const targetPhotoId = body?.photo_id;
 
-  if (!targetId || typeof targetId !== "number") {
+  if (!targetId || typeof targetId !== "number" || !Number.isInteger(targetId)) {
     return json({ error: "user_id is required" }, 400);
   }
 
@@ -1688,14 +1692,19 @@ async function handleReport(req: Request): Promise<Response> {
     return json({ error: "You cannot report yourself" }, 400);
   }
 
-  if (!reason || typeof reason !== "string" || !VALID_REPORT_REASONS.includes(reason)) {
+  const target = await getUserById(targetId);
+  if (!target) return json({ error: "User not found" }, 404);
+
+  if (!isReportReason(reason)) {
     return json({
       error: `Invalid reason. Must be one of: ${VALID_REPORT_REASONS.join(", ")}`,
     }, 400);
   }
 
+  if (details !== undefined && (typeof details !== "string" || details.length > REPORT_DETAILS_MAX)) return json({ error: "details is too long" }, 400);
+  if (targetPhotoId !== undefined && (!Number.isInteger(targetPhotoId) || targetPhotoId < 1)) return json({ error: "Invalid photo reference" }, 400);
   try {
-    await reportUser(user.id, targetId, reason);
+    await reportUser(user.id, targetId, reason, targetPhotoId ?? null, details ?? null);
   } catch (err) {
     logError(EVENTS.REPORT_FAILED, { reporter_id: user.id, reason, err });
     throw err;
@@ -1703,6 +1712,42 @@ async function handleReport(req: Request): Promise<Response> {
   logInfo(EVENTS.REPORT_SUBMITTED, { reporter_id: user.id, reason });
   logInfo(EVENTS.MODERATION_REPORT_RECEIVED, { reporter_id: user.id, reason });
   return json({ success: true });
+}
+
+async function handleReportQueue(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user || !canManageReport(user.role)) return json({ error: "Forbidden" }, 403);
+  const status = new URL(req.url).searchParams.get("status") ?? undefined;
+  if (status && !isReportStatus(status)) return json({ error: "Invalid status" }, 400);
+  await recordAdminAuditEvent({ actorUserId: user.id, action: "report.queue.read", targetType: "report" });
+  return json({ reports: await getReportQueue(status) });
+}
+async function handleReportDetail(req: Request, id: string): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user || !canManageReport(user.role)) return json({ error: "Forbidden" }, 403);
+  const report = await getReportById(id);
+  if (!report) return json({ error: "Not found" }, 404);
+  await recordAdminAuditEvent({ actorUserId: user.id, action: "report.read", targetType: "report", targetId: id });
+  return json({ report });
+}
+async function handleReportMutation(req: Request, id: string): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user || !canManageReport(user.role)) return json({ error: "Forbidden" }, 403);
+  const body = await req.json().catch(() => null);
+  const report = await getReportById(id);
+  if (!report) return json({ error: "Not found" }, 404);
+  if (body?.assignee_id !== undefined) {
+    if (!canUseOwnerAction(user.role)) return json({ error: "Owner/admin action required" }, 403);
+    if (body.assignee_id !== null && (!Number.isInteger(body.assignee_id) || body.assignee_id < 1)) return json({ error: "Invalid assignee" }, 400);
+    await assignReport(id, body.assignee_id);
+  }
+  if (body?.status !== undefined) {
+    if (!isReportStatus(body.status) || !canTransition(report.status, body.status)) return json({ error: "Invalid transition" }, 409);
+    if (body.priority !== undefined && !isReportPriority(body.priority)) return json({ error: "Invalid priority" }, 400);
+    await transitionReport(id, body.status, user.id, typeof body.notes === "string" ? body.notes.slice(0, 2000) : null);
+  }
+  await recordAdminAuditEvent({ actorUserId: user.id, action: "report.mutate", targetType: "report", targetId: id, metadata: { status: body?.status ?? null, assigned: body?.assignee_id !== undefined } });
+  return json({ ok: true });
 }
 
 async function handleDeleteAccount(req: Request): Promise<Response> {
@@ -2811,6 +2856,11 @@ export async function handleApiRoute(
     if (csrfErr) return csrfErr;
     return handleDeleteAccount(req);
   }
+
+  const reportMatch = pathname.match(/^\/api\/admin\/reports\/([^/]+)$/);
+  if (pathname === "/api/admin/reports" && method === "GET") return handleReportQueue(req);
+  if (reportMatch && method === "GET") return handleReportDetail(req, reportMatch[1]);
+  if (reportMatch && method === "POST") { const csrfErr = checkCsrf(req); if (csrfErr) return csrfErr; return handleReportMutation(req, reportMatch[1]); }
 
   // Subscription
   if (pathname === "/api/subscription/status" && method === "GET") {
