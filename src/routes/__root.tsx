@@ -63,9 +63,41 @@ export const Route = createRootRoute({
       },
     ],
   }),
-  notFoundComponent: () => <div>Page not found</div>,
+  notFoundComponent: NotFoundState,
   component: RootComponent,
 });
+
+function NotFoundState() {
+  return (
+    <main
+      aria-labelledby="not-found-title"
+      className="flex min-h-screen flex-col items-center justify-center bg-gray-950 px-6 text-center text-gray-100"
+    >
+      <p className="mb-4 text-sm font-semibold uppercase tracking-[0.25em] text-rose-400">GradeDate</p>
+      <h1 id="not-found-title" className="text-4xl font-extrabold tracking-tight sm:text-5xl">
+        This page took a wrong turn
+      </h1>
+      <p className="mt-4 max-w-md text-gray-400">
+        We couldn’t find the page you’re looking for. Let’s get you back to making meaningful connections.
+      </p>
+      <nav aria-label="Page navigation" className="mt-8 flex flex-wrap justify-center gap-3">
+        <Link
+          to="/"
+          className="rounded-full bg-rose-500 px-5 py-3 text-sm font-semibold text-white transition hover:bg-rose-400 focus:outline-none focus:ring-2 focus:ring-rose-300"
+        >
+          Return home
+        </Link>
+        <button
+          type="button"
+          onClick={() => window.history.back()}
+          className="rounded-full border border-white/15 px-5 py-3 text-sm font-semibold text-gray-200 transition hover:border-white/30 focus:outline-none focus:ring-2 focus:ring-rose-300"
+        >
+          Go back
+        </button>
+      </nav>
+    </main>
+  );
+}
 
 function RootComponent() {
   return (
