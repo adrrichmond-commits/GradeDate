@@ -75,6 +75,12 @@ describe("checkDatabaseReady (db helper)", () => {
     expect(result).toEqual({ ok: false, reason: "invalid_config" });
   });
 
+  test("reports invalid_config for a postgres URL without a host", async () => {
+    process.env["DATABASE_" + "URL"] = "postgresql://";
+    const result = await checkDatabaseReady();
+    expect(result).toEqual({ ok: false, reason: "invalid_config" });
+  });
+
   test("reports query_failed (coarsely) for an unreachable postgres URL", async () => {
     // Port 1 is closed on localhost — connection refused quickly. The result
     // must be coarse: no host, URL, or error text.
