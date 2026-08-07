@@ -195,6 +195,20 @@ export async function initTables(): Promise<void> {
   } catch { /* ignore */ }
 
   await sql()`
+    CREATE TABLE IF NOT EXISTS attribution_claims (
+      nonce TEXT PRIMARY KEY,
+      experiment TEXT NOT NULL,
+      variant TEXT NOT NULL,
+      issued_at TIMESTAMPTZ NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      consumed_at TIMESTAMPTZ
+    )
+  `;
+  await sql()`
+    CREATE INDEX IF NOT EXISTS attribution_claims_expiry_idx ON attribution_claims(expires_at)
+  `;
+
+  await sql()`
     CREATE TABLE IF NOT EXISTS paid_upsell_entitlements (
       id SERIAL PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -2248,4 +2262,21 @@ export async function confirmWaitlistEntry(email: string): Promise<void> {
     UPDATE waitlist SET confirmed_at = NOW()
     WHERE email = ${email}
   `;
+}
+
+/** Persist a claim nonce before sending it to the browser. Duplicate nonces fail closed. */
+export async function persistAttributionClaim(claim: { nonce: string; experiment: string; variant: string; issuedAt: number; expiresAt: number }): Promise<boolean> {
+  try {
+    await sql()`DELETE FROM attribution_claims WHERE expires_at < NOW()`;
+    const rows = await sql()`INSERT INTO attribution_claims (nonce, experiment, variant, issued_at, expires_at) VALUES (${claim.nonce}, ${claim.experiment}, ${claim.variant}, TO_TIMESTAMP(${claim.issuedAt / 1000}), TO_TIMESTAMP(${claim.expiresAt / 1000})) ON CONFLICT (nonce) DO NOTHING RETURNING nonce`;
+    return rows.length === 1;
+  } catch { return false; }
+}
+
+/** Atomically consume a non-expired claim nonce for a future signup boundary. */
+export async function consumeAttributionClaim(nonce: string): Promise<boolean> {
+  try {
+    const rows = await sql()`UPDATE attribution_claims SET consumed_at = NOW() WHERE nonce = ${nonce} AND consumed_at IS NULL AND expires_at > NOW() RETURNING nonce`;
+    return rows.length === 1;
+  } catch { return false; }
 }

@@ -60,6 +60,13 @@ function CookiePolicy() {
             It contains no personal information, is never shared with anyone, and is never
             sent to our servers: we only record which version of the page you saw.
           </p>
+          <p className="mt-3 leading-relaxed">
+            After a valid grade-result CTA exposure, we may set <code>gd_attribution_claim</code>,
+            an HttpOnly, first-party cookie used to preserve anonymous experiment attribution for
+            a limited period (14 days). It contains no identity or claim data readable by scripts,
+            uses SameSite=Lax, and is Secure in production. It is not issued for conversions or
+            invalid events and is best-effort; grading and CTA use do not depend on it.
+          </p>
         </section>
 
         {/* What We Don't Use */}

@@ -112,7 +112,7 @@ export const EVENT_NAME_RE = /^[a-z][a-z0-9_.-]*$/;
 
 /** Keys whose values are dropped entirely (recursively) before logging. */
 const SENSITIVE_KEY_RE =
-  /(password|passwd|pwd|secret|token|api[_-]?key|authorization|bearer|cookie|session|signature|email|phone|ssn|cvv|card|referral_code|reset_url|reset_token|webhook_secret|stripe_(secret|customer|subscription|session|id)|blob_(read_write_)?token|message|content|body|bio|feedback|analysis|text|photo|image|url|path|location|city|state|address|latitude|longitude|lat|lng|\bip\b)/i;
+  /(password|passwd|pwd|secret|token|nonce|seed|user[_-]?id|api[_-]?key|authorization|bearer|cookie|session|signature|email|phone|ssn|cvv|card|referral_code|reset_url|reset_token|webhook_secret|stripe_(secret|customer|subscription|session|id)|blob_(read_write_)?token|message|content|body|bio|feedback|analysis|text|photo|image|url|path|location|city|state|address|latitude|longitude|lat|lng|\bip\b)/i;
 
 // ── Bounds ────────────────────────────────────────────────────
 const MAX_STRING = 512;
