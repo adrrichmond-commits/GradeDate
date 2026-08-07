@@ -66,6 +66,7 @@ import {
   getUserPhotos,
   getUserPhotoCount,
   getPhotoModerationQueue, getPhotoModerationCase, transitionPhotoModerationCase, createPhotoModerationCase,
+  createSuspension, revokeSuspension, getActiveSuspension, createAppeal, getAppeals, reviewAppeal,
   savePushSubscription,
   getPushSubscriptions,
   deletePushSubscription,
@@ -98,6 +99,8 @@ import {
   getUpsellEntitlementState,
   checkDatabaseReady,
   persistAttributionClaim,
+  createSuspension,
+  quarantineUserPhotosForUnderage,
   type PaidUpsellProduct,
   type User,
   type UserPhoto,
@@ -122,6 +125,7 @@ import { storePhoto, readPhotoBuffer, deletePhoto, isStoragePhotoPath } from "..
 import { deleteAnonUpload, maybeSweepExpiredAnonUploads } from "./anon-upload-retention";
 import { resolveOwnedPhotoPaths, validateAnonymousGradePath } from "./photo-access";
 import { canReviewPhoto, canTransitionQuarantine, isQuarantineStatus, privateReviewStorageReady, redactPhotoCase,  canUseOwnerAction, canTransition, isReportStatus, isReportPriority, isReportReason, REPORT_DETAILS_MAX, REPORT_RATE_LIMIT } from "./report-queue";
+import { isSuspensionReason, isSuspensionDuration, isAppealStatus, canReviewAppeal, canOverrideSuspension, durationEnds, APPEAL_TEXT_MAX } from "./suspensions";
 import { isCheckoutBlocked } from "./subscription-confirmation";
 import { isStorePurchaseBlocked } from "./store-confirmation";
 import { parseModerationContent, MODERATION_UNAVAILABLE_CODE, type ModerationResult } from "./moderation";
@@ -299,6 +303,8 @@ async function enforceSafety(req: Request, pathname: string): Promise<Response |
   return null;
 }
 
+async function handleSuspensionAppeal(req: Request): Promise<Response> { const user=await getCurrentUser(req); if(!user)return json({error:"Unauthorized"},401); const path=new URL(req.url).pathname; if(req.method==='GET'){ await recordAdminAuditEvent({actorUserId:user.id,action:'appeal.status.read',targetType:'appeal'}); return json({appeals:(await getAppeals(user.id)).map(({id,suspension_id,status,created_at,reviewed_at})=>({id,suspension_id,status,created_at,reviewed_at}))}); } const body=await req.json().catch(()=>null); if(typeof body?.suspension_id!== 'string'||typeof body?.text!=='string'||!body.text.trim()||body.text.length>APPEAL_TEXT_MAX)return json({error:'Invalid appeal'},400); const appeal=await createAppeal(body.suspension_id,user.id,body.text.trim()); if(!appeal)return json({error:'Appeal unavailable'},409); await recordAdminAuditEvent({actorUserId:user.id,action:'appeal.submit',targetType:'appeal',targetId:String(appeal.id)}); return json({appeal:{id:appeal.id,status:appeal.status,created_at:appeal.created_at}},201); }
+async function handleSuspensionAdmin(req: Request, id?: string): Promise<Response> { const actor=await getCurrentUser(req); if(!actor||!canReviewAppeal(actor.role))return json({error:'Forbidden'},403); if(req.method==='GET'){await recordAdminAuditEvent({actorUserId:actor.id,action:'appeal.queue.read',targetType:'appeal'});return json({appeals:(await getAppeals()).map(({id,suspension_id,user_id,status,created_at,reviewed_at})=>({id,suspension_id,user_id,status,created_at,reviewed_at}))});} const body=await req.json().catch(()=>null); if(id&&body?.action==='revoke'){ if(!canOverrideSuspension(actor.role)) return json({error:'Owner/admin action required'},403); const ok=await revokeSuspension(id,actor.id); if(!ok)return json({error:'Invalid transition'},409); await recordAdminAuditEvent({actorUserId:actor.id,action:'suspension.revoke',targetType:'suspension',targetId:id}); return json({ok:true}); } if(id&&body?.status&&isAppealStatus(body.status)){if(!canOverrideSuspension(actor.role)&&body.status==='granted')return json({error:'Owner/admin action required'},403);const result=await reviewAppeal(id,body.status,actor.id);if(!result)return json({error:'Invalid transition'},409);await recordAdminAuditEvent({actorUserId:actor.id,action:'appeal.review',targetType:'appeal',targetId:id,metadata:{status:body.status}});return json({ok:true});} const target=Number(body?.user_id);if(!Number.isInteger(target)||!isSuspensionReason(body?.reason)||!isSuspensionDuration(body?.duration))return json({error:'Invalid suspension'},400);if(target===actor.id)return json({error:'Cannot suspend self'},403);const created=await createSuspension({userId:target,reason:body.reason,duration:body.duration,endsAt:durationEnds(body.duration),actorUserId:actor.id,sourceReportId:body.source_report_id??null,sourceCaseId:body.source_case_id??null});await recordAdminAuditEvent({actorUserId:actor.id,action:'suspension.create',targetType:'user',targetId:String(target),metadata:{reason:body.reason,duration:body.duration}});return json({suspension:created}); }
 // ── API Route Handlers ────────────────────────────────────────
 
 async function handleSignup(req: Request): Promise<Response> {
@@ -1704,8 +1710,30 @@ async function handleReport(req: Request): Promise<Response> {
 
   if (details !== undefined && (typeof details !== "string" || details.length > REPORT_DETAILS_MAX)) return json({ error: "details is too long" }, 400);
   if (targetPhotoId !== undefined && (!Number.isInteger(targetPhotoId) || targetPhotoId < 1)) return json({ error: "Invalid photo reference" }, 400);
+  let reportId: string;
   try {
-    await reportUser(user.id, targetId, reason, targetPhotoId ?? null, details ?? null);
+    reportId = await reportUser(user.id, targetId, reason, targetPhotoId ?? null, details ?? null);
+    // Underage reports are an immediate safety action: quarantine all target
+    // photos and lock the account pending review. Never expose reporter or
+    // evidence details in the response, and leave subscription state intact.
+    if (reason === "underage") {
+      await quarantineUserPhotosForUnderage(targetId, reportId);
+      const suspension = await createSuspension({
+        userId: targetId,
+        reason: "underage",
+        duration: "indefinite",
+        endsAt: null,
+        actorUserId: user.id,
+        sourceReportId: reportId,
+      });
+      await recordAdminAuditEvent({
+        actorUserId: null,
+        action: "underage.enforcement",
+        targetType: "user",
+        targetId: String(targetId),
+        metadata: { report_id: reportId, suspension_id: String(suspension.id) },
+      });
+    }
   } catch (err) {
     logError(EVENTS.REPORT_FAILED, { reporter_id: user.id, reason, err });
     throw err;
@@ -2891,6 +2919,11 @@ export async function handleApiRoute(
   if (reportMatch && method === "GET") return handleReportDetail(req, reportMatch[1]);
   if (reportMatch && method === "POST") { const csrfErr = checkCsrf(req); if (csrfErr) return csrfErr; return handleReportMutation(req, reportMatch[1]); }
 
+  if (pathname === "/api/suspension/appeal-status" && (method === "GET" || method === "POST")) { if(method==='POST'){const csrfErr=checkCsrf(req);if(csrfErr)return csrfErr;} return handleSuspensionAppeal(req); }
+  if (pathname === "/api/admin/appeals" && method === "GET") return handleSuspensionAdmin(req);
+  const appealMatch = pathname.match(/^\/api\/admin\/appeals\/([^/]+)$/); if(appealMatch && method === "POST"){const csrfErr=checkCsrf(req);if(csrfErr)return csrfErr;return handleSuspensionAdmin(req,appealMatch[1]);}
+  if (pathname === "/api/admin/suspensions" && method === "POST"){const csrfErr=checkCsrf(req);if(csrfErr)return csrfErr;return handleSuspensionAdmin(req);}
+  const suspensionMatch = pathname.match(/^\/api\/admin\/suspensions\/([^/]+)$/); if(suspensionMatch && method === "POST"){const csrfErr=checkCsrf(req);if(csrfErr)return csrfErr;return handleSuspensionAdmin(req,suspensionMatch[1]);}
   // Subscription
   if (pathname === "/api/subscription/status" && method === "GET") {
     return handleSubscriptionStatus(req);
