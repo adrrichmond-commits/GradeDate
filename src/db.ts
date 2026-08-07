@@ -318,13 +318,32 @@ export async function initTables(): Promise<void> {
 
   await sql()`
     CREATE TABLE IF NOT EXISTS reports (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       reporter_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       reported_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       reason TEXT NOT NULL,
-      created_at TIMESTAMPTZ DEFAULT NOW()
+      target_photo_id INTEGER REFERENCES user_photos(id) ON DELETE SET NULL,
+      details TEXT,
+      status TEXT NOT NULL DEFAULT 'open',
+      priority TEXT NOT NULL DEFAULT 'normal',
+      assignee_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      triaged_at TIMESTAMPTZ, actioned_at TIMESTAMPTZ, resolved_at TIMESTAMPTZ, resolution_notes TEXT
     )
   `;
-
+  // Safe migrations for existing Phase 1 deployments.
+  try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS id UUID DEFAULT gen_random_uuid()`; } catch {}
+  try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS target_photo_id INTEGER`; } catch {}
+  try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS details TEXT`; } catch {}
+  try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'open'`; } catch {}
+  try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS priority TEXT NOT NULL DEFAULT 'normal'`; } catch {}
+  try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS assignee_id INTEGER`; } catch {}
+  try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS triaged_at TIMESTAMPTZ`; } catch {}
+  try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS actioned_at TIMESTAMPTZ`; } catch {}
+  try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ`; } catch {}
+  try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS resolution_notes TEXT`; } catch {}
+  try { await sql()`CREATE UNIQUE INDEX IF NOT EXISTS reports_id_unique ON reports(id)`; } catch {}
+  try { await sql()`CREATE INDEX IF NOT EXISTS reports_queue_idx ON reports(status, priority, created_at)`; } catch {}
   await sql()`
     CREATE TABLE IF NOT EXISTS password_reset_tokens (
       id TEXT PRIMARY KEY,
@@ -1753,11 +1772,25 @@ export async function getBlockedUserIds(userId: number): Promise<number[]> {
 
 // ── Reporting ─────────────────────────────────────────────────
 
-export async function reportUser(reporterId: number, reportedId: number, reason: string): Promise<void> {
-  await sql()`
-    INSERT INTO reports (reporter_id, reported_id, reason)
-    VALUES (${reporterId}, ${reportedId}, ${reason})
+export async function reportUser(reporterId: number, reportedId: number, reason: string, targetPhotoId?: number | null, details?: string | null): Promise<string> {
+  const rows = await sql()`
+    INSERT INTO reports (reporter_id, reported_id, reason, target_photo_id, details)
+    VALUES (${reporterId}, ${reportedId}, ${reason}, ${targetPhotoId ?? null}, ${details ?? null}) RETURNING id
   `;
+  return String(rows[0].id);
+}
+export async function getReportQueue(status?: string) {
+  return await sql()`SELECT id, reported_id, reason, status, priority, assignee_id, created_at, triaged_at, actioned_at, resolved_at FROM reports WHERE (${status ?? null} IS NULL OR status = ${status ?? null}) ORDER BY CASE priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END, created_at ASC LIMIT 200`;
+}
+export async function getReportById(id: string) { const rows = await sql()`SELECT id, reported_id, reason, target_photo_id, details, status, priority, assignee_id, created_at, triaged_at, actioned_at, resolved_at, resolution_notes FROM reports WHERE id = ${id}`; return rows[0] ?? null; }
+export async function assignReport(id: string, assigneeId: number | null) { await sql()`UPDATE reports SET assignee_id = ${assigneeId} WHERE id = ${id}`; }
+export async function transitionReport(id: string, status: string, actorId: number, notes?: string | null) {
+  const stamp = status === 'triaged' ? 'triaged_at' : status === 'actioned' ? 'actioned_at' : (status === 'dismissed' || status === 'closed') ? 'resolved_at' : null;
+  if (stamp === 'triaged_at') await sql()`UPDATE reports SET status=${status}, triaged_at=NOW() WHERE id=${id}`;
+  else if (stamp === 'actioned_at') await sql()`UPDATE reports SET status=${status}, actioned_at=NOW() WHERE id=${id}`;
+  else if (stamp === 'resolved_at') await sql()`UPDATE reports SET status=${status}, resolved_at=NOW(), resolution_notes=${notes ?? null} WHERE id=${id}`;
+  else await sql()`UPDATE reports SET status=${status} WHERE id=${id}`;
+  return actorId;
 }
 
 // ── Account Deletion ───────────────────────────────────────────
