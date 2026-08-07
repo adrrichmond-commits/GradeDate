@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { apiFetch, safeApiError } from "~/client-api";
 import { useState } from "react";
 import { useAuth } from "~/auth-context";
 
@@ -26,22 +27,16 @@ function Login() {
     setSubmitting(true);
 
     try {
-      const res = await fetch("/api/auth/login", {
+      const data = await apiFetch<any>("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
 
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "Login failed");
-        return;
-      }
-
       await refetch();
       navigate({ to: "/profile" });
-    } catch {
-      setError("Network error. Please try again.");
+    } catch (error) {
+      setError(safeApiError(error, "Please try again."));
     } finally {
       setSubmitting(false);
     }
