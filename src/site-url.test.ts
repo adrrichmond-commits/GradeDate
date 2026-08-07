@@ -80,3 +80,31 @@ describe("resolveSiteUrl", () => {
     expect(resolveSiteUrl("/grade")).toBeNull();
   });
 });
+
+import { describe, expect, test } from "bun:test";
+import { normalizeSitePath, originFromUrl, resolveCanonicalSiteUrl } from "./site-url";
+
+describe("canonical site URLs", () => {
+  test.each([
+    ["/", "/"],
+    ["/terms?ref=nav#top", "/terms"],
+    ["privacy/", "/privacy"],
+    ["/profile/abc/?tab=photos", "/profile/abc"],
+  ])("normalizes %s to %s", (input, expected) => {
+    expect(normalizeSitePath(input)).toBe(expected);
+  });
+
+  test("uses the current request origin and pathname", () => {
+    expect(resolveCanonicalSiteUrl("/terms?utm_source=x#top", "https://preview.example/terms?utm_source=x")).toBe(
+      "https://preview.example/terms",
+    );
+    expect(resolveCanonicalSiteUrl("/privacy", "https://preview.example/private?x=1#hash")).toBe(
+      "https://preview.example/privacy",
+    );
+  });
+
+  test("rejects unsafe origins and has no origin fallback", () => {
+    expect(originFromUrl("javascript:alert(1)")).toBeNull();
+    expect(resolveCanonicalSiteUrl("/terms", "//untrusted.example/terms")).toBeNull();
+  });
+});

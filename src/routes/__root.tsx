@@ -10,7 +10,7 @@ import type { ReactNode } from "react";
 import { useEffect, useState, useRef } from "react";
 import { AuthProvider, useAuth } from "~/auth-context";
 import { getCsrfToken } from "~/csrf-client";
-import { resolveSiteOrigin } from "~/site-url";
+import { resolveCanonicalSiteUrl } from "~/site-url";
 
 import { Analytics } from "@vercel/analytics/react";
 import appCss from "~/styles/app.css?url";
@@ -599,7 +599,8 @@ function RootDocument({ children }: { children: ReactNode }) {
   // Canonical/OG URLs are resolved from the request/runtime origin (never a
   // hardcoded domain) so they match whatever environment serves the page:
   // SSR request origin during server render, window.location on the client.
-  const siteUrl = resolveSiteOrigin() ?? "/";
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const siteUrl = resolveCanonicalSiteUrl(pathname) ?? pathname;
   return (
     <html lang="en" className="dark">
       <head>
