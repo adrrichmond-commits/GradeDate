@@ -13,3 +13,6 @@ export function canManageReport(role: unknown): boolean { return role === "owner
 export function canUseOwnerAction(role: unknown): boolean { return role === "owner" || role === "admin"; }
 export const REPORT_DETAILS_MAX = 2000;
 export const REPORT_RATE_LIMIT = 10;
+
+// Kept as a compatibility export for moderation API consumers.
+export { redactPhotoCase } from "./photo-quarantine";
