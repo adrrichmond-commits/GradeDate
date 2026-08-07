@@ -97,6 +97,13 @@ export const EVENTS = {
   // fields (experiment, variant, route, conversion) are ever attached.
   EXPERIMENT_EXPOSURE: "experiment.exposure",
   EXPERIMENT_CONVERSION: "experiment.conversion",
+  // Attribution claims — privacy-safe downstream attribution; claims carry only
+  // coarse allowlisted fields (experiment, variant, nonce, timestamps). These
+  // names are registered now so the attribution boundary can emit them once
+  // the API wiring lands; they must never carry identifiers.
+  ATTRIBUTION_CLAIM_ISSUED: "attribution.claim_issued",
+  ATTRIBUTION_CLAIM_VERIFIED: "attribution.claim_verified",
+  ATTRIBUTION_CLAIM_REJECTED: "attribution.claim_rejected",
 } as const;
 
 export type EventName = (typeof EVENTS)[keyof typeof EVENTS];
