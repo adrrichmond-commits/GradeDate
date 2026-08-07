@@ -1758,7 +1758,7 @@ async function handleCreateCheckout(req: Request): Promise<Response> {
     customer_email: user.email,
     metadata: { user_id: String(user.id) },
   });
-
+  logInfo(EVENTS.PREMIUM_CHECKOUT_COMPLETED, { request_id, plan: "monthly" });
   return json({ url: session.url });
 }
 
