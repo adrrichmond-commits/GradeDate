@@ -66,9 +66,30 @@ export function resolveSiteOrigin(reqUrl?: string | null): string | null {
  * Resolve an absolute app URL for the given path. Returns null when no origin
  * can be determined — callers decide how to degrade (relative URL, omit tag).
  */
+/** Normalize a pathname for canonical URLs; never carry query/hash into metadata. */
+export function normalizeSitePath(path: string | null | undefined): string {
+  if (!path) return "/";
+  try {
+    // URL parsing also safely handles callers that accidentally provide a full URL.
+    const parsed = new URL(path, "https://canonical.invalid");
+    const pathname = parsed.pathname || "/";
+    return pathname === "/" ? "/" : `/${pathname.replace(/^\/+|\/+$/g, "")}`;
+  } catch {
+    const pathname = path.split(/[?#]/, 1)[0] || "/";
+    return pathname === "/" ? "/" : `/${pathname.replace(/^\/+|\/+$/g, "")}`;
+  }
+}
+
 export function resolveSiteUrl(path: string, reqUrl?: string | null): string | null {
   const origin = resolveSiteOrigin(reqUrl);
   if (!origin) return null;
   const joined = path.startsWith("/") ? path : `/${path}`;
   return `${origin}${joined}`;
+}
+
+/** Build a canonical URL from a pathname, excluding query strings and fragments. */
+export function resolveCanonicalSiteUrl(path: string, reqUrl?: string | null): string | null {
+  const origin = resolveSiteOrigin(reqUrl);
+  if (!origin) return null;
+  return `${origin}${normalizeSitePath(path)}`;
 }
