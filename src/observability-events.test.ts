@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { setLogLevel, setLogSink, type LogSink } from "./observability";
+import { EVENTS, setLogLevel, setLogSink, type LogSink } from "./observability";
 import { isVercelBlob, deletePhoto } from "./blob-store";
 import { sendPasswordResetEmail } from "./email";
 import {
@@ -32,6 +32,18 @@ function capture() {
 function emittedEvents(): string[] {
   return captured.map((line) => (JSON.parse(line) as { event: string }).event);
 }
+
+describe("funnel event registry", () => {
+  test("registers privacy-safe core funnel and failure events", () => {
+    expect(EVENTS.PHOTO_UPLOAD_STARTED).toBe("photo_upload.started");
+    expect(EVENTS.GRADING_COMPLETED).toBe("grading.completed");
+    expect(EVENTS.SIGNUP_COMPLETED).toBe("signup.completed");
+    expect(EVENTS.FIRST_LIKE).toBe("match.first_like");
+    expect(EVENTS.PREMIUM_CHECKOUT_COMPLETED).toBe("premium_checkout.completed");
+    expect(EVENTS.REPORT_SUBMITTED).toBe("report.submitted");
+    expect(EVENTS.OPERATIONAL_FAILURE).toBe("operational.failure");
+  });
+});
 
 describe("blob-store events", () => {
   test("emits blob_store.token_missing when blob token is unset", () => {
