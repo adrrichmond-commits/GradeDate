@@ -1,6 +1,16 @@
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
 import { getCsrfToken } from "~/csrf-client";
 
+export type AuthResponseState = "authenticated" | "anonymous" | "error";
+
+export function classifyAuthResponse(status: number, payload: unknown): AuthResponseState {
+  if (status === 401) return "anonymous";
+  if (status < 200 || status >= 300) return "error";
+  if (!payload || typeof payload !== "object" || !("user" in payload)) return "error";
+  const user = (payload as { user: unknown }).user;
+  return user === null || (typeof user === "object" && user !== null) ? (user === null ? "anonymous" : "authenticated") : "error";
+}
+
 export interface SafeUser {
   id: number;
   email: string;
@@ -45,6 +55,7 @@ export interface SafeUser {
 interface AuthState {
   user: SafeUser | null;
   loading: boolean;
+  authError: boolean;
   refetch: () => Promise<void>;
   pushPermission: NotificationPermission;
   pushSubscribed: boolean;
@@ -55,6 +66,7 @@ interface AuthState {
 const AuthContext = createContext<AuthState>({
   user: null,
   loading: true,
+  authError: false,
   refetch: async () => {},
   pushPermission: "default",
   pushSubscribed: false,
@@ -65,20 +77,32 @@ const AuthContext = createContext<AuthState>({
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<SafeUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState(false);
   const [pushPermission, setPushPermission] = useState<NotificationPermission>("default");
   const [pushSubscribed, setPushSubscribed] = useState(false);
 
   const refetch = async () => {
     try {
       const res = await fetch("/api/auth/me");
-      if (res.ok) {
-        const data = await res.json();
-        setUser(data.user);
-      } else {
+      const data = res.ok ? await res.json() : null;
+      const responseState = classifyAuthResponse(res.status, data);
+      if (responseState === "anonymous") {
         setUser(null);
+        setAuthError(false);
+      } else if (responseState === "error") {
+        // A server outage must not look like a logout. Keep a known user usable.
+        setAuthError(true);
+      } else {
+        if (!data || (data.user !== null && (!data.user || typeof data.user !== "object"))) {
+          setAuthError(true);
+        } else {
+          setUser(data.user);
+          setAuthError(false);
+        }
       }
     } catch {
-      setUser(null);
+      // Preserve the last-known session during transient network failures.
+      setAuthError(true);
     } finally {
       setLoading(false);
     }
@@ -175,6 +199,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         user,
         loading,
+        authError,
         refetch,
         pushPermission,
         pushSubscribed,

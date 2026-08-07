@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState, useCallback, useReducer, useRef } from "react";
 import { useModalAccessibility } from "~/modal-accessibility";
 import { useAuth } from "~/auth-context";
+import { AuthUnavailable } from "~/auth-unavailable";
 import { getCsrfToken } from "~/csrf-client";
 import { resolveLikeBackResult } from "~/like-back";
 import {
@@ -45,7 +46,7 @@ export const Route = createFileRoute("/connections")({
 
 function ConnectionsPage() {
   const navigate = useNavigate();
-  const { user, loading } = useAuth();
+  const { user, loading, authError } = useAuth();
   const [connections, setConnections] = useState<Connection[]>([]);
   const [fetching, setFetching] = useState(true);
   const [error, setError] = useState("");
@@ -117,10 +118,10 @@ function ConnectionsPage() {
   };
 
   useEffect(() => {
-    if (!loading && !user) {
+    if (!loading && !authError && !user) {
       navigate({ to: "/login" });
     }
-  }, [loading, user]);
+  }, [loading, authError, user]);
 
   const fetchConnections = useCallback(async () => {
     setFetching(true);
@@ -221,6 +222,8 @@ function ConnectionsPage() {
       </div>
     );
   }
+
+  if (authError) return <AuthUnavailable />;
 
   if (!user) return null;
 

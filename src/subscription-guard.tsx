@@ -12,12 +12,13 @@ import { useAuth } from "~/auth-context";
 export function useRequireSubscription(): {
   isSubscribed: boolean;
   checking: boolean;
+  authError: boolean;
 } {
-  const { user, loading } = useAuth();
+  const { user, loading, authError } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (loading) return;
+    if (loading || authError) return;
 
     if (!user) {
       navigate({ to: "/login" });
@@ -26,18 +27,18 @@ export function useRequireSubscription(): {
 
     // Free users are now allowed to access matches/chat/connections
     // No redirect for non-subscribers
-  }, [user, loading]);
+  }, [user, loading, authError]);
 
   if (loading) {
-    return { isSubscribed: false, checking: true };
+    return { isSubscribed: false, checking: true, authError };
   }
 
   if (!user) {
-    return { isSubscribed: false, checking: false };
+    return { isSubscribed: false, checking: false, authError };
   }
 
   const isSubscribed = user.subscription_status === "active";
-  return { isSubscribed, checking: false };
+  return { isSubscribed, checking: false, authError };
 }
 
 /**

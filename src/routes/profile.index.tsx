@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useAuth } from "~/auth-context";
+import { AuthUnavailable } from "~/auth-unavailable";
 import { getCsrfToken } from "~/csrf-client";
 import { useRequireSubscription, SubscriptionBanner } from "~/subscription-guard";
 import { photoFromUploadResponse } from "~/photo-upload";
@@ -181,7 +182,7 @@ function CollapsibleCard({ title, content }: { title: string; content: string })
 
 function ProfilePage() {
   const navigate = useNavigate();
-  const { user, loading, refetch } = useAuth();
+  const { user, loading, authError, refetch } = useAuth();
   const [grading, setGrading] = useState(false);
   const [gradeError, setGradeError] = useState("");
   const { checking } = useRequireSubscription();
@@ -238,10 +239,10 @@ function ProfilePage() {
   );
 
   useEffect(() => {
-    if (!loading && !user) {
+    if (!loading && !authError && !user) {
       navigate({ to: "/login" });
     }
-  }, [loading, user]);
+  }, [loading, authError, user]);
 
   useEffect(() => {
     if (user && !user.display_name) {
@@ -554,6 +555,8 @@ function ProfilePage() {
       </div>
     );
   }
+
+  if (authError) return <AuthUnavailable />;
 
   if (!user) return null;
 

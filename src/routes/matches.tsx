@@ -8,6 +8,7 @@ import {
 } from "react";
 import { useModalAccessibility } from "~/modal-accessibility";
 import { useAuth } from "~/auth-context";
+import { AuthUnavailable } from "~/auth-unavailable";
 import { useRequireSubscription, SubscriptionBanner } from "~/subscription-guard";
 import { getCsrfToken } from "~/csrf-client";
 import { getMatchActionError, matchActionFailureMessage } from "~/matches-action";
@@ -65,7 +66,7 @@ export const Route = createFileRoute("/matches")({
 
 function MatchesPage() {
   const navigate = useNavigate();
-  const { user, loading } = useAuth();
+  const { user, loading, authError } = useAuth();
   const { isSubscribed, checking } = useRequireSubscription();
   const [matches, setMatches] = useState<MatchProfile[]>([]);
   const [currentIdx, setCurrentIdx] = useState(0);
@@ -113,7 +114,7 @@ function MatchesPage() {
 
   // Redirect if not authenticated
   useEffect(() => {
-    if (!loading && !user) {
+    if (!loading && !authError && !user) {
       navigate({ to: "/login" });
       return;
     }
@@ -121,7 +122,7 @@ function MatchesPage() {
       navigate({ to: "/profile" });
       return;
     }
-  }, [loading, user]);
+  }, [loading, authError, user]);
 
   // All hooks live above the conditional returns so hook call order is stable
   // on every render (Rules of Hooks). The effects below guard their own data
@@ -183,6 +184,8 @@ function MatchesPage() {
       </div>
     );
   }
+
+  if (authError) return <AuthUnavailable />;
 
   if (!user) return null;
 
