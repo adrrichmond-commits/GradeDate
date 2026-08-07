@@ -15,4 +15,10 @@ export const REPORT_DETAILS_MAX = 2000;
 export const REPORT_RATE_LIMIT = 10;
 
 // Kept as a compatibility export for moderation API consumers.
-export { redactPhotoCase } from "./photo-quarantine";
+export {
+  canReviewPhoto,
+  canTransitionQuarantine,
+  isQuarantineStatus,
+  privateReviewStorageReady,
+  redactPhotoCase,
+} from "./photo-quarantine";
