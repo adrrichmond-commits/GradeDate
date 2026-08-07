@@ -203,6 +203,10 @@ export async function initTables(): Promise<void> {
   // Defensive migration: a lock is granted only alongside a numbered subscription founder.
   try {
     await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS founder_price_lock_price_id TEXT`;
+  try { await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user'`; } catch {}
+  try { await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS suspended_until TIMESTAMPTZ`; } catch {}
+  try { await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS suspension_reason TEXT`; } catch {}
+  try { await sql()`CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)`; } catch {}
   } catch { /* existing deployments may migrate on next startup */ }
   try {
     await sql()`CREATE INDEX IF NOT EXISTS idx_users_founder_number ON users(founder_number)`;
@@ -247,9 +251,27 @@ export async function initTables(): Promise<void> {
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      created_at TIMESTAMPTZ DEFAULT NOW()
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      expires_at TIMESTAMPTZ DEFAULT (NOW() + INTERVAL '7 days'),
+      revoked_at TIMESTAMPTZ
     )
   `;
+  try { await sql()`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ DEFAULT (NOW() + INTERVAL '7 days')`; } catch {}
+  try { await sql()`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS revoked_at TIMESTAMPTZ`; } catch {}
+
+  await sql()`
+    CREATE TABLE IF NOT EXISTS admin_audit_events (
+      id BIGSERIAL PRIMARY KEY,
+      actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      action TEXT NOT NULL,
+      target_type TEXT,
+      target_id TEXT,
+      request_id TEXT,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql()`CREATE INDEX IF NOT EXISTS admin_audit_events_created_idx ON admin_audit_events(created_at)`;
 
   await sql()`
     CREATE TABLE IF NOT EXISTS likes (
@@ -449,6 +471,9 @@ export interface User {
   is_founder: boolean;
   founder_number: number | null;
   founder_price_lock_price_id: string | null;
+  role: string | null;
+  suspended_until: string | null;
+  suspension_reason: string | null;
   created_at: string;
 }
 
@@ -456,6 +481,8 @@ export interface Session {
   id: string;
   user_id: number;
   created_at: string;
+  expires_at?: string | null;
+  revoked_at?: string | null;
 }
 
 export interface UserPhoto {
@@ -849,18 +876,24 @@ export async function updateLastFreeRegrade(userId: number): Promise<void> {
 
 export async function createSession(userId: number): Promise<Session> {
   const id = crypto.randomUUID();
-  await sql()`INSERT INTO sessions (id, user_id) VALUES (${id}, ${userId})`;
+  await sql()`INSERT INTO sessions (id, user_id, expires_at) VALUES (${id}, ${userId}, NOW() + INTERVAL '7 days')`;
   return { id, user_id: userId, created_at: new Date().toISOString() };
 }
 
 export async function getSessionById(sessionId: string): Promise<Session | null> {
-  const rows = await sql()`SELECT * FROM sessions WHERE id = ${sessionId}`;
+  const rows = await sql()`SELECT * FROM sessions WHERE id = ${sessionId} AND revoked_at IS NULL AND expires_at > NOW()`;
   return rows.length > 0 ? (rows[0] as unknown as Session) : null;
 }
 
 export async function deleteSession(sessionId: string): Promise<void> {
   await sql()`DELETE FROM sessions WHERE id = ${sessionId}`;
 }
+
+// ── Safety foundation ───────────────────────────────────────
+export async function recordAdminAuditEvent(event: { actorUserId: number | null; action: string; targetType?: string; targetId?: string; requestId?: string; metadata?: Record<string, unknown> }): Promise<void> {
+  await sql()`INSERT INTO admin_audit_events (actor_user_id, action, target_type, target_id, request_id, metadata) VALUES (${event.actorUserId}, ${event.action}, ${event.targetType ?? null}, ${event.targetId ?? null}, ${event.requestId ?? null}, ${JSON.stringify(event.metadata ?? {})}::jsonb)`;
+}
+export async function revokeSession(sessionId: string): Promise<void> { await sql()`UPDATE sessions SET revoked_at = NOW() WHERE id = ${sessionId}`; }
 
 // ── Grade ────────────────────────────────────────────────────
 
