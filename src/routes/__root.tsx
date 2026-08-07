@@ -147,7 +147,7 @@ function BrandedLoader({ text }: { text?: string }) {
 /* App Shell                                                           */
 /* ------------------------------------------------------------------ */
 function AppShell() {
-  const { user, loading, pushPermission, pushSubscribed, subscribeToPush, unsubscribeFromPush } = useAuth();
+  const { user, loading, authError, pushPermission, pushSubscribed, subscribeToPush, unsubscribeFromPush } = useAuth();
   const [unread, setUnread] = useState(0);
   const [cookieConsent, setCookieConsent] = useState(true);
   const [showPushPrompt, setShowPushPrompt] = useState(false);
@@ -264,6 +264,8 @@ function AppShell() {
           <div className="flex items-center gap-4">
             {loading ? (
               <div className="h-4 w-16 animate-pulse rounded bg-gray-800" />
+            ) : authError ? (
+              <span role="status" className="text-xs text-amber-300">Session unavailable</span>
             ) : user ? (
               <>
                 {/* ── Desktop nav (md+) ── */}

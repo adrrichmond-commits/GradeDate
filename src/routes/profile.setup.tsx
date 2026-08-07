@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "~/auth-context";
+import { AuthUnavailable } from "~/auth-unavailable";
 import { getCsrfToken } from "~/csrf-client";
 import { useRequireSubscription } from "~/subscription-guard";
 import { photoFromUploadResponse } from "~/photo-upload";
@@ -27,7 +28,7 @@ interface PhotoItem {
 
 function ProfileSetup() {
   const navigate = useNavigate();
-  const { user, loading, refetch } = useAuth();
+  const { user, loading, authError, refetch } = useAuth();
   const { checking } = useRequireSubscription();
   const [displayName, setDisplayName] = useState("");
   const [age, setAge] = useState("");
@@ -60,10 +61,10 @@ function ProfileSetup() {
 
   // Redirect to login if not authenticated
   useEffect(() => {
-    if (!loading && !user) {
+    if (!loading && !authError && !user) {
       navigate({ to: "/login" });
     }
-  }, [loading, user]);
+  }, [loading, authError, user]);
 
   // Load photos from user
   useEffect(() => {
@@ -104,6 +105,8 @@ function ProfileSetup() {
       </div>
     );
   }
+
+  if (authError) return <AuthUnavailable />;
 
   if (!user) return null;
 

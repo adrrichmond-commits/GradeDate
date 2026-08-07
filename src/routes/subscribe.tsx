@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { useAuth } from "~/auth-context";
+import { AuthUnavailable } from "~/auth-unavailable";
 import { getCsrfToken } from "~/csrf-client";
 import { parseSubscriptionReturnState } from "~/checkout-return";
 import { isCheckoutBlocked, nextSubscriptionConfirmationState, SUBSCRIPTION_CONFIRMATION_INTERVAL_MS, type SubscriptionConfirmationState } from "~/subscription-confirmation";
@@ -41,7 +42,7 @@ export const Route = createFileRoute("/subscribe")({
 });
 
 function SubscribePage() {
-  const { user, loading, refetch } = useAuth();
+  const { user, loading, authError, refetch } = useAuth();
   const [plan, setPlan] = useState<Plan>("monthly");
   const [checkingOut, setCheckingOut] = useState(false);
   const [error, setError] = useState("");
