@@ -4,6 +4,7 @@ import { deriveCoachingTips } from "./coaching";
 import { topPercentLabel } from "./percentile";
 import { validateUnmatchRequest } from "./unmatch-flow";
 import { parseExperimentEvent } from "./experiment";
+import { issueAttributionClaim, formatAttributionClaim, ATTRIBUTION_DEFAULT_TTL_MS } from "./attribution-claim";
 import {
   aggregateGradingMethod,
   fallbackGrade,
@@ -94,6 +95,7 @@ import {
   createPendingUpsell,
   getUpsellEntitlementState,
   checkDatabaseReady,
+  persistAttributionClaim,
   type PaidUpsellProduct,
   type User,
   type UserPhoto,
@@ -2227,18 +2229,19 @@ async function handleExperimentEvent(req: Request): Promise<Response> {
     return json({ error: "Invalid experiment event" }, 400);
   }
   if (parsed.event === "exposure") {
-    logInfo(EVENTS.EXPERIMENT_EXPOSURE, {
-      experiment: parsed.experiment,
-      variant: parsed.variant,
-      route: parsed.route,
-    });
+    logInfo(EVENTS.EXPERIMENT_EXPOSURE, { experiment: parsed.experiment, variant: parsed.variant, route: parsed.route });
+    const secret = process.env.ATTRIBUTION_CLAIM_SECRET;
+    if (!secret) return json({ ok: true });
+    try {
+      const claim = issueAttributionClaim({ experiment: parsed.experiment, variant: parsed.variant, secret, ttlMs: ATTRIBUTION_DEFAULT_TTL_MS });
+      if (await persistAttributionClaim(claim)) {
+        const token = formatAttributionClaim(claim, secret);
+        const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+        return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "Content-Type": "application/json", "Set-Cookie": `gd_attribution_claim=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${ATTRIBUTION_DEFAULT_TTL_MS / 1000}${secure}` } });
+      }
+    } catch { /* attribution is best-effort and must never block CTA use */ }
   } else {
-    logInfo(EVENTS.EXPERIMENT_CONVERSION, {
-      experiment: parsed.experiment,
-      variant: parsed.variant,
-      route: parsed.route,
-      conversion: parsed.conversion,
-    });
+    logInfo(EVENTS.EXPERIMENT_CONVERSION, { experiment: parsed.experiment, variant: parsed.variant, route: parsed.route, conversion: parsed.conversion });
   }
   return json({ ok: true });
 }
