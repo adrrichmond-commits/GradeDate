@@ -49,12 +49,26 @@ export interface DatabaseReadyResult {
   reason?: "not_configured" | "invalid_config" | "query_failed";
 }
 
+export function isValidDatabaseUrl(value: string | undefined): value is string {
+  if (!value || /\s/.test(value)) return false;
+  try {
+    const parsed = new URL(value);
+    // URL parsing alone accepts values such as `postgresql://`; require a real
+    // host so an invalid deployment secret is reported as configuration, not a
+    // misleading connection failure. Never log or return the parsed value.
+    return (
+      (parsed.protocol === "postgresql:" || parsed.protocol === "postgres:") &&
+      parsed.hostname.length > 0
+    );
+  } catch {
+    return false;
+  }
+}
+
 export async function checkDatabaseReady(): Promise<DatabaseReadyResult> {
   const url = process.env.DATABASE_URL;
   if (!url) return { ok: false, reason: "not_configured" };
-  if (!url.startsWith("postgresql://") && !url.startsWith("postgres://")) {
-    return { ok: false, reason: "invalid_config" };
-  }
+  if (!isValidDatabaseUrl(url)) return { ok: false, reason: "invalid_config" };
   try {
     await neon(url)`SELECT 1`;
     return { ok: true };
