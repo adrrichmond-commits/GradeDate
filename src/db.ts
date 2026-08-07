@@ -933,7 +933,15 @@ export async function deleteSession(sessionId: string): Promise<void> {
 
 export async function createSuspension(input: { userId:number; reason:string; duration:string; endsAt:string|null; actorUserId:number; sourceReportId?:string|null; sourceCaseId?:string|null }): Promise<any> { const rows=await sql()`INSERT INTO user_suspensions (user_id,reason,duration,ends_at,actor_user_id,source_report_id,source_case_id) VALUES (${input.userId},${input.reason},${input.duration},${input.endsAt},${input.actorUserId},${input.sourceReportId??null},${input.sourceCaseId??null}) RETURNING id,user_id,reason,duration,status,starts_at,ends_at,created_at`; await sql()`UPDATE users SET suspended_until=${input.endsAt}, suspension_reason=${input.reason} WHERE id=${input.userId}`; return rows[0]; }
 export async function revokeSuspension(id:string, actorUserId:number): Promise<boolean> { const r=await sql()`UPDATE user_suspensions SET status='revoked',revoked_at=NOW(),actor_user_id=${actorUserId} WHERE id=${id} AND status='active' RETURNING user_id`; if(!r.length)return false; await sql()`UPDATE users SET suspended_until=NULL,suspension_reason=NULL WHERE id=${(r[0] as any).user_id}`; return true; }
-export async function getActiveSuspension(userId:number): Promise<any|null> { const r=await sql()`UPDATE user_suspensions SET status='expired' WHERE user_id=${userId} AND status='active' AND ends_at IS NOT NULL AND ends_at<=NOW()`; void r; const rows=await sql()`SELECT * FROM user_suspensions WHERE user_id=${userId} AND status='active' AND (ends_at IS NULL OR ends_at>NOW()) ORDER BY starts_at DESC LIMIT 1`; return rows[0]??null; }
+export async function getActiveSuspension(userId:number): Promise<any|null> {
+  const expired = await sql()`UPDATE user_suspensions SET status='expired' WHERE user_id=${userId} AND status='active' AND ends_at IS NOT NULL AND ends_at<=NOW() RETURNING id`;
+  if (expired.length) {
+    await sql()`UPDATE users SET suspended_until=NULL, suspension_reason=NULL WHERE id=${userId} AND suspended_until IS NOT NULL AND suspended_until<=NOW()`;
+    for (const row of expired as any[]) await recordAdminAuditEvent({ actorUserId: null, action:'suspension.expire', targetType:'suspension', targetId:String(row.id), metadata:{user_id:userId} });
+  }
+  const rows=await sql()`SELECT * FROM user_suspensions WHERE user_id=${userId} AND status='active' AND (ends_at IS NULL OR ends_at>NOW()) ORDER BY starts_at DESC LIMIT 1`;
+  return rows[0]??null;
+}
 export async function createAppeal(suspensionId:string,userId:number,text:string):Promise<any>{const r=await sql()`INSERT INTO appeals(suspension_id,user_id,text) SELECT ${suspensionId},${userId},${text} WHERE EXISTS(SELECT 1 FROM user_suspensions WHERE id=${suspensionId} AND user_id=${userId} AND status='active' AND created_at>=NOW()-INTERVAL '14 days') RETURNING id,suspension_id,status,created_at`; return r[0]??null;}
 export async function getAppeals(userId?:number):Promise<any[]>{const r= userId===undefined ? await sql()`SELECT id,suspension_id,user_id,status,created_at,reviewed_at FROM appeals ORDER BY created_at DESC` : await sql()`SELECT id,suspension_id,status,created_at,reviewed_at FROM appeals WHERE user_id=${userId} ORDER BY created_at DESC`; return r as any[];}
 export async function reviewAppeal(id:string,status:string,actorUserId:number):Promise<any|null>{const r=await sql()`UPDATE appeals SET status=${status},actor_user_id=${actorUserId},reviewed_at=NOW() WHERE id=${id} AND status='pending' AND user_id<>${actorUserId} RETURNING suspension_id,user_id`; if(!r.length)return null; if(status==='granted'){await revokeSuspension(String((r[0] as any).suspension_id),actorUserId);} return r[0];}
@@ -1813,6 +1821,26 @@ export async function reportUser(reporterId: number, reportedId: number, reason:
       AND NOT EXISTS (SELECT 1 FROM photo_moderation_cases WHERE photo_id=${targetPhotoId} AND status IN ('pending','quarantined'))`;
   }
   return String(rows[0].id);
+}
+/** Immediately quarantine every photo owned by an account reported as underage. */
+export async function quarantineUserPhotosForUnderage(userId: number, reportId: string): Promise<void> {
+  await sql()`
+    INSERT INTO photo_moderation_cases (photo_id, user_id, source, result, reason, status)
+    SELECT p.id, p.user_id, 'underage_report', 'unknown', 'underage', 'quarantined'
+    FROM user_photos p
+    WHERE p.user_id = ${userId}
+      AND NOT EXISTS (
+        SELECT 1 FROM photo_moderation_cases c
+        WHERE c.photo_id = p.id AND c.status IN ('pending','quarantined','removed')
+      )
+  `;
+  await sql()`
+    UPDATE photo_moderation_cases SET status='quarantined', reason='underage', updated_at=NOW()
+    WHERE user_id=${userId} AND status IN ('pending','quarantined')
+  `;
+  // The report id is intentionally not stored in the evidence response; it is
+  // retained only in the suspension/audit chain for privileged investigation.
+  void reportId;
 }
 export async function getReportQueue(status?: string) {
   return await sql()`SELECT id, reported_id, reason, status, priority, assignee_id, created_at, triaged_at, actioned_at, resolved_at FROM reports WHERE (${status ?? null} IS NULL OR status = ${status ?? null}) ORDER BY CASE priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END, created_at ASC LIMIT 200`;

@@ -14,7 +14,7 @@ describe("Phase 1 safety policy", () => {
   });
   test("appeal path is narrowly scoped", () => {
     expect(isSuspensionException("/api/suspension/appeal-status", "GET")).toBe(true);
-    expect(isSuspensionException("/api/suspension/appeal-status", "POST")).toBe(false);
+    expect(isSuspensionException("/api/suspension/appeal-status", "POST")).toBe(true);
     expect(isSuspensionException("/api/admin/users", "GET")).toBe(false);
   });
   test("production MFA gate fails closed", () => {

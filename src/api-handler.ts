@@ -99,6 +99,8 @@ import {
   getUpsellEntitlementState,
   checkDatabaseReady,
   persistAttributionClaim,
+  createSuspension,
+  quarantineUserPhotosForUnderage,
   type PaidUpsellProduct,
   type User,
   type UserPhoto,
@@ -1708,8 +1710,30 @@ async function handleReport(req: Request): Promise<Response> {
 
   if (details !== undefined && (typeof details !== "string" || details.length > REPORT_DETAILS_MAX)) return json({ error: "details is too long" }, 400);
   if (targetPhotoId !== undefined && (!Number.isInteger(targetPhotoId) || targetPhotoId < 1)) return json({ error: "Invalid photo reference" }, 400);
+  let reportId: string;
   try {
-    await reportUser(user.id, targetId, reason, targetPhotoId ?? null, details ?? null);
+    reportId = await reportUser(user.id, targetId, reason, targetPhotoId ?? null, details ?? null);
+    // Underage reports are an immediate safety action: quarantine all target
+    // photos and lock the account pending review. Never expose reporter or
+    // evidence details in the response, and leave subscription state intact.
+    if (reason === "underage") {
+      await quarantineUserPhotosForUnderage(targetId, reportId);
+      const suspension = await createSuspension({
+        userId: targetId,
+        reason: "underage",
+        duration: "indefinite",
+        endsAt: null,
+        actorUserId: user.id,
+        sourceReportId: reportId,
+      });
+      await recordAdminAuditEvent({
+        actorUserId: null,
+        action: "underage.enforcement",
+        targetType: "user",
+        targetId: String(targetId),
+        metadata: { report_id: reportId, suspension_id: String(suspension.id) },
+      });
+    }
   } catch (err) {
     logError(EVENTS.REPORT_FAILED, { reporter_id: user.id, reason, err });
     throw err;
