@@ -92,11 +92,9 @@ function StorePage() {
   const [activated, setActivated] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [foundersCount, setFoundersCount] = useState<{ count: number; remaining: number } | null>(null);
-  const [foundersCheckingOut, setFoundersCheckingOut] = useState(false);
   const [checkoutProduct, setCheckoutProduct] = useState<string | null>(null);
   const [showCanceled, setShowCanceled] = useState(false);
   const [genericPending, setGenericPending] = useState(false);
-  const [foundersState, setFoundersState] = useState<{ kind: "success" | "canceled"; message: string } | null>(null);
   // Confirmation state machine for the purchase the user just returned from
   // Stripe with: pending → confirmed (only after the server reports the
   // entitlement) | timeout | error, with manual retry/check-again.
@@ -132,16 +130,6 @@ function StorePage() {
       void refetch();
     } else if (state.kind === "payment-cancelled") {
       setShowCanceled(true);
-    } else if (state.kind === "founders-success") {
-      setFoundersState({
-        kind: "success",
-        message:
-          "Payment received — activating your Founder membership. This usually takes a few seconds.",
-      });
-      // The webhook may have already granted founder status; pick it up if so.
-      refetch();
-    } else if (state.kind === "founders-cancelled") {
-      setFoundersState({ kind: "canceled", message: "Payment was canceled. No charges were made." });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
@@ -226,26 +214,6 @@ function StorePage() {
     }
   };
 
-  const handleFoundersCheckout = async () => {
-    setFoundersCheckingOut(true);
-    setError("");
-    try {
-      const res = await fetch("/api/founders/checkout", {
-        method: "POST",
-        headers: { "X-CSRF-Token": getCsrfToken() || "" },
-      });
-      const data = await res.json();
-      if (res.ok && data.url) {
-        window.location.href = data.url;
-      } else {
-        setError(data.error || "Failed to start checkout.");
-      }
-    } catch {
-      setError("Network error. Please try again.");
-    } finally {
-      setFoundersCheckingOut(false);
-    }
-  };
 
   if (loading) {
     return (
@@ -355,20 +323,6 @@ function StorePage() {
           <p className="mt-1 text-xs text-amber-400/70">You can try again whenever you're ready.</p>
         </div>
       )}
-      {foundersState && (
-        <div className="mb-8 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-center">
-          <p className="text-sm font-semibold text-amber-300">
-            {user?.is_founder && foundersState.kind === "success"
-              ? "👑 Welcome to the Founders Club!"
-              : foundersState.message}
-          </p>
-          {foundersState.kind === "success" && !user?.is_founder && (
-            <p className="mt-1 text-xs text-amber-400/70">
-              If it hasn't appeared yet, refresh this page in a few seconds.
-            </p>
-          )}
-        </div>
-      )}
       {/* Founders Club Card */}
       {user && (
         <div className="mb-10">
@@ -428,29 +382,23 @@ function StorePage() {
                   <div className="rounded-lg border border-green-500/20 bg-green-500/10 px-4 py-2 text-center">
                     <span className="text-sm font-semibold text-green-400">👑 You're a Founder!</span>
                   </div>
+                ) : foundersCount !== null && foundersCount.count >= 1000 ? (
+                  <span className="rounded-lg border border-gray-700 bg-gray-800/60 px-6 py-2.5 text-sm font-semibold text-gray-400">
+                    Founders Club Full
+                  </span>
                 ) : (
-                  <button
-                    onClick={handleFoundersCheckout}
-                    disabled={foundersCheckingOut || (foundersCount !== null && foundersCount.count >= 1000)}
-                    className="rounded-full bg-gradient-to-r from-amber-500 to-amber-600 px-6 py-2.5 text-sm font-semibold text-black transition hover:from-amber-400 hover:to-amber-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  <Link
+                    to="/subscribe"
+                    className="rounded-full bg-gradient-to-r from-amber-500 to-amber-600 px-6 py-2.5 text-sm font-semibold text-black transition hover:from-amber-400 hover:to-amber-500"
                   >
-                    {foundersCheckingOut ? (
-                      <span className="flex items-center gap-2">
-                        <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-black border-t-transparent" />
-                        Redirecting...
-                      </span>
-                    ) : foundersCount !== null && foundersCount.count >= 1000 ? (
-                      "Sold Out"
-                    ) : (
-                      "Join Founders Club →"
-                    )}
-                  </button>
+                    Subscribe — $5.99/month
+                  </Link>
                 )}
               </div>
 
               {!user.is_founder && (
                 <p className="mt-3 text-xs text-gray-500">
-                  Price set by our team. You'll be redirected to Stripe for secure payment.
+                  Founders Club is included with the canonical Premium subscription. Subscribe for $5.99/month to claim a numbered spot and lock in that price for life.
                 </p>
               )}
             </div>
