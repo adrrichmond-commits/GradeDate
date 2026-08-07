@@ -280,6 +280,22 @@ function requireSubscription(user: User): Response | null {
   return null;
 }
 
+// Central fail-closed gate: every authenticated API action checks suspension here.
+async function enforceSafety(req: Request, pathname: string): Promise<Response | null> {
+  if (isSuspensionException(pathname, req.method)) return null;
+  const publicPath = pathname === "/api/health" || pathname === "/api/ready" || pathname === "/api/csrf" || pathname === "/api/geo-check" || pathname === "/api/auth/signup" || pathname === "/api/auth/login" || pathname === "/api/auth/forgot-password" || pathname === "/api/auth/reset-password" || pathname === "/api/webhooks/stripe" || pathname === "/api/waitlist/join";
+  if (publicPath) return null;
+  const user = await getCurrentUser(req);
+  if (user && isSuspended(user)) return json({ error: "Account suspended", code: "ACCOUNT_SUSPENDED" }, 423);
+  if (pathname.startsWith("/api/admin/")) {
+    const role = user?.role as PrivilegedRole | undefined;
+    if (!user || !hasPermission(user, ["owner", "admin", "moderator"]) || !privilegedMfaReady()) return json({ error: "Privileged access unavailable", code: "PRIVILEGED_ACCESS_DENIED" }, 403);
+    await recordAdminAuditEvent({ actorUserId: user.id, action: "admin.route.check", targetType: "route", targetId: pathname, requestId: req.headers.get("x-request-id") ?? undefined });
+    void role;
+  }
+  return null;
+}
+
 // ── API Route Handlers ────────────────────────────────────────
 
 async function handleSignup(req: Request): Promise<Response> {
@@ -2622,6 +2638,8 @@ export async function handleApiRoute(
 ): Promise<Response | null> {
   const url = new URL(req.url);
   const { method, pathname } = { method: req.method, pathname: url.pathname };
+  const safetyError = await enforceSafety(req, pathname);
+  if (safetyError) return safetyError;
 
   // Health & readiness — public, unauthenticated, no CSRF (GET only)
   if (pathname === "/api/health" && method === "GET") {
