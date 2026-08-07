@@ -780,9 +780,10 @@ export async function setPrimaryPhoto(
 
 export async function getUserPhotos(userId: number): Promise<UserPhoto[]> {
   const rows = await sql()`
-    SELECT * FROM user_photos
-    WHERE user_id = ${userId}
-    ORDER BY sort_order ASC
+    SELECT p.* FROM user_photos p
+    WHERE p.user_id = ${userId}
+      AND NOT EXISTS (SELECT 1 FROM photo_moderation_cases c WHERE c.photo_id=p.id AND c.status IN ('pending','quarantined','removed'))
+    ORDER BY p.sort_order ASC
   `;
   return rows as unknown as UserPhoto[];
 }
@@ -1785,6 +1786,12 @@ export async function reportUser(reporterId: number, reportedId: number, reason:
     INSERT INTO reports (reporter_id, reported_id, reason, target_photo_id, details)
     VALUES (${reporterId}, ${reportedId}, ${reason}, (SELECT id FROM user_photos WHERE id=${targetPhotoId ?? null} AND user_id=${reportedId}), ${details ?? null}) RETURNING id
   `;
+  if (targetPhotoId) {
+    await sql()`INSERT INTO photo_moderation_cases (photo_id, user_id, source, result, reason, status)
+      SELECT id, user_id, 'user_report', 'unknown', ${reason}, 'pending' FROM user_photos
+      WHERE id=${targetPhotoId} AND user_id=${reportedId}
+      AND NOT EXISTS (SELECT 1 FROM photo_moderation_cases WHERE photo_id=${targetPhotoId} AND status IN ('pending','quarantined'))`;
+  }
   return String(rows[0].id);
 }
 export async function getReportQueue(status?: string) {
