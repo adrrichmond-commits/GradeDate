@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { apiFetch, safeApiError } from "~/client-api";
 import { useState, useMemo } from "react";
 import { useAuth } from "~/auth-context";
 import { getCsrfToken } from "~/csrf-client";
@@ -117,22 +118,16 @@ function Signup() {
     try {
       // Format date_of_birth as YYYY-MM-DD
       const dateOfBirth = `${dobYear}-${dobMonth}-${String(dobDay).padStart(2, "0")}`;
-      const res = await fetch("/api/auth/signup", {
+      const data = await apiFetch<any>("/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password, date_of_birth: dateOfBirth, referral_code: referralCode || undefined }),
       });
 
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "Signup failed");
-        return;
-      }
-
       await refetch();
       setShowChoice(true);
-    } catch {
-      setError("Network error. Please try again.");
+    } catch (error) {
+      setError(safeApiError(error, "Please try again."));
     } finally {
       setSubmitting(false);
     }
@@ -147,7 +142,7 @@ function Signup() {
     setError("");
     try {
       const csrfToken = getCsrfToken();
-      const res = await fetch("/api/subscription/create-checkout", {
+      const data = await apiFetch<any>("/api/subscription/create-checkout", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -156,19 +151,14 @@ function Signup() {
         body: JSON.stringify({ plan: "monthly" }),
       });
 
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "Something went wrong. Please try again.");
-        return;
-      }
 
       if (data.url) {
         window.location.href = data.url;
       } else {
         setError("Could not start checkout. Please try again.");
       }
-    } catch {
-      setError("Network error. Please try again.");
+    } catch (error) {
+      setError(safeApiError(error, "Please try again."));
     } finally {
       setCheckoutLoading(false);
     }

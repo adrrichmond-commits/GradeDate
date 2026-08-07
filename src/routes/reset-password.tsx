@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { apiFetch, safeApiError } from "~/client-api";
 import { useState } from "react";
 
 export const Route = createFileRoute("/reset-password")({
@@ -40,21 +41,15 @@ function ResetPassword() {
 
     setSubmitting(true);
     try {
-      const res = await fetch("/api/auth/reset-password", {
+      const data = await apiFetch<any>("/api/auth/reset-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token, password }),
       });
 
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "Password reset failed");
-        return;
-      }
-
       setSuccess(true);
-    } catch {
-      setError("Network error. Please try again.");
+    } catch (error) {
+      setError(safeApiError(error, "Please try again."));
     } finally {
       setSubmitting(false);
     }

@@ -12,6 +12,7 @@ import { AuthUnavailable } from "~/auth-unavailable";
 import { useRequireSubscription, SubscriptionBanner } from "~/subscription-guard";
 import { getCsrfToken } from "~/csrf-client";
 import { getMatchActionError, matchActionFailureMessage } from "~/matches-action";
+import { apiFetch, safeApiError } from "~/client-api";
 import {
   computeSwipeFrame,
   resolveSwipeAction,
@@ -131,21 +132,13 @@ function MatchesPage() {
     setFetching(true);
     setError("");
     try {
-      const res = await fetch("/api/matches");
-      const data = await res.json();
-      if (!res.ok) {
-        if (data.code === "NO_GRADE") {
-          navigate({ to: "/profile" });
-          return;
-        }
-        setError(data.error || "Failed to load matches");
-        return;
-      }
+      const data = await apiFetch<{ matches?: MatchProfile[]; code?: string }>("/api/matches", undefined, "Failed to load matches.");
+      if (data.code === "NO_GRADE") { navigate({ to: "/profile" }); return; }
       setMatches(data.matches || []);
       setCurrentIdx(0);
       setPhotoIndex(0);
-    } catch {
-      setError("Network error. Please try again.");
+    } catch (error) {
+      setError(safeApiError(error, "Failed to load matches."));
     } finally {
       setFetching(false);
     }
