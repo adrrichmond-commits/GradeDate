@@ -43,6 +43,16 @@ describe("canonical pricing surface (smoke-test findings)", () => {
     expect(store).toMatch(/id: "boost"[\s\S]{0,120}price: "\$2\.99"/);
   });
 
+  test("Founders Club CTA uses the canonical Premium subscription route", () => {
+    const store = read("routes/store.tsx");
+    expect(store).toContain('to="/subscribe"');
+    expect(store).toContain("Subscribe — $5.99/month");
+    expect(store).toContain("Subscription-only membership at $5.99/month with a lifetime price lock.");
+    expect(store).toContain("Founders Club is included with the canonical Premium subscription.");
+    expect(store).not.toContain("/api/founders/checkout");
+    expect(store).not.toContain("handleFoundersCheckout");
+  });
+
   test("server accepts only monthly checkout and three canonical upsells", () => {
     const handler = read("api-handler.ts");
     expect(handler).toContain("Only the monthly Premium plan is available");
