@@ -23,6 +23,7 @@ import {
   logWarn,
   redactPath,
 } from "./src/observability.ts";
+import { unexpectedErrorResponse } from "./src/server-error-page.ts";
 
 // ── Security Headers ─────────────────────────────────────────
 const SECURITY_HEADERS: Record<string, string> = {
@@ -173,7 +174,7 @@ for (let attempt = 1; ; attempt++) {
             err,
           });
           // Generic error body — never leak internals to the visitor.
-          return finish(new Response("Internal Server Error", { status: 500 }), "error");
+          return finish(unexpectedErrorResponse(requestId), "error");
         }
       },
     });

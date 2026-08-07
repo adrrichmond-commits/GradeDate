@@ -21,6 +21,7 @@ import {
   logWarn,
   redactPath,
 } from "./src/observability.ts";
+import { unexpectedErrorHtml } from "./src/server-error-page.ts";
 
 const SECURITY_HEADERS: Record<string, string> = {
   "X-Content-Type-Options": "nosniff",
@@ -154,9 +155,9 @@ export default async function vercelHandler(
     for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
       res.setHeader(key, value);
     }
-    res.setHeader("content-type", "text/plain");
+    res.setHeader("content-type", "text/html; charset=utf-8");
     res.setHeader("x-request-id", requestId);
-    res.end("Internal Server Error");
+    res.end(unexpectedErrorHtml());
     return;
   } finally {
     // Completions (including the error path above) get a structured log line.
