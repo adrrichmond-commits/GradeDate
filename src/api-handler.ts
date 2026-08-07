@@ -3,6 +3,7 @@ import { originFromUrl, resolveSiteUrl } from "./site-url";
 import { deriveCoachingTips } from "./coaching";
 import { topPercentLabel } from "./percentile";
 import { validateUnmatchRequest } from "./unmatch-flow";
+import { parseExperimentEvent } from "./experiment";
 import {
   aggregateGradingMethod,
   fallbackGrade,
@@ -2213,6 +2214,34 @@ async function handleLocationLookup(req: Request): Promise<Response> {
     state: result.state,
   });
 }
+/**
+ * Record a privacy-safe experiment exposure/conversion event. The payload is
+ * validated and allowlist-stripped by parseExperimentEvent, so only coarse
+ * fields (experiment, variant, event, route, conversion) can reach the log —
+ * no identifiers, emails, or free-form content.
+ */
+async function handleExperimentEvent(req: Request): Promise<Response> {
+  const body = await req.json().catch(() => null);
+  const parsed = parseExperimentEvent(body);
+  if (!parsed) {
+    return json({ error: "Invalid experiment event" }, 400);
+  }
+  if (parsed.event === "exposure") {
+    logInfo(EVENTS.EXPERIMENT_EXPOSURE, {
+      experiment: parsed.experiment,
+      variant: parsed.variant,
+      route: parsed.route,
+    });
+  } else {
+    logInfo(EVENTS.EXPERIMENT_CONVERSION, {
+      experiment: parsed.experiment,
+      variant: parsed.variant,
+      route: parsed.route,
+      conversion: parsed.conversion,
+    });
+  }
+  return json({ ok: true });
+}
 
 // ── Push Notifications ──────────────────────────────────────
 
@@ -2656,6 +2685,13 @@ export async function handleApiRoute(
     const csrfErr = checkCsrf(req);
     if (csrfErr) return csrfErr;
     return handleGradePhotos(req);
+  }
+
+  // Experiment events — CSRF required; records only coarse allowlisted fields
+  if (pathname === "/api/experiment-event" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
+    return handleExperimentEvent(req);
   }
 
   // Percentile

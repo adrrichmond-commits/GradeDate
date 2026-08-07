@@ -93,6 +93,10 @@ export const EVENTS = {
   CHAT_PUSH_FAILED: "chat.push_failed",
   // Auth
   AUTH_REFERRAL_FAILED: "auth.referral.failed",
+  // Experiments — privacy-safe structured analytics; only coarse allowlisted
+  // fields (experiment, variant, route, conversion) are ever attached.
+  EXPERIMENT_EXPOSURE: "experiment.exposure",
+  EXPERIMENT_CONVERSION: "experiment.conversion",
 } as const;
 
 export type EventName = (typeof EVENTS)[keyof typeof EVENTS];
