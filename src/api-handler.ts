@@ -283,6 +283,8 @@ function requireSubscription(user: User): Response | null {
 // ── API Route Handlers ────────────────────────────────────────
 
 async function handleSignup(req: Request): Promise<Response> {
+  const request_id = requestIdFrom(req);
+  logInfo(EVENTS.SIGNUP_STARTED, { request_id, channel: "api" });
   const rateLimitResponse = checkStrictRateLimit(req);
   if (rateLimitResponse) return rateLimitResponse;
 
@@ -341,6 +343,7 @@ async function handleSignup(req: Request): Promise<Response> {
     }
   }
 
+  logInfo(EVENTS.SIGNUP_COMPLETED, { request_id, account_created: true });
   return setSessionCookie(
     setCsrfCookie(json({ user: toSafeUser(user) }, 201), generateCsrfToken()),
     session.id,
@@ -403,6 +406,8 @@ async function handleMe(req: Request): Promise<Response> {
 }
 
 async function handleUpload(req: Request): Promise<Response> {
+  const request_id = requestIdFrom(req);
+  logInfo(EVENTS.PHOTO_UPLOAD_STARTED, { request_id, user_type: "unknown" });
   const rateLimitResponse = checkRateLimit(req, "upload", { maxRequests: 10, windowMs: 15 * 60 * 1000 });
   if (rateLimitResponse) return rateLimitResponse;
 
@@ -428,11 +433,13 @@ async function handleUpload(req: Request): Promise<Response> {
 
   if (files.length === 0) {
     logInfo(EVENTS.UPLOAD_REJECTED, { reason: "no_files" });
+    logWarn(EVENTS.PHOTO_UPLOAD_FAILED, { request_id, reason: "no_files" });
     return json({ error: "No photo file provided" }, 400);
   }
 
   if (files.length > 5) {
     logInfo(EVENTS.UPLOAD_REJECTED, { reason: "too_many_files", file_count: files.length });
+    logWarn(EVENTS.PHOTO_UPLOAD_FAILED, { request_id, reason: "too_many_files" });
     return json({ error: "Maximum 5 photos per upload" }, 400);
   }
 
@@ -440,6 +447,7 @@ async function handleUpload(req: Request): Promise<Response> {
   for (const file of files) {
     if (!ALLOWED_TYPES.includes(file.type)) {
       logInfo(EVENTS.UPLOAD_REJECTED, { reason: "unsupported_type" });
+      logWarn(EVENTS.PHOTO_UPLOAD_FAILED, { request_id, reason: "unsupported_type" });
       return json({ error: "Only JPEG, PNG, and WebP images are allowed" }, 400);
     }
   }
@@ -448,6 +456,7 @@ async function handleUpload(req: Request): Promise<Response> {
   for (const file of files) {
     if (file.size > MAX_FILE_SIZE) {
       logInfo(EVENTS.UPLOAD_REJECTED, { reason: "file_too_large" });
+      logWarn(EVENTS.PHOTO_UPLOAD_FAILED, { request_id, reason: "file_too_large" });
       return json({ error: "Photo must be under 10 MB" }, 400);
     }
   }
@@ -502,9 +511,11 @@ async function handleUpload(req: Request): Promise<Response> {
 
   if (user) {
     logInfo(EVENTS.UPLOAD_COMPLETED, { user_type: "authenticated", file_count: uploadResults.length, user_id: user.id });
+    logInfo(EVENTS.PHOTO_UPLOAD_COMPLETED, { request_id, user_type: "authenticated", file_count: uploadResults.length });
     return json({ photos: uploadResults });
   }
   logInfo(EVENTS.UPLOAD_COMPLETED, { user_type: "anonymous", file_count: uploadResults.length });
+  logInfo(EVENTS.PHOTO_UPLOAD_COMPLETED, { request_id, user_type: "anonymous", file_count: uploadResults.length });
   return json({ photo_paths: uploadResults.map(r => r.photo_path) });
 }
 
@@ -1032,6 +1043,8 @@ async function gradePhotoWithAI(photoPath: string): Promise<{ grade: number; fee
 }
 
 async function handleGradePhotos(req: Request): Promise<Response> {
+  const request_id = requestIdFrom(req);
+  logInfo(EVENTS.GRADING_STARTED, { request_id, flow: "multi_photo" });
   const user = await getCurrentUser(req);
   if (!user) {
     return json({ error: "Unauthorized" }, 401);
@@ -1116,6 +1129,7 @@ async function handleGradePhotos(req: Request): Promise<Response> {
       feedback = result.feedback;
     } catch (err) {
       logWarn(EVENTS.GRADE_FALLBACK, { user_id: user.id, reason: "ai_provider_unavailable", photo_index: i });
+      logWarn(EVENTS.GRADING_FAILED, { request_id, stage: "photo_ai", reason: "provider_unavailable" });
       fallbackCount++;
       grade = fallbackGrade(); // 3-8 fallback
       feedback = FALLBACK_FEEDBACK; // honest: does not claim the photo was analyzed
@@ -1172,6 +1186,7 @@ async function handleGradePhotos(req: Request): Promise<Response> {
     ? `${topPercentLabel(percentileResult.percentile)} in ${percentileResult.percentile_city}`
     : "Not enough users in your city for percentile ranking yet";
 
+  logInfo(EVENTS.GRADING_COMPLETED, { request_id, flow: "multi_photo", photo_count: photoPaths.length, fallback_count: fallbackCount });
   logInfo(EVENTS.GRADE_PHOTOS_COMPLETED, {
     user_id: user.id,
     photo_count: photoPaths.length,
@@ -1352,7 +1367,9 @@ async function handleLike(req: Request): Promise<Response> {
     }
   }
 
+  const wasFirstLike = !(await getLike(user.id, likedId));
   const likeRecorded = await recordLike(user.id, likedId, "like");
+  if (likeRecorded && wasFirstLike) logInfo(EVENTS.FIRST_LIKE, { actor_id: user.id });
   if (!likeRecorded) return json({ error: "This relationship is unavailable" }, 403);
 
   // Check if this creates a mutual match
@@ -1661,7 +1678,13 @@ async function handleReport(req: Request): Promise<Response> {
     }, 400);
   }
 
-  await reportUser(user.id, targetId, reason);
+  try {
+    await reportUser(user.id, targetId, reason);
+  } catch (err) {
+    logError(EVENTS.REPORT_FAILED, { reporter_id: user.id, reason, err });
+    throw err;
+  }
+  logInfo(EVENTS.REPORT_SUBMITTED, { reporter_id: user.id, reason });
   logInfo(EVENTS.MODERATION_REPORT_RECEIVED, { reporter_id: user.id, reason });
   return json({ success: true });
 }
@@ -1695,6 +1718,8 @@ async function handleSubscriptionActivate(_req: Request): Promise<Response> {
 }
 
 async function handleCreateCheckout(req: Request): Promise<Response> {
+  const request_id = requestIdFrom(req);
+  logInfo(EVENTS.PREMIUM_CHECKOUT_STARTED, { request_id, plan: "monthly" });
   const user = await getCurrentUser(req);
   if (!user) {
     return json({ error: "Unauthorized" }, 401);
@@ -1733,7 +1758,7 @@ async function handleCreateCheckout(req: Request): Promise<Response> {
     customer_email: user.email,
     metadata: { user_id: String(user.id) },
   });
-
+  logInfo(EVENTS.PREMIUM_CHECKOUT_COMPLETED, { request_id, plan: "monthly" });
   return json({ url: session.url });
 }
 
