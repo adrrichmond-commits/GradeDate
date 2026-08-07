@@ -11,6 +11,7 @@ import { PREMIUM_PRICE_ID, founderPriceLockApplies } from "./canonical-entitleme
 import { deletePhoto } from "./blob-store";
 import { buildAccountDeletionQueries, collectOwnedPhotoPaths } from "./account-deletion";
 import { EVENTS, logInfo } from "./observability";
+import { auditRecordShape } from "./admin-audit";
 
 let _sql: NeonQueryFunction<false, false> | null = null;
 
@@ -263,6 +264,7 @@ export async function initTables(): Promise<void> {
     CREATE TABLE IF NOT EXISTS admin_audit_events (
       id BIGSERIAL PRIMARY KEY,
       actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      actor_role TEXT,
       action TEXT NOT NULL,
       target_type TEXT,
       target_id TEXT,
@@ -271,7 +273,11 @@ export async function initTables(): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `;
+  try { await sql()`ALTER TABLE admin_audit_events ADD COLUMN IF NOT EXISTS actor_role TEXT`; } catch {}
   await sql()`CREATE INDEX IF NOT EXISTS admin_audit_events_created_idx ON admin_audit_events(created_at)`;
+  await sql()`CREATE OR REPLACE FUNCTION deny_admin_audit_mutation() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'admin audit events are append-only'; END; $$`;
+  await sql()`DROP TRIGGER IF EXISTS admin_audit_events_immutable ON admin_audit_events`;
+  await sql()`CREATE TRIGGER admin_audit_events_immutable BEFORE UPDATE OR DELETE ON admin_audit_events FOR EACH ROW EXECUTE FUNCTION deny_admin_audit_mutation()`;
 
   await sql()`
     CREATE TABLE IF NOT EXISTS likes (
@@ -946,8 +952,9 @@ export async function createAppeal(suspensionId:string,userId:number,text:string
 export async function getAppeals(userId?:number):Promise<any[]>{const r= userId===undefined ? await sql()`SELECT id,suspension_id,user_id,status,created_at,reviewed_at FROM appeals ORDER BY created_at DESC` : await sql()`SELECT id,suspension_id,status,created_at,reviewed_at FROM appeals WHERE user_id=${userId} ORDER BY created_at DESC`; return r as any[];}
 export async function reviewAppeal(id:string,status:string,actorUserId:number):Promise<any|null>{const r=await sql()`UPDATE appeals SET status=${status},actor_user_id=${actorUserId},reviewed_at=NOW() WHERE id=${id} AND status='pending' AND user_id<>${actorUserId} RETURNING suspension_id,user_id`; if(!r.length)return null; if(status==='granted'){await revokeSuspension(String((r[0] as any).suspension_id),actorUserId);} return r[0];}
 // ── Safety foundation ───────────────────────────────────────
-export async function recordAdminAuditEvent(event: { actorUserId: number | null; action: string; targetType?: string; targetId?: string; requestId?: string; metadata?: Record<string, unknown> }): Promise<void> {
-  await sql()`INSERT INTO admin_audit_events (actor_user_id, action, target_type, target_id, request_id, metadata) VALUES (${event.actorUserId}, ${event.action}, ${event.targetType ?? null}, ${event.targetId ?? null}, ${event.requestId ?? null}, ${JSON.stringify(event.metadata ?? {})}::jsonb)`;
+export async function recordAdminAuditEvent(event: { actorUserId: number | null; actorRole?: string | null; action: string; targetType?: string; targetId?: string; requestId?: string; metadata?: Record<string, unknown> }): Promise<void> {
+  const safe = auditRecordShape(event);
+  await sql()`INSERT INTO admin_audit_events (actor_user_id, actor_role, action, target_type, target_id, request_id, metadata) VALUES (${safe.actorUserId}, ${safe.actorRole}, ${safe.action}, ${safe.targetType}, ${safe.targetId}, ${safe.requestId}, ${JSON.stringify(safe.metadata)}::jsonb)`;
 }
 export async function revokeSession(sessionId: string): Promise<void> { await sql()`UPDATE sessions SET revoked_at = NOW() WHERE id = ${sessionId}`; }
 
