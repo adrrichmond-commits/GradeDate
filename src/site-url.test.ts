@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+
+process.env.PUBLIC_SITE_ORIGIN = "https://gradedate.app";
 import {
   clientSiteOrigin,
   originFromUrl,
@@ -48,15 +50,13 @@ describe("clientSiteOrigin", () => {
 
 describe("resolveSiteOrigin", () => {
   test("prefers the explicit request URL origin", () => {
-    expect(resolveSiteOrigin("https://staging.example.com/api/referral")).toBe(
-      "https://staging.example.com",
-    );
-    expect(resolveSiteOrigin("http://localhost:3000/api/referral")).toBe("http://localhost:3000");
+    expect(resolveSiteOrigin("https://staging.example.com/api/referral")).toBe("https://gradedate.app");
+    expect(resolveSiteOrigin("http://localhost:3000/api/referral")).toBe("https://gradedate.app");
   });
 
   test("falls back to null when nothing is available", () => {
-    expect(resolveSiteOrigin(undefined)).toBeNull();
-    expect(resolveSiteOrigin(null)).toBeNull();
+    expect(resolveSiteOrigin(undefined)).toBe("https://gradedate.app");
+    expect(resolveSiteOrigin(null)).toBe("https://gradedate.app");
     expect(resolveSiteOrigin("garbage")).toBeNull();
   });
 });
@@ -66,9 +66,7 @@ describe("resolveSiteUrl", () => {
     expect(resolveSiteUrl("/signup?ref=ABC123", "https://gradedate.app/api/referral")).toBe(
       "https://gradedate.app/signup?ref=ABC123",
     );
-    expect(resolveSiteUrl("/grade", "https://example.vercel.app/x")).toBe(
-      "https://example.vercel.app/grade",
-    );
+    expect(resolveSiteUrl("/grade", "https://example.vercel.app/x")).toBe("https://gradedate.app/grade");
   });
 
   test("normalizes a path without a leading slash", () => {
@@ -76,8 +74,8 @@ describe("resolveSiteUrl", () => {
   });
 
   test("returns null when no origin can be resolved", () => {
-    expect(resolveSiteUrl("/grade", null)).toBeNull();
-    expect(resolveSiteUrl("/grade")).toBeNull();
+    expect(resolveSiteUrl("/grade", null)).toBe("https://gradedate.app/grade");
+    expect(resolveSiteUrl("/grade")).toBe("https://gradedate.app/grade");
   });
 });
 
@@ -96,15 +94,15 @@ describe("canonical site URLs", () => {
 
   test("uses the current request origin and pathname", () => {
     expect(resolveCanonicalSiteUrl("/terms?utm_source=x#top", "https://preview.example/terms?utm_source=x")).toBe(
-      "https://preview.example/terms",
+      "https://gradedate.app/terms",
     );
     expect(resolveCanonicalSiteUrl("/privacy", "https://preview.example/private?x=1#hash")).toBe(
-      "https://preview.example/privacy",
+      "https://gradedate.app/privacy",
     );
   });
 
   test("rejects unsafe origins and has no origin fallback", () => {
     expect(originFromUrl("javascript:alert(1)")).toBeNull();
-    expect(resolveCanonicalSiteUrl("/terms", "//untrusted.example/terms")).toBeNull();
+    expect(resolveCanonicalSiteUrl("/terms", "//untrusted.example/terms")).toBe("https://gradedate.app/terms");
   });
 });

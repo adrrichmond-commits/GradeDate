@@ -1,51 +1,22 @@
 /** Crawlability policy and machine-readable SEO endpoints. */
+import { configuredPublicOrigin } from "./site-url";
 
 export const PUBLIC_INDEXABLE_PATHS = [
-  "/",
-  "/legal",
-  "/terms",
-  "/privacy",
-  "/privacy-geo",
-  "/cookies",
-  "/safety",
-  "/rules",
-  "/accessibility",
-  "/dmca",
-  "/refund",
-  "/data",
+  "/", "/legal", "/terms", "/privacy", "/privacy-geo", "/cookies", "/safety", "/rules", "/accessibility", "/dmca", "/refund", "/data",
 ] as const;
 
 const PRIVATE_PREFIXES = [
-  "/api/",
-  "/uploads/",
-  "/matches",
-  "/connections",
-  "/chat/",
-  "/profile",
-  "/grade",
-  "/store",
-  "/subscribe",
-  "/logout",
-  "/login",
-  "/signup",
-  "/forgot-password",
-  "/reset-password",
+  "/api/", "/uploads/", "/matches", "/connections", "/chat/", "/profile", "/grade", "/store", "/subscribe", "/logout", "/login", "/signup", "/forgot-password", "/reset-password",
 ];
 
-/** Private and user-specific surfaces must never be indexed. */
 export function shouldNoIndex(pathname: string): boolean {
   const path = pathname === "/" ? pathname : pathname.replace(/\/+$/, "");
   return PRIVATE_PREFIXES.some((prefix) => path === prefix.replace(/\/$/, "") || path.startsWith(prefix));
 }
 
-/** Resolve only the origin supplied by the current request; never invent a host. */
-export function requestOrigin(requestUrl: string): string | null {
-  try {
-    const url = new URL(requestUrl);
-    return url.protocol === "http:" || url.protocol === "https:" ? url.origin : null;
-  } catch {
-    return null;
-  }
+/** Request URL is intentionally ignored: reverse proxies can provide private HTTP hosts. */
+export function requestOrigin(_requestUrl: string): string | null {
+  return configuredPublicOrigin();
 }
 
 export function robotsResponse(origin: string | null): Response {
@@ -57,7 +28,7 @@ export function robotsResponse(origin: string | null): Response {
 }
 
 export function sitemapResponse(origin: string | null): Response {
-  if (!origin) return new Response("Unable to resolve site origin", { status: 400 });
+  if (!origin) return new Response("Unable to resolve trusted site origin", { status: 404 });
   const urls = PUBLIC_INDEXABLE_PATHS.map((path) => `  <url><loc>${origin}${path}</loc></url>`).join("\n");
   return new Response(
     `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`,
