@@ -331,19 +331,17 @@ export async function initTables(): Promise<void> {
       triaged_at TIMESTAMPTZ, actioned_at TIMESTAMPTZ, resolved_at TIMESTAMPTZ, resolution_notes TEXT
     )
   `;
-  // Existing Phase 1 deployments are upgraded by the guarded ALTER statements below.
-  for (const statement of [
-    `ALTER TABLE reports ADD COLUMN IF NOT EXISTS id UUID DEFAULT gen_random_uuid()`,
-    `ALTER TABLE reports ADD COLUMN IF NOT EXISTS target_photo_id INTEGER`,
-    `ALTER TABLE reports ADD COLUMN IF NOT EXISTS details TEXT`,
-    `ALTER TABLE reports ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'open'`,
-    `ALTER TABLE reports ADD COLUMN IF NOT EXISTS priority TEXT NOT NULL DEFAULT 'normal'`,
-    `ALTER TABLE reports ADD COLUMN IF NOT EXISTS assignee_id INTEGER`,
-    `ALTER TABLE reports ADD COLUMN IF NOT EXISTS triaged_at TIMESTAMPTZ`,
-    `ALTER TABLE reports ADD COLUMN IF NOT EXISTS actioned_at TIMESTAMPTZ`,
-    `ALTER TABLE reports ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ`,
-    `ALTER TABLE reports ADD COLUMN IF NOT EXISTS resolution_notes TEXT`,
-  ]) { try { await (sql() as any).query(statement); } catch {} }
+  // Safe migrations for existing Phase 1 deployments.
+  try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS id UUID DEFAULT gen_random_uuid()`; } catch {}
+  try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS target_photo_id INTEGER`; } catch {}
+  try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS details TEXT`; } catch {}
+  try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'open'`; } catch {}
+  try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS priority TEXT NOT NULL DEFAULT 'normal'`; } catch {}
+  try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS assignee_id INTEGER`; } catch {}
+  try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS triaged_at TIMESTAMPTZ`; } catch {}
+  try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS actioned_at TIMESTAMPTZ`; } catch {}
+  try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ`; } catch {}
+  try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS resolution_notes TEXT`; } catch {}
   try { await sql()`CREATE UNIQUE INDEX IF NOT EXISTS reports_id_unique ON reports(id)`; } catch {}
   try { await sql()`CREATE INDEX IF NOT EXISTS reports_queue_idx ON reports(status, priority, created_at)`; } catch {}
   await sql()`
