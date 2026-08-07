@@ -65,6 +65,7 @@ import {
   setPrimaryPhoto,
   getUserPhotos,
   getUserPhotoCount,
+  getPhotoModerationQueue, getPhotoModerationCase, transitionPhotoModerationCase, createPhotoModerationCase,
   savePushSubscription,
   getPushSubscriptions,
   deletePushSubscription,
@@ -120,7 +121,7 @@ import { webcrypto } from "node:crypto";
 import { storePhoto, readPhotoBuffer, deletePhoto, isStoragePhotoPath } from "../src/blob-store.ts";
 import { deleteAnonUpload, maybeSweepExpiredAnonUploads } from "./anon-upload-retention";
 import { resolveOwnedPhotoPaths, validateAnonymousGradePath } from "./photo-access";
-import { canManageReport, canUseOwnerAction, canTransition, isReportStatus, isReportPriority, isReportReason, REPORT_DETAILS_MAX, REPORT_RATE_LIMIT } from "./report-queue";
+import { canReviewPhoto, canTransitionQuarantine, isQuarantineStatus, privateReviewStorageReady, redactPhotoCase,  canUseOwnerAction, canTransition, isReportStatus, isReportPriority, isReportReason, REPORT_DETAILS_MAX, REPORT_RATE_LIMIT } from "./report-queue";
 import { isCheckoutBlocked } from "./subscription-confirmation";
 import { isStorePurchaseBlocked } from "./store-confirmation";
 import { parseModerationContent, MODERATION_UNAVAILABLE_CODE, type ModerationResult } from "./moderation";
@@ -1750,6 +1751,30 @@ async function handleReportMutation(req: Request, id: string): Promise<Response>
   return json({ ok: true });
 }
 
+async function handlePhotoModerationQueue(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user || !canReviewPhoto(user.role)) return json({ error: "Forbidden" }, 403);
+  const status = new URL(req.url).searchParams.get("status") ?? undefined;
+  if (status && !isQuarantineStatus(status)) return json({ error: "Invalid status" }, 400);
+  await recordAdminAuditEvent({ actorUserId: user.id, action: "photo_moderation.queue.read", targetType: "photo_moderation" });
+  return json({ cases: (await getPhotoModerationQueue(status)).map((c: any) => redactPhotoCase(c)) });
+}
+async function handlePhotoModerationDetail(req: Request, id: string): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user || !canReviewPhoto(user.role)) return json({ error: "Forbidden" }, 403);
+  const item = await getPhotoModerationCase(id); if (!item) return json({ error: "Not found" }, 404);
+  await recordAdminAuditEvent({ actorUserId: user.id, action: "photo_moderation.read", targetType: "photo_moderation", targetId: id });
+  return json({ case: redactPhotoCase(item as any), review_access: privateReviewStorageReady() ? "signed" : "unavailable" }, privateReviewStorageReady() ? 200 : 503);
+}
+async function handlePhotoModerationMutation(req: Request, id: string): Promise<Response> {
+  const user = await getCurrentUser(req); if (!user || !canReviewPhoto(user.role)) return json({ error: "Forbidden" }, 403);
+  const item: any = await getPhotoModerationCase(id); if (!item) return json({ error: "Not found" }, 404);
+  const body = await req.json().catch(() => null); const status = body?.status;
+  if (!isQuarantineStatus(status) || !canTransitionQuarantine(item.status, status)) return json({ error: "Invalid transition" }, 409);
+  const updated = await transitionPhotoModerationCase(id, status, user.id, status === "approved" || status === "restored" ? "safe" : status === "removed" ? "unsafe" : undefined);
+  await recordAdminAuditEvent({ actorUserId: user.id, action: "photo_moderation.transition", targetType: "photo_moderation", targetId: id, metadata: { status } });
+  return json({ ok: true, case: redactPhotoCase((updated ?? {}) as any) });
+}
 async function handleDeleteAccount(req: Request): Promise<Response> {
   const user = await getCurrentUser(req);
   if (!user) {
@@ -2857,6 +2882,10 @@ export async function handleApiRoute(
     return handleDeleteAccount(req);
   }
 
+  const photoModerationMatch = pathname.match(/^\/api\/admin\/photo-moderation\/([^/]+)$/);
+  if (pathname === "/api/admin/photo-moderation" && method === "GET") return handlePhotoModerationQueue(req);
+  if (photoModerationMatch && method === "GET") return handlePhotoModerationDetail(req, photoModerationMatch[1]);
+  if (photoModerationMatch && method === "POST") { const csrfErr = checkCsrf(req); if (csrfErr) return csrfErr; return handlePhotoModerationMutation(req, photoModerationMatch[1]); }
   const reportMatch = pathname.match(/^\/api\/admin\/reports\/([^/]+)$/);
   if (pathname === "/api/admin/reports" && method === "GET") return handleReportQueue(req);
   if (reportMatch && method === "GET") return handleReportDetail(req, reportMatch[1]);
