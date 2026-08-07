@@ -73,6 +73,8 @@ function ConnectionsPage() {
   const [reportReason, setReportReason] = useState("");
   const [reporting, setReporting] = useState(false);
   const [reportDone, setReportDone] = useState(false);
+  const [reportError, setReportError] = useState("");
+  const [blockError, setBlockError] = useState("");
   const [blocking, setBlocking] = useState(false);
   const closeReport = useCallback(() => setShowReportModal(false), []);
   const reportA11y = useModalAccessibility<HTMLDivElement>(showReportModal, closeReport);
@@ -370,11 +372,13 @@ function ConnectionsPage() {
 
                   {menuConn && "match_id" in menuConn && (menuConn as Connection).match_id === conn.match_id && (
                     <div className="absolute right-4 top-14 z-20 w-44 rounded-xl border border-gray-700 bg-gray-900 py-1.5 shadow-2xl">
+                      {blockError && <p role="alert" className="px-4 py-2 text-xs text-red-400">{blockError}</p>}
                       <button
                         onClick={async () => {
                           setBlocking(true);
+                          setBlockError("");
                           try {
-                            await fetch("/api/users/block", {
+                            const blockRes = await fetch("/api/users/block", {
                               method: "POST",
                               headers: {
                                 "Content-Type": "application/json",
@@ -382,9 +386,10 @@ function ConnectionsPage() {
                               },
                               body: JSON.stringify({ user_id: conn.user_id }),
                             });
+                            if (!blockRes.ok) { const data = await blockRes.json().catch(() => null); setBlockError(data?.error || "Could not block this user. Please try again."); return; }
                             setConnections((prev) => prev.filter((c) => c.user_id !== conn.user_id));
-                          } catch { /* ignore */ }
-                          setBlocking(false);
+                          } catch { setBlockError("Network error. Please try again."); }
+                          finally { setBlocking(false); }
                           setMenuConn(null);
                         }}
                         disabled={blocking}
@@ -412,6 +417,7 @@ function ConnectionsPage() {
                           setShowReportModal(true);
                           setReportReason("");
                           setReportDone(false);
+                          setReportError("");
                         }}
                         className="flex w-full items-center gap-2 px-4 py-2 text-sm text-amber-400 transition hover:bg-amber-500/10"
                       >
@@ -567,6 +573,8 @@ function ConnectionsPage() {
                 : "Why are you reporting this user?"}
             </p>
 
+            {reportError && <p role="alert" className="mt-3 text-sm text-red-400">{reportError}</p>}
+
             {!reportDone && (
               <>
                 <div className="mt-4 space-y-2">
@@ -608,7 +616,7 @@ function ConnectionsPage() {
                       const userId = "match_id" in menuConn ? (menuConn as Connection).user_id : (menuConn as LikerProfile).id;
                       setReporting(true);
                       try {
-                        await fetch("/api/users/report", {
+                        const reportRes = await fetch("/api/users/report", {
                           method: "POST",
                           headers: {
                             "Content-Type": "application/json",
@@ -616,9 +624,10 @@ function ConnectionsPage() {
                           },
                           body: JSON.stringify({ user_id: userId, reason: reportReason }),
                         });
+                        if (!reportRes.ok) { const data = await reportRes.json().catch(() => null); setReportError(data?.error || "Could not submit report. Please try again."); return; }
                         setReportDone(true);
                       } catch {
-                        // ignore
+                        setReportError("Network error. Please try again.");
                       } finally {
                         setReporting(false);
                       }

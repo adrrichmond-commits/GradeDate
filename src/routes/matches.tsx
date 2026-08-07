@@ -106,6 +106,7 @@ function MatchesPage() {
   const [reportReason, setReportReason] = useState("");
   const [reporting, setReporting] = useState(false);
   const [reportDone, setReportDone] = useState(false);
+  const [reportError, setReportError] = useState("");
   const closeCelebration = useCallback(() => setMatchCelebration(null), []);
   const closeLikesLimit = useCallback(() => setShowLikesLimitOverlay(false), []);
   const closeReport = useCallback(() => setShowReportModal(false), []);
@@ -810,6 +811,7 @@ function MatchesPage() {
               onClick={() => {
                 setReportReason("");
                 setReportDone(false);
+                setReportError("");
                 setShowReportModal(true);
               }}
               className="mx-auto block text-xs text-gray-500 underline transition hover:text-red-400"
@@ -937,6 +939,7 @@ function MatchesPage() {
                 : "Why are you reporting this user?"}
             </p>
 
+            {reportError && <p role="alert" className="mt-3 text-sm text-red-400">{reportError}</p>}
             {!reportDone && (
               <>
                 <div className="mt-4 space-y-2">
@@ -974,7 +977,7 @@ function MatchesPage() {
                       if (!reportReason || !current) return;
                       setReporting(true);
                       try {
-                        await fetch("/api/users/report", {
+                        const reportRes = await fetch("/api/users/report", {
                           method: "POST",
                           headers: {
                             "Content-Type": "application/json",
@@ -982,9 +985,10 @@ function MatchesPage() {
                           },
                           body: JSON.stringify({ user_id: current.id, reason: reportReason }),
                         });
+                        if (!reportRes.ok) { const data = await reportRes.json().catch(() => null); setReportError(data?.error || "Could not submit report. Please try again."); return; }
                         setReportDone(true);
                       } catch {
-                        // ignore
+                        setReportError("Network error. Please try again.");
                       } finally {
                         setReporting(false);
                       }
