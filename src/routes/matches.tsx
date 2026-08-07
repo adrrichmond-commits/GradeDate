@@ -123,19 +123,9 @@ function MatchesPage() {
     }
   }, [loading, user]);
 
-  if (loading || checking) {
-    return (
-      <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center px-4">
-        <div className="flex flex-col items-center gap-4">
-          <div className="loader-pulse" />
-          <p className="text-sm text-gray-400">Loading your matches...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!user) return null;
-
+  // All hooks live above the conditional returns so hook call order is stable
+  // on every render (Rules of Hooks). The effects below guard their own data
+  // fetching, so behavior is unchanged.
   const fetchMatches = useCallback(async () => {
     setFetching(true);
     setError("");
@@ -182,6 +172,19 @@ function MatchesPage() {
       fetchLikesRemaining();
     }
   }, [user]);
+
+  if (loading || checking) {
+    return (
+      <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center px-4">
+        <div className="flex flex-col items-center gap-4">
+          <div className="loader-pulse" />
+          <p className="text-sm text-gray-400">Loading your matches...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) return null;
 
   const advanceAfterAction = () => {
     setAnimState(null);
