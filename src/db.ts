@@ -343,7 +343,7 @@ export async function initTables(): Promise<void> {
     `ALTER TABLE reports ADD COLUMN IF NOT EXISTS actioned_at TIMESTAMPTZ`,
     `ALTER TABLE reports ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ`,
     `ALTER TABLE reports ADD COLUMN IF NOT EXISTS resolution_notes TEXT`,
-  ]) { try { await sql()({ rawQuery: statement } as any); } catch {} }
+  ]) { try { await (sql() as any).query(statement); } catch {} }
   try { await sql()`CREATE UNIQUE INDEX IF NOT EXISTS reports_id_unique ON reports(id)`; } catch {}
   try { await sql()`CREATE INDEX IF NOT EXISTS reports_queue_idx ON reports(status, priority, created_at)`; } catch {}
   await sql()`
