@@ -102,11 +102,13 @@ describe("redactValue", () => {
       profile: { password: "hunter2", photo_path: "/uploads/anon_abc.jpg" },
       grade: 7,
     }) as Record<string, unknown>;
-    expect(out.user_id).toBe(42);
+    expect(out.user_id).toBe("[REDACTED]");
     expect(out.email).toBe("[REDACTED]");
     expect((out.profile as Record<string, unknown>).password).toBe("[REDACTED]");
     expect((out.profile as Record<string, unknown>).photo_path).toBe("[REDACTED]");
     expect(out.grade).toBe(7);
+    // The raw user_id value must never be emitted anywhere in the redacted output.
+    expect(JSON.stringify(out)).not.toContain("42");
   });
 
   test("redacts chat message content", () => {
