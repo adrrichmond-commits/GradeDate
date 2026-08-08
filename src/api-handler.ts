@@ -29,7 +29,9 @@ import {
   recordLike,
   getLike,
   createSession,
+  createPrivilegedSession,
   getSessionById,
+  createWebAuthnChallenge, consumeWebAuthnChallenge, getWebAuthnCredentials, saveWebAuthnCredential, updateWebAuthnCounter, recordAdminAuditEvent,
   deleteSession,
   createMatch,
   isMatch,
@@ -127,6 +129,7 @@ import { resolveOwnedPhotoPaths, validateAnonymousGradePath } from "./photo-acce
 import { canReviewPhoto, canTransitionQuarantine, isQuarantineStatus, privateReviewStorageReady, redactPhotoCase,  canUseOwnerAction, canTransition, isReportStatus, isReportPriority, isReportReason, REPORT_DETAILS_MAX, REPORT_RATE_LIMIT } from "./report-queue";
 import { isSuspensionReason, isSuspensionDuration, isAppealStatus, canReviewAppeal, canOverrideSuspension, durationEnds, APPEAL_TEXT_MAX } from "./suspensions";
 import { hasPermission, isSuspended, isSuspensionException, privilegedMfaReady, type PrivilegedRole } from "./safety";
+import { registrationOptions, authenticationOptions, verifyRegistration, verifyAuthentication, MFA_CHALLENGE_TTL_MS } from "./webauthn-mfa";
 import { isCheckoutBlocked } from "./subscription-confirmation";
 import { isStorePurchaseBlocked } from "./store-confirmation";
 import { parseModerationContent, MODERATION_UNAVAILABLE_CODE, type ModerationResult } from "./moderation";
@@ -258,16 +261,13 @@ function getSessionId(req: Request): string | null {
   return match ? match[1] : null;
 }
 
+async function getCurrentSession(req: Request): Promise<Session | null> {
+  const id = getSessionId(req); return id ? getSessionById(id) : null;
+}
 async function getCurrentUser(req: Request): Promise<User | null> {
-  const sessionId = getSessionId(req);
-  if (!sessionId) return null;
-  const session = await getSessionById(sessionId);
-  if (!session) return null;
+  const session = await getCurrentSession(req); if (!session) return null;
   const user = await getUserById(session.user_id);
-  if (user?.subscription_status === "active" && user.subscription_expires_at && new Date(user.subscription_expires_at).getTime() <= Date.now() && !user.stripe_subscription_id) {
-    await updateSubscriptionStatus(user.id, "inactive");
-    return getUserById(user.id);
-  }
+  if (user?.subscription_status === "active" && user.subscription_expires_at && new Date(user.subscription_expires_at).getTime() <= Date.now() && !user.stripe_subscription_id) { await updateSubscriptionStatus(user.id, "inactive"); return getUserById(user.id); }
   return user;
 }
 
@@ -297,7 +297,8 @@ async function enforceSafety(req: Request, pathname: string): Promise<Response |
   if (user && isSuspended(user)) return json({ error: "Account suspended", code: "ACCOUNT_SUSPENDED" }, 423);
   if (pathname.startsWith("/api/admin/")) {
     const role = user?.role as PrivilegedRole | undefined;
-    if (!user || !hasPermission(user, ["owner", "admin", "moderator"]) || !privilegedMfaReady()) return json({ error: "Privileged access unavailable", code: "PRIVILEGED_ACCESS_DENIED" }, 403);
+    const session = await getCurrentSession(req);
+    if (!user || !hasPermission(user, ["owner", "admin", "moderator"]) || !privilegedMfaReady() || !session?.mfa_verified_at) return json({ error: "MFA-verified privileged session required", code: "PRIVILEGED_MFA_REQUIRED" }, 403);
     await recordAdminAuditEvent({ actorUserId: user.id, action: "admin.route.check", targetType: "route", targetId: pathname, requestId: req.headers.get("x-request-id") ?? undefined });
     void role;
   }
@@ -396,6 +397,12 @@ async function handleLogin(req: Request): Promise<Response> {
   const valid = await BunPw.verify(password, user.password_hash);
   if (!valid) {
     return json({ error: "Invalid email or password" }, 401);
+  }
+  // Password authentication never creates a privileged session. Owners,
+  // admins, and moderators must use the passkey step-up flow below.
+  if (["owner", "admin", "moderator"].includes(String(user.role))) {
+    await recordAdminAuditEvent({ actorUserId: user.id, actorRole: user.role, action: "mfa.password_only_denied", targetType: "user", targetId: String(user.id), requestId: requestIdFrom(req) });
+    return json({ error: "Privileged MFA required", code: "PRIVILEGED_MFA_REQUIRED" }, 403);
   }
 
   const session = await createSession(user.id);
@@ -2732,6 +2739,35 @@ async function handleReady(_req: Request): Promise<Response> {
   return json({ ok: true, status: "ready" });
 }
 
+function b64url(bytes: Uint8Array): string { return Buffer.from(bytes).toString("base64url"); }
+function fromB64url(value: string): Uint8Array { return new Uint8Array(Buffer.from(value, "base64url")); }
+async function privilegedCandidate(req: Request): Promise<User | null> {
+  const body = await req.json().catch(() => null); if (!body?.email || !body?.password) return null;
+  const user = await getUserByEmail(String(body.email).trim().toLowerCase());
+  if (!user || !["owner", "admin", "moderator"].includes(String(user.role)) || isSuspended(user) || !(await BunPw.verify(String(body.password), user.password_hash))) return null;
+  return user;
+}
+async function handleMfaEnrollOptions(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req); if (!user || !["owner","admin","moderator"].includes(String(user.role)) || isSuspended(user)) return json({error:"Forbidden"},403);
+  const credentials = await getWebAuthnCredentials(user.id); const options = await registrationOptions(user, credentials.map(c => String(c.id)));
+  const challengeId = await createWebAuthnChallenge({userId:user.id, challenge:options.challenge, purpose:"registration", expiresAt:new Date(Date.now()+MFA_CHALLENGE_TTL_MS)});
+  await recordAdminAuditEvent({actorUserId:user.id,actorRole:user.role,action:"mfa.enrollment.started",targetType:"user",targetId:String(user.id),requestId:requestIdFrom(req)});
+  return json({options, challenge_id:challengeId});
+}
+async function handleMfaEnrollVerify(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req); if (!user || !["owner","admin","moderator"].includes(String(user.role)) || isSuspended(user)) return json({error:"Forbidden"},403);
+  const body=await req.json().catch(()=>null); const consumed=body?.challenge_id ? await consumeWebAuthnChallenge(String(body.challenge_id),"registration") : null;
+  if (!consumed || consumed.userId!==user.id || !body?.response) return json({error:"Invalid or expired challenge"},400);
+  try { const result=await verifyRegistration(body.response,consumed.challenge); if(!result.verified||!result.registrationInfo)return json({error:"Invalid assertion"},401); const info=result.registrationInfo; await saveWebAuthnCredential({id:info.credential.id,userId:user.id,publicKey:info.credential.publicKey,counter:info.credential.counter,transports:(info.credential.transports??[]) as string[]}); await recordAdminAuditEvent({actorUserId:user.id,actorRole:user.role,action:"mfa.enrollment.completed",targetType:"user",targetId:String(user.id),requestId:requestIdFrom(req)}); return json({ok:true}); } catch { return json({error:"Invalid assertion"},401); }
+}
+async function handlePrivilegedMfaStart(req: Request): Promise<Response> {
+  const limited=checkStrictRateLimit(req); if(limited)return limited; const user=await privilegedCandidate(req); if(!user)return json({error:"Invalid credentials or privileged access unavailable",code:"PRIVILEGED_LOGIN_DENIED"},401);
+  const credentials=await getWebAuthnCredentials(user.id); if(!credentials.length)return json({error:"Passkey enrollment required",code:"MFA_REQUIRED"},403); const options=await authenticationOptions(credentials.map(c=>String(c.id))); const challengeId=await createWebAuthnChallenge({userId:user.id,challenge:options.challenge,purpose:"authentication",expiresAt:new Date(Date.now()+MFA_CHALLENGE_TTL_MS)}); await recordAdminAuditEvent({actorUserId:user.id,actorRole:user.role,action:"mfa.authentication.started",targetType:"user",targetId:String(user.id),requestId:requestIdFrom(req)}); return json({options,challenge_id:challengeId});
+}
+async function handlePrivilegedMfaFinish(req: Request): Promise<Response> {
+  const limited=checkStrictRateLimit(req); if(limited)return limited; const body=await req.json().catch(()=>null); const consumed=body?.challenge_id?await consumeWebAuthnChallenge(String(body.challenge_id),"authentication"):null; if(!consumed||!body?.response)return json({error:"Invalid or expired challenge"},401); const user=await getUserById(consumed.userId); if(!user||!["owner","admin","moderator"].includes(String(user.role))||isSuspended(user))return json({error:"Privileged access denied"},403); const credentials=await getWebAuthnCredentials(user.id); const cred=credentials.find(c=>String(c.id)===String(body.response?.id)); if(!cred)return json({error:"Invalid assertion"},401); try { const result=await verifyAuthentication(body.response,consumed.challenge,{id:String(cred.id),publicKey:new Uint8Array(cred.public_key),counter:Number(cred.counter)}); if(!result.verified)return json({error:"Invalid assertion"},401); await updateWebAuthnCounter(String(cred.id),result.authenticationInfo.newCounter); const session=await createPrivilegedSession(user.id); await recordAdminAuditEvent({actorUserId:user.id,actorRole:user.role,action:"mfa.authentication.completed",targetType:"session",targetId:String(session.id),requestId:requestIdFrom(req)}); return setSessionCookie(json({user:toSafeUser(user),mfa_verified:true,expires_at:session.expires_at}),session.id); } catch { return json({error:"Invalid assertion"},401); }
+}
+
 export async function handleApiRoute(
   req: Request,
 ): Promise<Response | null> {
@@ -2758,6 +2794,10 @@ export async function handleApiRoute(
     return handleGeoCheck(req);
   }
 
+  if (pathname === "/api/auth/mfa/enroll/options" && method === "POST") return handleMfaEnrollOptions(req);
+  if (pathname === "/api/auth/mfa/enroll/verify" && method === "POST") return handleMfaEnrollVerify(req);
+  if (pathname === "/api/auth/privileged/start" && method === "POST") return handlePrivilegedMfaStart(req);
+  if (pathname === "/api/auth/privileged/finish" && method === "POST") return handlePrivilegedMfaFinish(req);
   // Auth routes — CSRF not required (pre-auth or token-based)
   if (pathname === "/api/auth/signup" && method === "POST") {
     return handleSignup(req);
