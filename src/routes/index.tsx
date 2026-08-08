@@ -351,7 +351,7 @@ function WaitlistSection() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
               </div>
-              <p className="text-lg font-semibold text-white">You're on the list!</p>
+              <p role="status" aria-live="polite" className="text-lg font-semibold text-white">You're on the list!</p>
               <p className="text-sm text-gray-400">Check your email for confirmation.</p>
               <button
                 onClick={() => setState("idle")}
@@ -363,8 +363,12 @@ function WaitlistSection() {
           ) : (
             <form onSubmit={handleSubmit} className="flex flex-col gap-3">
               <div className="flex flex-col gap-3 sm:flex-row">
+                <label htmlFor="waitlist-email" className="sr-only">Email address</label>
                 <input
+                  id="waitlist-email"
                   type="email"
+                  aria-describedby={state === "error" ? "waitlist-error" : undefined}
+                  aria-invalid={state === "error"}
                   value={email}
                   onChange={(e) => { setEmail(e.target.value); if (state === "error") setState("idle"); }}
                   placeholder="you@example.com"
@@ -384,7 +388,7 @@ function WaitlistSection() {
               </div>
 
               {state === "error" && errorMsg && (
-                <p className="text-sm text-red-400">{errorMsg}</p>
+                <p id="waitlist-error" role="alert" aria-live="assertive" className="text-sm text-red-400">{errorMsg}</p>
               )}
 
               <button

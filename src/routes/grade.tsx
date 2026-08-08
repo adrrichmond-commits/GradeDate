@@ -1547,6 +1547,9 @@ function ShareCard({
 
       {/* Status feedback */}
       <p
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
         className={`mt-2 text-center text-xs text-green-400 transition-opacity duration-200 ${statusVisible ? "opacity-100" : "opacity-0"}`}
       >
         {statusMsg}

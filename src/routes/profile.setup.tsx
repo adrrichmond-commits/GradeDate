@@ -313,7 +313,7 @@ function ProfileSetup() {
         <div className="rounded-2xl border border-white/5 bg-gray-900/60 p-8 backdrop-blur-sm">
           <form onSubmit={handleSubmit} className="space-y-5">
             {error && (
-              <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">
+              <div id="profile-setup-error" role="alert" aria-live="assertive" className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">
                 {error}
               </div>
             )}
@@ -435,6 +435,8 @@ function ProfileSetup() {
               </label>
               <input
                 id="displayName"
+                aria-describedby={error ? "profile-setup-error" : undefined}
+                aria-invalid={Boolean(error && !displayName.trim())}
                 type="text"
                 required
                 value={displayName}
@@ -454,6 +456,8 @@ function ProfileSetup() {
               </label>
               <input
                 id="age"
+                aria-describedby={error ? "profile-setup-error" : undefined}
+                aria-invalid={Boolean(error && (!age || isNaN(parseInt(age, 10)) || parseInt(age, 10) < 18 || parseInt(age, 10) > 120))}
                 type="number"
                 required
                 min={18}
@@ -475,6 +479,8 @@ function ProfileSetup() {
               </label>
               <select
                 id="gender"
+                aria-describedby={error ? "profile-setup-error" : undefined}
+                aria-invalid={Boolean(error && !gender)}
                 required
                 value={gender}
                 onChange={(e) => setGender(e.target.value)}
@@ -501,6 +507,8 @@ function ProfileSetup() {
               </label>
               <select
                 id="lookingFor"
+                aria-describedby={error ? "profile-setup-error" : undefined}
+                aria-invalid={Boolean(error && !lookingFor)}
                 required
                 value={lookingFor}
                 onChange={(e) => setLookingFor(e.target.value)}
@@ -613,6 +621,8 @@ function ProfileSetup() {
                   </label>
                   <input
                     id="zipCode"
+                    aria-describedby={locationError ? "location-error" : undefined}
+                    aria-invalid={Boolean(locationError)}
                     type="text"
                     maxLength={5}
                     value={zipCode}
@@ -643,11 +653,11 @@ function ProfileSetup() {
               </div>
 
               {locationError && (
-                <p className="mt-1.5 text-xs text-red-400">{locationError}</p>
+                <p id="location-error" role="alert" aria-live="assertive" className="mt-1.5 text-xs text-red-400">{locationError}</p>
               )}
 
               {locationResult && (
-                <p className="mt-2 text-sm text-emerald-400">
+                <p role="status" aria-live="polite" className="mt-2 text-sm text-emerald-400">
                   📍 {locationResult.city}, {locationResult.state}
                 </p>
               )}

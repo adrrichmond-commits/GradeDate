@@ -47,7 +47,7 @@ function ForgotPassword() {
           {!sent ? (
             <form onSubmit={handleSubmit} className="space-y-5">
               {error && (
-                <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">
+                <div id="forgot-password-error" role="alert" aria-live="assertive" className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">
                   {error}
                 </div>
               )}
@@ -65,6 +65,8 @@ function ForgotPassword() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  aria-describedby={error ? "forgot-password-error" : undefined}
+                  aria-invalid={Boolean(error)}
                   className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-gray-100 placeholder-gray-500 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
                   placeholder="you@example.com"
                 />
@@ -80,7 +82,7 @@ function ForgotPassword() {
             </form>
           ) : (
             <div className="space-y-4">
-              <div className="rounded-lg border border-green-500/30 bg-green-500/10 p-4 text-sm text-green-400">
+              <div role="status" aria-live="polite" className="rounded-lg border border-green-500/30 bg-green-500/10 p-4 text-sm text-green-400">
                 <p className="font-medium">
                   If an account with that email exists, we've sent a reset link. Check your inbox.
                 </p>

@@ -264,9 +264,9 @@ function Signup() {
         </div>
 
         <div className="rounded-2xl border border-white/5 bg-gray-900/60 p-8 backdrop-blur-sm">
-          <form onSubmit={handleSubmit} className="space-y-5">
+          <form onSubmit={handleSubmit} className="space-y-5" aria-describedby={error ? "signup-error" : undefined}>
             {error && (
-              <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">
+              <div id="signup-error" role="alert" aria-live="assertive" className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">
                 {error}
               </div>
             )}
@@ -429,8 +429,11 @@ function Signup() {
             <div>
               <label className="flex items-start gap-3 cursor-pointer">
                 <input
+                  id="terms"
                   type="checkbox"
                   checked={agreedToTerms}
+                  aria-invalid={termsError}
+                  aria-describedby={termsError ? "signup-error" : undefined}
                   onChange={(e) => {
                     setAgreedToTerms(e.target.checked);
                     if (e.target.checked) setTermsError(false);
