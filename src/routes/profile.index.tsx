@@ -565,6 +565,18 @@ function ProfilePage() {
 
   if (!user) return null;
 
+  const enrollPasskey = async () => {
+    setPasskeyError(""); setPasskeyStatus(""); setEnrollingPasskey(true);
+    try {
+      const data = await apiFetch<any>("/api/auth/mfa/enroll/options", { method: "POST", headers: { "Content-Type": "application/json", "X-CSRF-Token": getCsrfToken() || "" } });
+      setPasskeyStatus("Follow your browser prompt to save this passkey.");
+      const response = await startRegistration({ optionsJSON: data.options });
+      await apiFetch("/api/auth/mfa/enroll/verify", { method: "POST", headers: { "Content-Type": "application/json", "X-CSRF-Token": getCsrfToken() || "" }, body: JSON.stringify({ challenge_id: data.challenge_id, response }) });
+      setPasskeyStatus("Passkey enrolled. You can now use it for privileged sign-in.");
+    } catch (error) { setPasskeyError(safeApiError(error, error instanceof Error ? error.message : "Passkey enrollment failed.")); }
+    finally { setEnrollingPasskey(false); }
+  };
+
   // Current photo to display (view mode)
   const displayPhoto = user.photo_path;
   const photoCount = user.photos?.length || (user.photo_path ? 1 : 0);
