@@ -131,6 +131,7 @@ import { isSuspensionReason, isSuspensionDuration, isAppealStatus, canReviewAppe
 import { hasPermission, isSuspended, isSuspensionException, privilegedMfaReady, type PrivilegedRole } from "./safety";
 import { registrationOptions, authenticationOptions, verifyRegistration, verifyAuthentication, MFA_CHALLENGE_TTL_MS } from "./webauthn-mfa";
 import { isCheckoutBlocked } from "./subscription-confirmation";
+import { retentionCronHandler } from "./retention-cron";
 import { isStorePurchaseBlocked } from "./store-confirmation";
 import { parseModerationContent, MODERATION_UNAVAILABLE_CODE, type ModerationResult } from "./moderation";
 import {
@@ -2785,6 +2786,8 @@ export async function handleApiRoute(
 ): Promise<Response | null> {
   const url = new URL(req.url);
   const { method, pathname } = { method: req.method, pathname: url.pathname };
+  if (pathname === "/api/cron/retention") return retentionCronHandler(req);
+
   const safetyError = await enforceSafety(req, pathname);
   if (safetyError) return safetyError;
 
