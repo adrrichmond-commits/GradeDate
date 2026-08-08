@@ -58,6 +58,12 @@
 }
 
 @layer base {
+  /* Keep the existing hover/focus styling while giving keyboard users a
+     consistent, high-contrast indication on every interactive control. */
+  :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid rgb(251 113 133);
+    outline-offset: 3px;
+  }
   html,
   body {
     @apply scroll-smooth bg-gray-950 text-gray-100 antialiased;

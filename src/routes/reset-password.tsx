@@ -68,7 +68,7 @@ function ResetPassword() {
         <div className="rounded-2xl border border-white/5 bg-gray-900/60 p-8 backdrop-blur-sm">
           {success ? (
             <div className="space-y-5">
-              <div className="rounded-lg border border-green-500/30 bg-green-500/10 p-4 text-sm text-green-400">
+              <div role="status" aria-live="polite" className="rounded-lg border border-green-500/30 bg-green-500/10 p-4 text-sm text-green-400">
                 <p className="font-medium">Password reset successful!</p>
                 <p className="mt-1 text-gray-400">
                   Your password has been changed. You can now log in with your new password.
@@ -85,13 +85,13 @@ function ResetPassword() {
           ) : (
             <form onSubmit={handleSubmit} className="space-y-5">
               {!token && (
-                <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-400">
+                <div id="reset-password-token-error" role="alert" aria-live="assertive" className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-400">
                   No reset token found. Please request a new password reset link.
                 </div>
               )}
 
               {error && (
-                <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">
+                <div id="reset-password-error" role="alert" aria-live="assertive" className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">
                   {error}
                 </div>
               )}
@@ -110,6 +110,8 @@ function ResetPassword() {
                   minLength={6}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  aria-describedby={error ? "reset-password-error" : undefined}
+                  aria-invalid={Boolean(error)}
                   className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-gray-100 placeholder-gray-500 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
                   placeholder="At least 6 characters"
                 />
@@ -129,6 +131,8 @@ function ResetPassword() {
                   minLength={6}
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
+                  aria-describedby={error ? "reset-password-error" : undefined}
+                  aria-invalid={Boolean(error)}
                   className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-gray-100 placeholder-gray-500 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
                   placeholder="Re-enter your new password"
                 />
