@@ -11,13 +11,15 @@ export class ApiRequestError extends Error {
   readonly kind: ApiErrorKind;
   readonly status: number | null;
   readonly retryAfterSeconds: number | null;
+  readonly code?: string;
 
-  constructor(kind: ApiErrorKind, message: string, status: number | null = null, retryAfterSeconds: number | null = null) {
+  constructor(kind: ApiErrorKind, message: string, status: number | null = null, retryAfterSeconds: number | null = null, code?: string) {
     super(message);
     this.name = "ApiRequestError";
     this.kind = kind;
     this.status = status;
     this.retryAfterSeconds = retryAfterSeconds;
+    this.code = code;
   }
 }
 
@@ -68,7 +70,8 @@ export async function apiFetch<T = unknown>(input: RequestInfo | URL, init?: Req
 
   if (!response.ok) {
     const kind: ApiErrorKind = response.status >= 500 ? "service_unavailable" : response.status === 401 ? "unauthorized" : response.status === 403 ? "forbidden" : response.status === 429 ? "rate_limited" : "api";
-    throw new ApiRequestError(kind, messageFor(response.status, fallback), response.status, retryAfterSeconds);
+    const code = payload && typeof payload === "object" && "code" in payload && typeof payload.code === "string" ? payload.code : undefined;
+    throw new ApiRequestError(kind, messageFor(response.status, fallback), response.status, retryAfterSeconds, code);
   }
   return payload as T;
 }

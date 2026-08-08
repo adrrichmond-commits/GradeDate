@@ -6,6 +6,8 @@ import { getCsrfToken } from "~/csrf-client";
 import { useRequireSubscription, SubscriptionBanner } from "~/subscription-guard";
 import { photoFromUploadResponse } from "~/photo-upload";
 import { useModalAccessibility } from "~/modal-accessibility";
+import { startRegistration } from "@simplewebauthn/browser";
+import { apiFetch, safeApiError } from "~/client-api";
 
 export const Route = createFileRoute("/profile/")({
   component: ProfilePage,
@@ -230,6 +232,9 @@ function ProfilePage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [passkeyStatus, setPasskeyStatus] = useState("");
+  const [passkeyError, setPasskeyError] = useState("");
+  const [enrollingPasskey, setEnrollingPasskey] = useState(false);
   const deleteCancelRef = useRef<HTMLButtonElement>(null);
   const closeDeleteConfirm = useCallback(() => setShowDeleteConfirm(false), []);
   const deleteConfirmA11y = useModalAccessibility<HTMLDivElement>(
@@ -568,6 +573,13 @@ function ProfilePage() {
   return (
     <div className="mx-auto max-w-2xl px-4 py-12">
       <SubscriptionBanner />
+      {(["owner", "admin", "moderator"] as string[]).includes(user.role || "") && <section aria-labelledby="passkey-heading" className="mb-6 rounded-2xl border border-white/10 bg-gray-900/60 p-5">
+        <h2 id="passkey-heading" className="text-lg font-semibold">Privileged passkey</h2>
+        <p className="mt-1 text-sm text-gray-400">Enroll a device passkey for secure privileged sign-in. GradeDate never sees your credential.</p>
+        {passkeyStatus && <p role="status" className="mt-3 text-sm text-emerald-300">{passkeyStatus}</p>}
+        {passkeyError && <p role="alert" className="mt-3 text-sm text-red-300">{passkeyError}</p>}
+        <button type="button" onClick={enrollPasskey} disabled={enrollingPasskey} className="mt-4 rounded-full bg-rose-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{enrollingPasskey ? "Waiting for passkey…" : "Enroll a passkey"}</button>
+      </section>}
       {/* Success Toast */}
       {saveSuccess && (
         <div className="fixed top-6 left-1/2 z-50 -translate-x-1/2 animate-[fadeInUp_0.3s_ease-out]">

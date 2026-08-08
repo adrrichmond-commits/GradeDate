@@ -13,6 +13,7 @@ export function classifyAuthResponse(status: number, payload: unknown): AuthResp
 
 export interface SafeUser {
   id: number;
+  role?: string;
   email: string;
   display_name: string | null;
   age: number | null;
