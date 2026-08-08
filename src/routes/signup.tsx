@@ -3,6 +3,7 @@ import { apiFetch, safeApiError } from "~/client-api";
 import { useState, useMemo } from "react";
 import { useAuth } from "~/auth-context";
 import { getCsrfToken } from "~/csrf-client";
+import { getSignupDays } from "~/signup-date";
 
 export const Route = createFileRoute("/signup")({
   component: Signup,
@@ -55,15 +56,10 @@ function Signup() {
   }, []);
 
   // Compute days based on selected month/year
-  const days = useMemo(() => {
-    const month = parseInt(dobMonth);
-    const year = parseInt(dobYear);
-    if (!month || !year) return 31;
-    const daysInMonth = new Date(year, month, 0).getDate();
-    const d: number[] = [];
-    for (let i = 1; i <= daysInMonth; i++) d.push(i);
-    return d;
-  }, [dobMonth, dobYear]);
+  const days = useMemo(
+    () => getSignupDays(dobMonth, dobYear),
+    [dobMonth, dobYear],
+  );
 
   // Validate age
   const getAge = (): number | null => {
