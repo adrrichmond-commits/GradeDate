@@ -34,7 +34,12 @@ export function parseRetryAfter(value: string | null, nowMs = Date.now()): numbe
   return Math.min(Math.max(0, Math.ceil((timestamp - nowMs) / 1000)), RETRY_AFTER_MAX_SECONDS);
 }
 
-function messageFor(status: number, fallback: string): string {
+function messageFor(status: number, fallback: string, payload?: unknown): string {
+  // Server-provided messages are safe to show for client-actionable responses
+  // (validation/conflict/rate-limit). Never surface internal 5xx details.
+  if (status < 500 && payload && typeof payload === "object" && "error" in payload && typeof payload.error === "string") {
+    return payload.error;
+  }
   if (status === 401) return "Please sign in again to continue.";
   if (status === 403) return "You do not have permission to do that.";
   if (status === 429) return "Too many requests. Please try again soon.";
@@ -61,7 +66,7 @@ export async function apiFetch<T = unknown>(input: RequestInfo | URL, init?: Req
     }
   } else if (!response.ok) {
     const kind: ApiErrorKind = response.status >= 500 ? "service_unavailable" : response.status === 401 ? "unauthorized" : response.status === 403 ? "forbidden" : response.status === 429 ? "rate_limited" : "malformed";
-    throw new ApiRequestError(kind, messageFor(response.status, fallback), response.status, retryAfterSeconds);
+    throw new ApiRequestError(kind, messageFor(response.status, fallback, payload), response.status, retryAfterSeconds);
   } else {
     try { return (await response.json()) as T; } catch {
       throw new ApiRequestError("malformed", "The service returned an unexpected response. Please try again.", response.status);
@@ -71,7 +76,7 @@ export async function apiFetch<T = unknown>(input: RequestInfo | URL, init?: Req
   if (!response.ok) {
     const kind: ApiErrorKind = response.status >= 500 ? "service_unavailable" : response.status === 401 ? "unauthorized" : response.status === 403 ? "forbidden" : response.status === 429 ? "rate_limited" : "api";
     const code = payload && typeof payload === "object" && "code" in payload && typeof payload.code === "string" ? payload.code : undefined;
-    throw new ApiRequestError(kind, messageFor(response.status, fallback), response.status, retryAfterSeconds, code);
+    throw new ApiRequestError(kind, messageFor(response.status, fallback, payload), response.status, retryAfterSeconds, code);
   }
   return payload as T;
 }
