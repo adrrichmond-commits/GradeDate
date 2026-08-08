@@ -43,7 +43,25 @@ bash ./build-vercel.sh
 SCOPE_ARGS=()
 if [ -n "${VERCEL_SCOPE:-}" ]; then SCOPE_ARGS=(--scope "$VERCEL_SCOPE"); fi
 ENV_ARGS=()
-if [ -n "${DATABASE_URL:-}" ]; then ENV_ARGS+=(-e "DATABASE_URL=$DATABASE_URL"); fi
+# Do not let the sandbox's injected DATABASE_URL override the Vercel project
+# variable. In this environment DATABASE_URL may be a provider management URL
+# (https://...), while the application requires a postgres connection string.
+# Only forward an explicitly valid Postgres URL; otherwise let prebuilt
+# deployments inherit the Production variable configured in Vercel.
+if [ -n "${DATABASE_URL:-}" ]; then
+  case "$DATABASE_URL" in
+    postgresql://*|postgres://*)
+      if [[ "$DATABASE_URL" != *[[:space:]]* ]]; then
+        ENV_ARGS+=(-e "DATABASE_URL=$DATABASE_URL")
+      else
+        echo "warning: ignoring DATABASE_URL with whitespace; using Vercel project environment" >&2
+      fi
+      ;;
+    *)
+      echo "warning: ignoring DATABASE_URL with unsupported scheme; using Vercel project environment" >&2
+      ;;
+  esac
+fi
 if [ -n "${OPENAI_API_KEY:-}" ]; then ENV_ARGS+=(-e "OPENAI_API_KEY=$OPENAI_API_KEY"); fi
 if [ -n "${STRIPE_WEBHOOK_SECRET:-}" ]; then ENV_ARGS+=(-e "STRIPE_WEBHOOK_SECRET=$STRIPE_WEBHOOK_SECRET"); fi
 if [ -n "${STRIPE_SECRET_KEY:-}" ]; then ENV_ARGS+=(-e "STRIPE_SECRET_KEY=$STRIPE_SECRET_KEY"); fi

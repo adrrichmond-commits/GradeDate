@@ -24,3 +24,12 @@ Do not commit or paste the real value into source control, tickets, or logs.
 If the result is `invalid_config`, correct the URL format/host. If it is
 `query_failed`, verify the Neon database is available and the production secret
 is current. No code change can recover an unavailable or unknown owner secret.
+
+### Prebuilt deployment note
+
+`bun run go-live` must not override the Vercel project variable with the sandbox's
+injected `DATABASE_URL`. The deployment script forwards a value only when it is a
+whitespace-free `postgres://` or `postgresql://` URL; other values are ignored so
+the prebuilt deployment inherits Vercel's Production environment variable. This
+protects deployments from provider management URLs such as `https://...` that are
+not database connection strings.
