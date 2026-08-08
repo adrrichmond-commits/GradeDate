@@ -380,9 +380,13 @@ export async function initTables(): Promise<void> {
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, status TEXT NOT NULL DEFAULT 'pending',
     source TEXT NOT NULL, result TEXT NOT NULL DEFAULT 'unknown', reason TEXT, actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), reviewed_at TIMESTAMPTZ,
-    retention_until TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '30 days')
+    retention_until TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '30 days'), private_object_key TEXT, private_content_type TEXT DEFAULT 'image/jpeg', private_deleted_at TIMESTAMPTZ, legal_hold BOOLEAN NOT NULL DEFAULT false
   )`;
   try { await sql()`CREATE INDEX IF NOT EXISTS photo_moderation_queue_idx ON photo_moderation_cases(status, created_at)`; } catch {}
+  try { await sql()`ALTER TABLE photo_moderation_cases ADD COLUMN IF NOT EXISTS private_object_key TEXT`; } catch {}
+  try { await sql()`ALTER TABLE photo_moderation_cases ADD COLUMN IF NOT EXISTS private_content_type TEXT DEFAULT 'image/jpeg'`; } catch {}
+  try { await sql()`ALTER TABLE photo_moderation_cases ADD COLUMN IF NOT EXISTS private_deleted_at TIMESTAMPTZ`; } catch {}
+  try { await sql()`ALTER TABLE photo_moderation_cases ADD COLUMN IF NOT EXISTS legal_hold BOOLEAN NOT NULL DEFAULT false`; } catch {}
   await sql()`CREATE TABLE IF NOT EXISTS user_suspensions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     reason TEXT NOT NULL, duration TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active',
@@ -1907,8 +1911,11 @@ export async function createPhotoModerationCase(photoId: number, userId: number,
   const rows = await sql()`INSERT INTO photo_moderation_cases (photo_id,user_id,source,result,reason,status) VALUES (${photoId},${userId},${source},${result},${reason ?? null},${result === "unsafe" ? "quarantined" : "pending"}) RETURNING id, photo_id, user_id, status, source, result, reason, created_at, updated_at, reviewed_at, retention_until`;
   return rows[0] ?? null;
 }
-export async function getPhotoModerationQueue(status?: string) { return sql()`SELECT id, photo_id, user_id, status, source, result, reason, actor_user_id, created_at, updated_at, reviewed_at, retention_until FROM photo_moderation_cases WHERE (${status ?? null} IS NULL OR status=${status ?? null}) ORDER BY created_at ASC LIMIT 200`; }
-export async function getPhotoModerationCase(id: string) { const rows = await sql()`SELECT id, photo_id, user_id, status, source, result, reason, actor_user_id, created_at, updated_at, reviewed_at, retention_until FROM photo_moderation_cases WHERE id=${id}`; return rows[0] ?? null; }
+export async function getPhotoModerationQueue(status?: string) { return sql()`SELECT id, photo_id, user_id, status, source, result, reason, actor_user_id, created_at, updated_at, reviewed_at, retention_until, private_content_type, legal_hold FROM photo_moderation_cases WHERE (${status ?? null} IS NULL OR status=${status ?? null}) ORDER BY created_at ASC LIMIT 200`; }
+export async function getPhotoModerationCase(id: string) { const rows = await sql()`SELECT id, photo_id, user_id, status, source, result, reason, actor_user_id, created_at, updated_at, reviewed_at, retention_until, private_object_key, private_content_type, private_deleted_at, legal_hold FROM photo_moderation_cases WHERE id=${id}`; return rows[0] ?? null; }
+export async function attachPrivatePhotoObject(caseId: string, objectKey: string, contentType: string) { const rows = await sql()`UPDATE photo_moderation_cases SET private_object_key=${objectKey}, private_content_type=${contentType} WHERE id=${caseId} RETURNING id`; return rows[0] ?? null; }
+export async function markPrivatePhotoDeleted(caseId: string) { await sql()`UPDATE photo_moderation_cases SET private_deleted_at=NOW() WHERE id=${caseId}`; }
+export async function listExpiredPrivatePhotoCases() { return sql()`SELECT id, private_object_key FROM photo_moderation_cases WHERE private_object_key IS NOT NULL AND private_deleted_at IS NULL AND legal_hold=false AND retention_until <= NOW() AND status IN ('approved','removed','restored')`; }
 export async function transitionPhotoModerationCase(id: string, status: string, actorId: number, result?: string) {
   const rows = await sql()`UPDATE photo_moderation_cases SET status=${status}, result=COALESCE(${result ?? null}, result), actor_user_id=${actorId}, updated_at=NOW(), reviewed_at=NOW() WHERE id=${id} RETURNING photo_id,user_id,status`;
   return rows[0] ?? null;

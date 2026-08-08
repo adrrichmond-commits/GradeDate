@@ -68,7 +68,7 @@ import {
   getUserPhotos,
   getUserPhotoCount,
   getPhotoModerationQueue, getPhotoModerationCase, transitionPhotoModerationCase, createPhotoModerationCase,
-  createSuspension, revokeSuspension, getActiveSuspension, createAppeal, getAppeals, reviewAppeal,
+  createSuspension, revokeSuspension, getActiveSuspension, createAppeal, getAppeals, reviewAppeal, attachPrivatePhotoObject, markPrivatePhotoDeleted, listExpiredPrivatePhotoCases,
   savePushSubscription,
   getPushSubscriptions,
   deletePushSubscription,
@@ -127,6 +127,8 @@ import { storePhoto, readPhotoBuffer, deletePhoto, isStoragePhotoPath } from "..
 import { deleteAnonUpload, maybeSweepExpiredAnonUploads } from "./anon-upload-retention";
 import { resolveOwnedPhotoPaths, validateAnonymousGradePath } from "./photo-access";
 import { canReviewPhoto, canTransitionQuarantine, isQuarantineStatus, privateReviewStorageReady, redactPhotoCase,  canUseOwnerAction, canTransition, isReportStatus, isReportPriority, isReportReason, REPORT_DETAILS_MAX, REPORT_RATE_LIMIT } from "./report-queue";
+import { issueReviewAccess, readReviewPhoto, privateReviewReady, ReviewAccessDeniedError } from "./private-review-storage";
+import { getPrivateReviewProvider } from "./private-review-provider";
 import { isSuspensionReason, isSuspensionDuration, isAppealStatus, canReviewAppeal, canOverrideSuspension, durationEnds, APPEAL_TEXT_MAX } from "./suspensions";
 import { hasPermission, isSuspended, isSuspensionException, privilegedMfaReady, type PrivilegedRole } from "./safety";
 import { registrationOptions, authenticationOptions, verifyRegistration, verifyAuthentication, MFA_CHALLENGE_TTL_MS } from "./webauthn-mfa";
@@ -1808,6 +1810,19 @@ async function handlePhotoModerationQueue(req: Request): Promise<Response> {
   await recordAdminAuditEvent({ actorUserId: user.id, action: "photo_moderation.queue.read", targetType: "photo_moderation" });
   return json({ cases: (await getPhotoModerationQueue(status)).map((c: any) => redactPhotoCase(c)) });
 }
+async function handlePhotoReviewAccess(req: Request, id: string): Promise<Response> {
+  const user = await getCurrentUser(req); const session = await getCurrentSession(req);
+  if (!user || !canReviewPhoto(user.role) || !session?.mfa_verified_at || Date.now() - new Date(session.mfa_verified_at).getTime() > 5 * 60 * 1000) return json({ error: "Recent MFA reauthentication required" }, 403);
+  const item: any = await getPhotoModerationCase(id); if (!item || !item.private_object_key) return json({ error: "Private review object unavailable" }, 404);
+  if (!privateReviewReady() || !getPrivateReviewProvider()) return json({ error: "Private review storage unavailable", code: "PRIVATE_REVIEW_UNAVAILABLE" }, 503);
+  try { const access = issueReviewAccess({ caseId: String(item.id), objectKey: item.private_object_key, status: item.status }, { userId: user.id, role: user.role, reauthenticatedAt: new Date(session.mfa_verified_at).getTime(), suspended: false }); return json({ expires_at: access.expiresAt, token: access.token }); } catch { return json({ error: "Private review access denied" }, 403); }
+}
+async function handlePhotoReviewBytes(req: Request, id: string): Promise<Response> {
+  const user = await getCurrentUser(req); const session = await getCurrentSession(req); const token = new URL(req.url).searchParams.get("token");
+  const item: any = await getPhotoModerationCase(id); if (!user || !session?.mfa_verified_at || !item?.private_object_key || !token || !getPrivateReviewProvider()) return json({ error: "Forbidden" }, 403);
+  try { const bytes = await readReviewPhoto(getPrivateReviewProvider()!, token, { caseId: String(item.id), objectKey: item.private_object_key, principal: { userId: user.id, role: user.role, reauthenticatedAt: new Date(session.mfa_verified_at).getTime(), suspended: false } }); return new Response(bytes, { headers: { "content-type": item.private_content_type || "image/jpeg", "cache-control": "private, no-store" } }); } catch (e) { if (e instanceof ReviewAccessDeniedError) return json({ error: "Forbidden" }, 403); return json({ error: "Private review object unavailable" }, 503); }
+}
+
 async function handlePhotoModerationDetail(req: Request, id: string): Promise<Response> {
   const user = await getCurrentUser(req);
   if (!user || !canReviewPhoto(user.role)) return json({ error: "Forbidden" }, 403);
@@ -2968,6 +2983,8 @@ export async function handleApiRoute(
 
   const photoModerationMatch = pathname.match(/^\/api\/admin\/photo-moderation\/([^/]+)$/);
   if (pathname === "/api/admin/photo-moderation" && method === "GET") return handlePhotoModerationQueue(req);
+  const reviewAccess = pathname.match(/^\/api\/admin\/photo-moderation\/([^/]+)\/access$/); if (reviewAccess && method === "GET") return handlePhotoReviewAccess(req, reviewAccess[1]);
+  const reviewBytes = pathname.match(/^\/api\/admin\/photo-moderation\/([^/]+)\/bytes$/); if (reviewBytes && method === "GET") return handlePhotoReviewBytes(req, reviewBytes[1]);
   if (photoModerationMatch && method === "GET") return handlePhotoModerationDetail(req, photoModerationMatch[1]);
   if (photoModerationMatch && method === "POST") { const csrfErr = checkCsrf(req); if (csrfErr) return csrfErr; return handlePhotoModerationMutation(req, photoModerationMatch[1]); }
   const reportMatch = pathname.match(/^\/api\/admin\/reports\/([^/]+)$/);
