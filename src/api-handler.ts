@@ -353,8 +353,20 @@ async function handleSignup(req: Request): Promise<Response> {
     return json({ error: "An account with this email already exists" }, 409);
   }
 
-  const passwordHash = await BunPw.hash(password);
-  const user = await createUser(email, passwordHash, dateOfBirth ?? undefined);
+  let user: User;
+  try {
+    const passwordHash = await BunPw.hash(password);
+    user = await createUser(email, passwordHash, dateOfBirth ?? undefined);
+  } catch (err) {
+    // A concurrent signup can win the unique-email race after the preflight
+    // lookup. Keep that result actionable without exposing database details.
+    const detail = err instanceof Error ? `${err.name} ${err.message}`.toLowerCase() : String(err).toLowerCase();
+    if (detail.includes("unique") || detail.includes("duplicate") || detail.includes("constraint")) {
+      return json({ error: "An account with this email already exists" }, 409);
+    }
+    logError(EVENTS.SIGNUP_FAILED, { request_id, account_created: false, err: err instanceof Error ? err : new Error(String(err)) });
+    return json({ error: "Signup is temporarily unavailable. Please try again shortly.", code: "SIGNUP_UNAVAILABLE" }, 503);
+  }
   const session = await createSession(user.id);
 
   // Process referral code if provided
