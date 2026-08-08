@@ -249,16 +249,41 @@ export async function initTables(): Promise<void> {
     `;
   } catch { /* older deployments may not have pending rows yet */ }
   await sql()`
+    CREATE TABLE IF NOT EXISTS webauthn_credentials (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      public_key BYTEA NOT NULL,
+      counter BIGINT NOT NULL DEFAULT 0,
+      transports TEXT[] NOT NULL DEFAULT '{}',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_used_at TIMESTAMPTZ
+    )
+  `;
+  await sql()`CREATE INDEX IF NOT EXISTS webauthn_credentials_user_idx ON webauthn_credentials(user_id)`;
+  await sql()`
+    CREATE TABLE IF NOT EXISTS webauthn_challenges (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      challenge TEXT NOT NULL,
+      purpose TEXT NOT NULL CHECK (purpose IN ('registration','authentication')),
+      expires_at TIMESTAMPTZ NOT NULL,
+      consumed_at TIMESTAMPTZ
+    )
+  `;
+  await sql()`CREATE INDEX IF NOT EXISTS webauthn_challenges_expiry_idx ON webauthn_challenges(expires_at)`;
+  await sql()`
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       expires_at TIMESTAMPTZ DEFAULT (NOW() + INTERVAL '7 days'),
-      revoked_at TIMESTAMPTZ
+      revoked_at TIMESTAMPTZ,
+      mfa_verified_at TIMESTAMPTZ
     )
   `;
   try { await sql()`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ DEFAULT (NOW() + INTERVAL '7 days')`; } catch {}
   try { await sql()`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS revoked_at TIMESTAMPTZ`; } catch {}
+  try { await sql()`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS mfa_verified_at TIMESTAMPTZ`; } catch {}
 
   await sql()`
     CREATE TABLE IF NOT EXISTS admin_audit_events (
@@ -530,6 +555,7 @@ export interface Session {
   created_at: string;
   expires_at?: string | null;
   revoked_at?: string | null;
+  mfa_verified_at?: string | null;
 }
 
 export interface UserPhoto {
@@ -922,6 +948,20 @@ export async function updateLastFreeRegrade(userId: number): Promise<void> {
 
 // ── Session queries ───────────────────────────────────────────
 
+export async function createWebAuthnChallenge(input: { userId: number; challenge: string; purpose: 'registration' | 'authentication'; expiresAt: Date }): Promise<string> {
+  const id = crypto.randomUUID();
+  await sql() `INSERT INTO webauthn_challenges (id,user_id,challenge,purpose,expires_at) VALUES (${id},${input.userId},${input.challenge},${input.purpose},${input.expiresAt})`;
+  return id;
+}
+export async function consumeWebAuthnChallenge(id: string, purpose: 'registration' | 'authentication'): Promise<{ userId: number; challenge: string } | null> {
+  const rows = await sql() `UPDATE webauthn_challenges SET consumed_at=NOW() WHERE id=${id} AND purpose=${purpose} AND consumed_at IS NULL AND expires_at>NOW() RETURNING user_id,challenge`;
+  return rows.length ? rows[0] as { userId: number; challenge: string } : null;
+}
+export async function getWebAuthnCredentials(userId: number): Promise<any[]> { return await sql() `SELECT id,public_key,counter,transports FROM webauthn_credentials WHERE user_id=${userId}` as any; }
+export async function saveWebAuthnCredential(input: { id: string; userId: number; publicKey: Uint8Array; counter: number; transports: string[] }): Promise<void> { await sql() `INSERT INTO webauthn_credentials (id,user_id,public_key,counter,transports) VALUES (${input.id},${input.userId},${Buffer.from(input.publicKey)},${input.counter},${input.transports}) ON CONFLICT (id) DO NOTHING`; }
+export async function updateWebAuthnCounter(id: string, counter: number): Promise<void> { await sql() `UPDATE webauthn_credentials SET counter=${counter},last_used_at=NOW() WHERE id=${id}`; }
+
+export async function createPrivilegedSession(userId: number): Promise<Session> { const id = crypto.randomUUID(); const rows = await sql() `INSERT INTO sessions (id,user_id,expires_at,mfa_verified_at) VALUES (${id},${userId},NOW()+INTERVAL '15 minutes',NOW()) RETURNING *`; return rows[0] as Session; }
 export async function createSession(userId: number): Promise<Session> {
   const id = crypto.randomUUID();
   await sql()`INSERT INTO sessions (id, user_id, expires_at) VALUES (${id}, ${userId}, NOW() + INTERVAL '7 days')`;

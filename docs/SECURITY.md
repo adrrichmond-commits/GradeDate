@@ -68,3 +68,6 @@ Anonymous free-preview photos (`anon_*`, no DB record) are now cleaned up:
   the manual script `bun run cleanup:anon-uploads` for cron use.
 - Authenticated/profile uploads (`<userId>_...`, DB-recorded) are never
   touched — see `src/anon-upload-retention.ts`.
+
+## Privileged passkey MFA configuration
+Privileged production access uses WebAuthn passkeys with required user verification. Set `WEBAUTHN_RP_ID` to the registrable domain (for example `gradedate.app`), `WEBAUTHN_ORIGIN` to the exact HTTPS origin users visit (for example `https://gradedate.app`), and optionally `WEBAUTHN_RP_NAME`. Do not set MFA readiness flags as a substitute for passkey verification. Challenges expire after five minutes and are single-use; privileged sessions expire after 15 minutes. Recovery requires an owner-approved identity verification and credential reset performed out-of-band, recorded as an audit event; no recovery codes or passkey secrets are stored by GradeDate.
