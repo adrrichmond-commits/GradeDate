@@ -152,7 +152,7 @@ import {
  * Created via scripts/create-stripe-product.ts. Update if recreating the product.
  * Also used as the default for Founders Club checkout.
  */
-const PREMIUM_PRICE_ID = "price_1TvzqyGuEElH7kaiCi3hjt8b";
+const PREMIUM_PRICE_ID = "price_1TvMPLDtCG0wmyJUuL2BtfhU";
 
 // ── Node-compatible password hashing ───────────────────────────
 

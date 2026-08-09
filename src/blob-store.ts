@@ -6,13 +6,13 @@ import { mkdirSync, writeFileSync, readFileSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { EVENTS, logWarn } from "./observability";
 
-let _blobClient: { put: typeof import("@vercel/blob").put; del: typeof import("@vercel/blob").del } | null | undefined;
+let _blobClient: { put: typeof import("@vercel/blob").put; del: typeof import("@vercel/blob").del; get: typeof import("@vercel/blob").get } | null | undefined;
 
 async function getBlobClient() {
   if (_blobClient !== undefined) return _blobClient;
   try {
-    const { put, del } = await import("@vercel/blob");
-    _blobClient = { put, del };
+    const { put, del, get } = await import("@vercel/blob");
+    _blobClient = { put, del, get };
     return _blobClient;
   } catch {
     logWarn(EVENTS.BLOB_STORE_PROVIDER_MISSING, {});
@@ -197,6 +197,21 @@ export async function readPhotoBuffer(photoPath: string): Promise<Buffer> {
   }
   const dir = uploadsDir();
   const filename = path.basename(photoPath);
+  // A serverless `/uploads/...` reference may point to a public Blob object.
+  // Resolve it through Blob before touching the instance-local filesystem;
+  // `/tmp/uploads` is not durable across Vercel invocations.
+  if (isVercelBlob()) {
+    const client = await getBlobClient();
+    if (client) {
+      try {
+        const result = await client.get(filename, { access: "public", token: process.env.BLOB_READ_WRITE_TOKEN, useCache: false });
+        if (result?.statusCode === 200) return Buffer.from(await new Response(result.stream).arrayBuffer());
+      } catch {
+        // Fall through for legacy/local files; the final read preserves the
+        // existing not-found error and does not broaden path access.
+      }
+    }
+  }
   const filePath = path.join(dir, filename);
   return readFileSync(filePath);
 }
