@@ -23,6 +23,11 @@ async function getBlobClient() {
 
 let _warnedMissingToken = false;
 
+/** Test-only hook to isolate warning-deduplication assertions between tests. */
+export function _resetBlobStoreWarningStateForTests(): void {
+  _warnedMissingToken = false;
+}
+
 /**
  * Returns true if we should use Vercel Blob storage.
  * Requires BLOB_READ_WRITE_TOKEN env var.
