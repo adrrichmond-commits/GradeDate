@@ -93,7 +93,7 @@ describe("acceptable use policy surface", () => {
     expect(policy).toContain("spam");
     expect(policy).toContain("one appeal within 14 days");
     expect(policy).toContain("quarantine");
-    expect(policy).toContain('mailto:support@gradedate.app');
+    expect(policy).toContain('to="/contact"');
     expect(read("routes/__root.tsx")).toContain('to="/acceptable-use"');
     expect(read("routes/terms.tsx")).toContain('to="/acceptable-use"');
   });

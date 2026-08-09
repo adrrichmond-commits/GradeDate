@@ -112,7 +112,7 @@ import {
 } from "../src/db.ts";
 import { sendPasswordResetEmail } from "../src/email.ts";
 import { isGradeCardOwner } from "./grade-card-access";
-import { sendWaitlistConfirmation } from "../src/email.ts";
+import { sendWaitlistConfirmation, sendContactMessage } from "../src/email.ts";
 import { lookupZip } from "../src/zipcode.ts";
 import { checkAuthRateLimit, checkStrictRateLimit, checkRateLimit } from "../src/rate-limit.ts";
 import { getApproximateLocation } from "../src/geo.ts";
@@ -294,7 +294,7 @@ function requireSubscription(user: User): Response | null {
 // Central fail-closed gate: every authenticated API action checks suspension here.
 async function enforceSafety(req: Request, pathname: string): Promise<Response | null> {
   if (isSuspensionException(pathname, req.method)) return null;
-  const publicPath = pathname === "/api/health" || pathname === "/api/ready" || pathname === "/api/csrf" || pathname === "/api/geo-check" || pathname === "/api/auth/signup" || pathname === "/api/auth/login" || pathname === "/api/auth/forgot-password" || pathname === "/api/auth/reset-password" || pathname === "/api/webhooks/stripe" || pathname === "/api/waitlist/join";
+  const publicPath = pathname === "/api/health" || pathname === "/api/ready" || pathname === "/api/csrf" || pathname === "/api/geo-check" || pathname === "/api/auth/signup" || pathname === "/api/auth/login" || pathname === "/api/auth/forgot-password" || pathname === "/api/auth/reset-password" || pathname === "/api/webhooks/stripe" || pathname === "/api/waitlist/join" || pathname === "/api/contact";
   if (publicPath) return null;
   const user = await getCurrentUser(req);
   if (user && isSuspended(user)) return json({ error: "Account suspended", code: "ACCOUNT_SUSPENDED" }, 423);
@@ -2572,6 +2572,26 @@ async function handleWaitlistJoin(req: Request): Promise<Response> {
   return json({ success: true });
 }
 
+// ── Contact ─────────────────────────────────────────────────────
+async function handleContact(req: Request): Promise<Response> {
+  const limited = checkRateLimit(req, "contact", { maxRequests: 5, windowMs: 15 * 60 * 1000 });
+  if (limited) return limited;
+  const body = await req.json().catch(() => null);
+  const topics = ["support", "safety", "privacy", "billing", "dmca", "other"];
+  if (!body || typeof body !== "object") return json({ error: "A JSON body is required" }, 400);
+  const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+  const message = typeof body.message === "string" ? body.message.trim() : "";
+  const name = body.name == null ? "" : String(body.name).trim();
+  const topic = typeof body.topic === "string" ? body.topic : "";
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({ error: "Please enter a valid email address" }, 400);
+  if (!message) return json({ error: "Message is required" }, 400);
+  if (message.length > 4000) return json({ error: "Message must be 4000 characters or fewer" }, 400);
+  if (name.length > 120) return json({ error: "Name must be 120 characters or fewer" }, 400);
+  if (!topics.includes(topic)) return json({ error: "Please select a valid topic" }, 400);
+  const delivered = await sendContactMessage({ name, email, topic, message });
+  if (!delivered) return json({ error: "Message not delivered — please try again shortly." }, 503);
+  return json({ ok: true });
+}
 // ── Badges ─────────────────────────────────────────────────────
 
 async function handleUserBadges(req: Request): Promise<Response> {
@@ -3084,6 +3104,11 @@ export async function handleApiRoute(
     return handleApplyReferralCode(req);
   }
 
+  if (pathname === "/api/contact" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
+    return handleContact(req);
+  }
   // Waitlist — public, rate-limited but no CSRF required
   if (pathname === "/api/waitlist/join" && method === "POST") {
     return handleWaitlistJoin(req);

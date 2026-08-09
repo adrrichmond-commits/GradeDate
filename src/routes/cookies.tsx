@@ -163,12 +163,7 @@ function CookiePolicy() {
           <h2 className="mb-3 text-xl font-bold text-white">7. Contact</h2>
           <p className="leading-relaxed">
             If you have questions about this Cookie Policy, please contact us at{" "}
-            <a
-              href="mailto:support@gradedate.app"
-              className="text-rose-400 underline hover:text-rose-300"
-            >
-              support@gradedate.app
-            </a>
+            <Link to="/contact" className="text-rose-400 underline hover:text-rose-300">contact us</Link>
             . You can also review our{" "}
             <Link to="/privacy" className="text-rose-400 underline hover:text-rose-300">
               Privacy Policy

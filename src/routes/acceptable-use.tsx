@@ -78,7 +78,7 @@ function AcceptableUsePolicy() {
           <h2 className="mb-3 text-xl font-semibold text-white">Reporting</h2>
           <p>
             Use the <strong className="text-white">Report</strong> button on profiles, match cards, or chat screens. You can also contact{" "}
-            <a href="mailto:support@gradedate.app" className="text-rose-400 underline hover:text-rose-300">support@gradedate.app</a>. Include enough detail for us to review the concern, but do not share unnecessary sensitive information.
+            <Link to="/contact" className="text-rose-400 underline hover:text-rose-300">contact us</Link>. Include enough detail for us to review the concern, but do not share unnecessary sensitive information.
           </p>
         </section>
 
