@@ -4,7 +4,7 @@ import { BOOST_DURATION_DAYS, FOUNDER_CAP, PREMIUM_MONTHLY_PRICE, PREMIUM_PRICE_
 describe("canonical pricing and entitlement policy", () => {
   test("uses the monthly $5.99 Premium offer and seven-day boost", () => {
     expect(PREMIUM_MONTHLY_PRICE).toBe(5.99);
-    expect(PREMIUM_PRICE_ID).toBe("price_1TvzqyGuEElH7kaiCi3hjt8b");
+    expect(PREMIUM_PRICE_ID).toBe("price_1TvMPLDtCG0wmyJUuL2BtfhU");
     expect(BOOST_DURATION_DAYS).toBe(7);
   });
   test("referral rewards expire strictly at their deadline", () => {

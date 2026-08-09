@@ -288,6 +288,11 @@ describe("readPhotoBuffer SSRF guard", () => {
     }
   });
 
+  test("resolves local upload references through durable Blob before ephemeral disk", async () => {
+    const source = require("node:fs").readFileSync(new URL("./blob-store.ts", import.meta.url), "utf8");
+    expect(source).toContain('client.get(filename, { access: "public", token: process.env.BLOB_READ_WRITE_TOKEN');
+    expect(source.indexOf("client.get(filename")).toBeLessThan(source.indexOf("return readFileSync(filePath)"));
+  });
   test("rejects local reads outside the uploads directory", async () => {
     const calls: string[] = [];
     stubFetch(calls);

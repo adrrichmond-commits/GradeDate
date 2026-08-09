@@ -1,5 +1,5 @@
 /** Pure policy helpers kept separate so canonical pricing/entitlement rules are testable without a database. */
-export const PREMIUM_PRICE_ID = "price_1TvzqyGuEElH7kaiCi3hjt8b";
+export const PREMIUM_PRICE_ID = "price_1TvMPLDtCG0wmyJUuL2BtfhU";
 export const PREMIUM_MONTHLY_PRICE = 5.99;
 export const FOUNDER_CAP = 1000;
 export const BOOST_DURATION_DAYS = 7;
