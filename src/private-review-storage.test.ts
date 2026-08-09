@@ -10,7 +10,7 @@ import {
   type PrivateReviewProvider,
 } from "./private-review-storage";
 
-const env = { GRADEDATE_PRIVATE_REVIEW_STORAGE: "true", GRADEDATE_REVIEW_SIGNING_KEY: "a".repeat(32) };
+const env = { GRADEDATE_PRIVATE_REVIEW_STORAGE: "true", GRADEDATE_REVIEW_SIGNING_KEY: "a".repeat(32), PRIVATE_BLOB_READ_WRITE_TOKEN: "test-private-token" };
 const principal = { userId: 7, role: "moderator" as const, reauthenticatedAt: 1_000_000 };
 const reviewCase = { caseId: "case-1", objectKey: "quarantine/case-1/photo", status: "quarantined" as const };
 const provider: PrivateReviewProvider = {
