@@ -1869,7 +1869,7 @@ export async function reportUser(reporterId: number, reportedId: number, reason:
     await sql()`INSERT INTO photo_moderation_cases (photo_id, user_id, source, result, reason, status)
       SELECT id, user_id, 'user_report', 'unknown', ${reason}, 'pending' FROM user_photos
       WHERE id=${targetPhotoId} AND user_id=${reportedId}
-      AND NOT EXISTS (SELECT 1 FROM photo_moderation_cases WHERE photo_id=${targetPhotoId} AND status IN ('pending','quarantined'))`;
+      AND NOT EXISTS (SELECT 1 FROM photo_moderation_cases WHERE photo_id=${targetPhotoId} AND status IN ('pending','quarantined','removed'))`;
   }
   return String(rows[0].id);
 }
@@ -1913,6 +1913,8 @@ export async function createPhotoModerationCase(photoId: number, userId: number,
 }
 export async function getPhotoModerationQueue(status?: string) { return sql()`SELECT id, photo_id, user_id, status, source, result, reason, actor_user_id, created_at, updated_at, reviewed_at, retention_until, private_content_type, legal_hold FROM photo_moderation_cases WHERE (${status ?? null} IS NULL OR status=${status ?? null}) ORDER BY created_at ASC LIMIT 200`; }
 export async function getPhotoModerationCase(id: string) { const rows = await sql()`SELECT id, photo_id, user_id, status, source, result, reason, actor_user_id, created_at, updated_at, reviewed_at, retention_until, private_object_key, private_content_type, private_deleted_at, legal_hold FROM photo_moderation_cases WHERE id=${id}`; return rows[0] ?? null; }
+export async function getUserPhotoById(photoId: number, userId: number) { const rows = await sql()`SELECT id, user_id, photo_path FROM user_photos WHERE id=${photoId} AND user_id=${userId}`; return rows[0] ?? null; }
+export async function getPhotoModerationCaseForPhoto(photoId: number, userId: number) { const rows = await sql()`SELECT id, photo_id, user_id, status, source, result, reason, private_object_key, private_content_type FROM photo_moderation_cases WHERE photo_id=${photoId} AND user_id=${userId} AND status IN ('pending','quarantined') ORDER BY created_at DESC LIMIT 1`; return rows[0] ?? null; }
 export async function attachPrivatePhotoObject(caseId: string, objectKey: string, contentType: string) { const rows = await sql()`UPDATE photo_moderation_cases SET private_object_key=${objectKey}, private_content_type=${contentType} WHERE id=${caseId} RETURNING id`; return rows[0] ?? null; }
 export async function markPrivatePhotoDeleted(caseId: string) { await sql()`UPDATE photo_moderation_cases SET private_deleted_at=NOW() WHERE id=${caseId}`; }
 export async function listExpiredPrivatePhotoCases() { return sql()`SELECT id, private_object_key FROM photo_moderation_cases WHERE private_object_key IS NOT NULL AND private_deleted_at IS NULL AND legal_hold=false AND retention_until <= NOW() AND status IN ('approved','removed','restored')`; }

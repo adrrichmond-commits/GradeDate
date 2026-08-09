@@ -67,6 +67,7 @@ import {
   setPrimaryPhoto,
   getUserPhotos,
   getUserPhotoCount,
+  getUserPhotoById, getPhotoModerationCaseForPhoto,
   getPhotoModerationQueue, getPhotoModerationCase, transitionPhotoModerationCase, createPhotoModerationCase,
   createSuspension, revokeSuspension, getActiveSuspension, createAppeal, getAppeals, reviewAppeal, attachPrivatePhotoObject, markPrivatePhotoDeleted, listExpiredPrivatePhotoCases,
   savePushSubscription,
@@ -127,7 +128,7 @@ import { storePhoto, readPhotoBuffer, deletePhoto, isStoragePhotoPath } from "..
 import { deleteAnonUpload, maybeSweepExpiredAnonUploads } from "./anon-upload-retention";
 import { resolveOwnedPhotoPaths, validateAnonymousGradePath } from "./photo-access";
 import { canReviewPhoto, canTransitionQuarantine, isQuarantineStatus, privateReviewStorageReady, redactPhotoCase,  canUseOwnerAction, canTransition, isReportStatus, isReportPriority, isReportReason, REPORT_DETAILS_MAX, REPORT_RATE_LIMIT } from "./report-queue";
-import { issueReviewAccess, readReviewPhoto, privateReviewReady, ReviewAccessDeniedError } from "./private-review-storage";
+import { issueReviewAccess, readReviewPhoto, quarantinePhoto, privateReviewReady, ReviewAccessDeniedError } from "./private-review-storage";
 import { getPrivateReviewProvider } from "./private-review-provider";
 import { isSuspensionReason, isSuspensionDuration, isAppealStatus, canReviewAppeal, canOverrideSuspension, durationEnds, APPEAL_TEXT_MAX } from "./suspensions";
 import { hasPermission, isSuspended, isSuspensionException, privilegedMfaReady, type PrivilegedRole } from "./safety";
@@ -1739,6 +1740,18 @@ async function handleReport(req: Request): Promise<Response> {
     // Underage reports are an immediate safety action: quarantine all target
     // photos and lock the account pending review. Never expose reporter or
     // evidence details in the response, and leave subscription state intact.
+    if (reason === "inappropriate_photo" && targetPhotoId) {
+      // Preserve reported evidence in the isolated review store without suspending.
+      const photo = await getUserPhotoById(targetPhotoId, targetId);
+      const reviewCase: any = await getPhotoModerationCaseForPhoto(targetPhotoId, targetId);
+      if (!photo || !reviewCase) throw new Error("Reported photo could not be quarantined");
+      const provider = getPrivateReviewProvider();
+      if (!provider || !privateReviewReady()) throw new Error("Private review storage unavailable");
+      const objectKey = `quarantine/${reviewCase.id}/${targetPhotoId}`;
+      await quarantinePhoto(provider, objectKey, await readPhotoBuffer(photo.photo_path), "image/jpeg");
+      await attachPrivatePhotoObject(String(reviewCase.id), objectKey, "image/jpeg");
+      if (reviewCase.status !== "quarantined") await transitionPhotoModerationCase(String(reviewCase.id), "quarantined", user.id);
+    }
     if (reason === "underage") {
       await quarantineUserPhotosForUnderage(targetId, reportId);
       const suspension = await createSuspension({
