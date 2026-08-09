@@ -83,6 +83,7 @@ function TermsOfService() {
         <section>
           <h2 className="mb-3 text-xl font-bold text-white">5. User Conduct</h2>
           <p className="leading-relaxed">You agree not to:</p>
+          <p className="mt-3 leading-relaxed">See our <Link to="/acceptable-use" className="text-rose-400 underline hover:text-rose-300">Acceptable Use Policy</Link> for the full list of prohibited conduct and enforcement.</p>
           <ul className="list-disc space-y-2 pl-6 leading-relaxed">
             <li>Harass, abuse, stalk, threaten, or intimidate other users.</li>
             <li>Post or share hate speech, discriminatory content, or any illegal material.</li>

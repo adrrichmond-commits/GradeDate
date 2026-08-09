@@ -83,3 +83,18 @@ describe("canonical pricing surface (smoke-test findings)", () => {
     expect(root).not.toMatch(/gradedate\.app/);
   });
 });
+
+describe("acceptable use policy surface", () => {
+  test("publishes the policy and its legal cross-links", () => {
+    const policy = read("routes/acceptable-use.tsx");
+    expect(policy).toContain("18 or older");
+    expect(policy).toContain("underage");
+    expect(policy).toMatch(/harass/i);
+    expect(policy).toContain("spam");
+    expect(policy).toContain("one appeal within 14 days");
+    expect(policy).toContain("quarantine");
+    expect(policy).toContain('mailto:support@gradedate.app');
+    expect(read("routes/__root.tsx")).toContain('to="/acceptable-use"');
+    expect(read("routes/terms.tsx")).toContain('to="/acceptable-use"');
+  });
+});

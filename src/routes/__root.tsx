@@ -545,6 +545,9 @@ function AppShell() {
             <Link to="/rules" className="transition hover:text-gray-300">
               Community Rules
             </Link>
+            <Link to="/acceptable-use" className="transition hover:text-gray-300">
+              Acceptable Use
+            </Link>
             <Link to="/dmca" className="transition hover:text-gray-300">
               DMCA
             </Link>
