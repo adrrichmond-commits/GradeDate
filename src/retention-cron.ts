@@ -1,6 +1,7 @@
 import { neon } from "@neondatabase/serverless";
 import { timingSafeEqual, createHash } from "node:crypto";
 import { runRetentionCleanup, type RetentionResult } from "./retention-cleanup";
+import { getPrivateReviewProvider } from "./private-review-provider";
 
 type Cleanup = () => Promise<RetentionResult>;
 
@@ -22,7 +23,7 @@ function databaseCleanup(): Cleanup {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error("Database unavailable");
   const db = neon(url);
-  return () => runRetentionCleanup({ query: (sql, values) => db.query(sql, values) });
+  return () => runRetentionCleanup({ query: (sql, values) => db.query(sql, values) }, new Date(), getPrivateReviewProvider());
 }
 
 /** Protected Vercel Cron endpoint. The secret is never included in responses or logs. */

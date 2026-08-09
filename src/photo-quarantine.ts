@@ -17,7 +17,7 @@ export function quarantineHidesPhoto(status: QuarantineStatus): boolean { return
 export function canReviewPhoto(role: unknown): boolean { return role === "owner" || role === "admin" || role === "moderator"; }
 /** Public reviewer bytes are forbidden unless a private/signed provider is explicitly configured. */
 export function privateReviewStorageReady(env: Record<string, string | undefined> = process.env): boolean {
-  return env.GRADEDATE_PRIVATE_REVIEW_STORAGE === "true" && !!env.GRADEDATE_REVIEW_SIGNING_KEY;
+  return env.GRADEDATE_PRIVATE_REVIEW_STORAGE === "true" && !!env.GRADEDATE_REVIEW_SIGNING_KEY && !!env.PRIVATE_BLOB_READ_WRITE_TOKEN;
 }
 export function redactPhotoCase(input: Record<string, unknown>) {
   const out = { ...input }; delete out.photo_path; delete out.photo_url; delete out.bytes; delete out.token; delete out.signed_url; return out;
