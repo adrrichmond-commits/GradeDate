@@ -79,7 +79,7 @@ describe("canonical pricing surface (smoke-test findings)", () => {
     const root = read("routes/__root.tsx");
     expect(root).toContain('rel="canonical" href={siteUrl}');
     expect(root).toContain('property="og:url" content={siteUrl}');
-    expect(root).toContain("resolveSiteOrigin()");
+    expect(root).toContain("resolveCanonicalSiteUrl(");
     expect(root).not.toMatch(/gradedate\.app/);
   });
 });

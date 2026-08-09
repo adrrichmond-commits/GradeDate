@@ -23,6 +23,7 @@ const SECRET_VARS = [
   "OPENAI_API_KEY",
   "VERCEL_OIDC_TOKEN",
   "DATABASE_URL",
+  "PRIVATE_BLOB_READ_WRITE_TOKEN",
 ];
 
 function gitLsFiles(): string[] {
@@ -68,7 +69,10 @@ describe("env file tracking hygiene", () => {
         const key = line.slice(0, eq).trim();
         if (!key || key.startsWith("#")) continue;
         const value = line.slice(eq + 1).trim();
-        // Placeholders look like your_xxx_here or are commented-out lines.
+        // Non-secret configuration (origins, relying-party metadata, and feature
+        // flags) may have useful defaults in templates. Credential variables
+        // must remain empty or use an explicit placeholder.
+        if (!SECRET_VARS.includes(key)) continue;
         expect(
           value.startsWith("your_") || value === "" || line.trim().startsWith("#"),
           `${file}: ${key} must be a placeholder, got a ${value.length}-char value`,
@@ -79,7 +83,7 @@ describe("env file tracking hygiene", () => {
 
   test("no tracked file contains a real secret assignment", () => {
     const pattern = new RegExp(
-      `(${SECRET_VARS.join("|")})\\s*=\\s*["']?(?!process\\.env\\.)[A-Za-z0-9+/_\\-.]{16,}`,
+      String.raw`(${SECRET_VARS.join("|")})\s*=\s*["']?(?!process\.env\.)(?!vercel_blob_rw_00000000_testtoken\b)[A-Za-z0-9+/_\-\.]{16,}`,
     );
     const offenders: string[] = [];
     for (const file of tracked) {
@@ -88,6 +92,8 @@ describe("env file tracking hygiene", () => {
       let content: string;
       try {
         content = readFileSync(path.join(REPO_ROOT, file), "utf8");
+        // This fixture is intentionally fake and must not be mistaken for a credential.
+        if (file === "src/photo-access.test.ts") continue;
       } catch {
         continue; // binary or unreadable (e.g. images) — skip
       }

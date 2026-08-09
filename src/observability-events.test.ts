@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { EVENTS, setLogLevel, setLogSink, type LogSink } from "./observability";
-import { isVercelBlob, deletePhoto } from "./blob-store";
+import {
+  isVercelBlob,
+  deletePhoto,
+  _resetBlobStoreWarningStateForTests,
+} from "./blob-store";
 import { sendPasswordResetEmail } from "./email";
 import {
   sweepBlobAnonUploads,
@@ -48,6 +52,7 @@ describe("funnel event registry", () => {
 describe("blob-store events", () => {
   test("emits blob_store.token_missing when blob token is unset", () => {
     capture();
+    _resetBlobStoreWarningStateForTests();
     const prev = process.env.BLOB_READ_WRITE_TOKEN;
     delete process.env.BLOB_READ_WRITE_TOKEN;
     try {
