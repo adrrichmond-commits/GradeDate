@@ -1007,6 +1007,12 @@ function Home() {
           ───────────────────────────────────────────────────────────── */}
       <section className="px-4 py-24">
         <div className="mx-auto max-w-2xl text-center">
+          <div className="mb-10 rounded-2xl border border-white/10 bg-white/[0.03] p-8 text-center">
+            <h2 className="mb-2 text-2xl font-bold text-white">Contact</h2>
+            <p className="mb-5 text-gray-400">Questions, feedback, or need help? Our team reads every message.</p>
+            <Link to="/contact" className="btn-secondary inline-flex">Get in touch</Link>
+          </div>
+
           {/* Founders Club subtle mention */}
           <div className="mb-8 inline-flex items-center gap-2 rounded-full border border-amber-500/20 bg-amber-500/10 px-4 py-2">
             <span>👑</span>

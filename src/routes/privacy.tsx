@@ -239,12 +239,7 @@ function PrivacyPolicy() {
               Profile
             </Link>{" "}
             page (Danger Zone), or by contacting us at{" "}
-            <a
-              href="mailto:support@gradedate.app"
-              className="text-rose-400 underline hover:text-rose-300"
-            >
-              support@gradedate.app
-            </a>
+            <Link to="/contact" className="text-rose-400 underline hover:text-rose-300">contact us</Link>
             . Upon account deletion:
           </p>
           <ul className="list-disc space-y-2 pl-6 leading-relaxed">
@@ -316,12 +311,7 @@ function PrivacyPolicy() {
           <p className="leading-relaxed">
             If you have questions about this Privacy Policy or wish to exercise your data
             rights, contact us at{" "}
-            <a
-              href="mailto:support@gradedate.app"
-              className="text-rose-400 underline hover:text-rose-300"
-            >
-              support@gradedate.app
-            </a>
+            <Link to="/contact" className="text-rose-400 underline hover:text-rose-300">contact us</Link>
             .
           </p>
         </section>

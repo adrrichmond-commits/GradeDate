@@ -10,6 +10,7 @@ type EmailPayload = {
   to: string;
   subject: string;
   html: string;
+  reply_to?: string;
 };
 
 /** Minimal provider contract keeps operational failures testable without sending mail. */
@@ -24,7 +25,7 @@ function sendFailureReason(error: unknown): "provider_error" | "unknown" {
 }
 
 async function deliver(
-  purpose: "password_reset" | "waitlist",
+  purpose: "password_reset" | "waitlist" | "contact",
   payload: EmailPayload,
   provider: EmailProvider | null = resend,
 ): Promise<boolean> {
@@ -83,4 +84,28 @@ export function sendWaitlistConfirmation(
     },
     provider,
   );
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char] ?? char);
+}
+
+export function sendContactMessage(
+  input: { name?: string; email: string; topic: string; message: string },
+  provider?: EmailProvider | null,
+): Promise<boolean> {
+  const name = input.name?.trim() || "Not provided";
+  const topic = input.topic.trim();
+  const safeName = escapeHtml(name);
+  const safeEmail = escapeHtml(input.email);
+  const safeTopic = escapeHtml(topic);
+  const safeMessage = escapeHtml(input.message).replace(/\n/g, "<br>");
+  const label = name !== "Not provided" ? name : input.email;
+  return deliver("contact", {
+    from: "GradeDate <noreply@gradedate.app>",
+    to: "gradedate-3339f828@ctomail.io",
+    subject: `[Contact] ${topic} — ${label.slice(0, 80)}`,
+    reply_to: input.email,
+    html: `<h2>GradeDate contact message</h2><p><strong>Topic:</strong> ${safeTopic}</p><p><strong>Name:</strong> ${safeName}</p><p><strong>Email:</strong> ${safeEmail}</p><p><strong>Message:</strong><br>${safeMessage}</p>`,
+  }, provider);
 }
