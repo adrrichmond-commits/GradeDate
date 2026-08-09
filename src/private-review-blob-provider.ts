@@ -10,7 +10,7 @@ export class VercelPrivateReviewProvider implements PrivateReviewProvider {
     return key;
   }
   private async client() {
-    // Dynamic import is required: @vercel/blob cannot be statically bundled in Vercel functions.
+    // Keep the import dynamic so the provider remains lazy; build-vercel.sh bundles the SDK into the function.
     return await import("@vercel/blob");
   }
   async put(objectKey: string, bytes: Uint8Array, contentType: string): Promise<void> {

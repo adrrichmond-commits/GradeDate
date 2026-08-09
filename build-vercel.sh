@@ -17,7 +17,6 @@ cp -R node_modules/detect-libc .vercel/output/functions/render.func/node_modules
 cp -R node_modules/semver .vercel/output/functions/render.func/node_modules/semver
 echo "[3/3] bundle"
 bun build vercel-entry.ts --target node \
-  --external @vercel/blob \
   --external sharp \
   --outfile .vercel/output/functions/render.func/index.mjs
 cat > .vercel/output/functions/render.func/.vc-config.json <<'JSON'
