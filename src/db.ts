@@ -338,9 +338,17 @@ export async function initTables(): Promise<void> {
       sender_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       content TEXT NOT NULL,
       read INTEGER NOT NULL DEFAULT 0,
-      created_at TIMESTAMPTZ DEFAULT NOW()
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      moderation_state TEXT NOT NULL DEFAULT 'clear', hidden_at TIMESTAMPTZ, hidden_reason TEXT
     )
   `;
+  try { await sql() `ALTER TABLE messages ADD COLUMN IF NOT EXISTS moderation_state TEXT NOT NULL DEFAULT 'clear'`; } catch {}
+  try { await sql() `ALTER TABLE messages ADD COLUMN IF NOT EXISTS hidden_at TIMESTAMPTZ`; } catch {}
+  try { await sql() `ALTER TABLE messages ADD COLUMN IF NOT EXISTS hidden_reason TEXT`; } catch {}
+  try { await sql() `CREATE INDEX IF NOT EXISTS messages_match_created_idx ON messages(match_id, created_at DESC)`; } catch {}
+  try { await sql() `CREATE INDEX IF NOT EXISTS messages_sender_created_idx ON messages(sender_id, created_at DESC)`; } catch {}
+  await sql() `CREATE TABLE IF NOT EXISTS message_moderation_flags (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE, flag_type TEXT NOT NULL, source TEXT NOT NULL, confidence REAL, provider_ref TEXT, matched_rules JSONB NOT NULL DEFAULT '[]', status TEXT NOT NULL DEFAULT 'new', action TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), reviewed_at TIMESTAMPTZ, reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL, review_notes TEXT, UNIQUE(message_id, flag_type, source))`;
+  try { await sql() `CREATE INDEX IF NOT EXISTS message_flags_queue_idx ON message_moderation_flags(status, created_at)`; } catch {}
 
   await sql()`
     CREATE TABLE IF NOT EXISTS blocks (
@@ -429,7 +437,7 @@ export async function initTables(): Promise<void> {
       photo_path TEXT NOT NULL, -- Local path (/uploads/...) or Vercel Blob URL (https://...)
       sort_order INTEGER NOT NULL DEFAULT 0,
       is_primary BOOLEAN NOT NULL DEFAULT false,
-      created_at TIMESTAMPTZ DEFAULT NOW()
+      created_at TIMESTAMPTZ DEFAULT NOW(),
     )
   `;
 
@@ -1762,8 +1770,8 @@ export async function getMatchesForUser(userId: number): Promise<MatchWithUser[]
       CASE WHEN m.user1_id = ${userId} THEN m.user2_id ELSE m.user1_id END AS user_id,
       u.display_name,
       u.photo_path,
-      (SELECT msg.content FROM messages msg WHERE msg.match_id = m.id ORDER BY msg.created_at DESC LIMIT 1) AS last_message,
-      (SELECT msg.created_at FROM messages msg WHERE msg.match_id = m.id ORDER BY msg.created_at DESC LIMIT 1) AS last_message_at,
+      (SELECT msg.content FROM messages msg WHERE msg.match_id = m.id AND msg.moderation_state != 'hidden' ORDER BY msg.created_at DESC LIMIT 1) AS last_message,
+      (SELECT msg.created_at FROM messages msg WHERE msg.match_id = m.id AND msg.moderation_state != 'hidden' ORDER BY msg.created_at DESC LIMIT 1) AS last_message_at,
       m.created_at AS match_created_at,
       m.mutual_league_score
     FROM matches m
@@ -1781,10 +1789,12 @@ export async function createMessage(
   matchId: number,
   senderId: number,
   content: string,
+  moderationState = "clear",
+  hiddenReason: string | null = null,
 ): Promise<Message> {
   const rows = await sql()`
-    INSERT INTO messages (match_id, sender_id, content)
-    VALUES (${matchId}, ${senderId}, ${content})
+    INSERT INTO messages (match_id, sender_id, content, moderation_state, hidden_at, hidden_reason)
+    VALUES (${matchId}, ${senderId}, ${content}, ${moderationState}, ${moderationState === "hidden" ? new Date() : null}, ${hiddenReason})
     RETURNING *
   `;
   return rows[0] as unknown as Message;
@@ -1800,7 +1810,7 @@ export async function getMessages(
       SELECT msg.*, u.display_name AS sender_name, u.photo_path AS sender_photo
       FROM messages msg
       JOIN users u ON u.id = msg.sender_id
-      WHERE msg.match_id = ${matchId} AND msg.id < ${beforeId}
+      WHERE msg.match_id = ${matchId} AND msg.moderation_state != 'hidden' AND msg.id < ${beforeId}
       ORDER BY msg.created_at DESC
       LIMIT ${limit}
     `;
@@ -1810,7 +1820,7 @@ export async function getMessages(
     SELECT msg.*, u.display_name AS sender_name, u.photo_path AS sender_photo
     FROM messages msg
     JOIN users u ON u.id = msg.sender_id
-    WHERE msg.match_id = ${matchId}
+    WHERE msg.match_id = ${matchId} AND msg.moderation_state != 'hidden'
     ORDER BY msg.created_at DESC
     LIMIT ${limit}
   `;
@@ -1825,6 +1835,7 @@ export async function getUnreadMessageCount(userId: number): Promise<number> {
     WHERE (m.user1_id = ${userId} OR m.user2_id = ${userId})
       AND msg.sender_id != ${userId}
       AND msg.read = 0
+      AND msg.moderation_state != 'hidden'
   `;
   const row = rows[0] as { cnt: string } | undefined;
   return row ? Number(row.cnt) : 0;
@@ -2530,3 +2541,11 @@ export async function consumeAttributionClaim(nonce: string): Promise<boolean> {
     return rows.length === 1;
   } catch { return false; }
 }
+
+export async function upsertMessageModerationFlag(messageId:number,userId:number,matchId:number,flagType:string,source:string,confidence:number|null,providerRef:string|null,matchedRules:string[]=[],action:string|null=null){const rows=await sql()`INSERT INTO message_moderation_flags(message_id,user_id,match_id,flag_type,source,confidence,provider_ref,matched_rules,action) VALUES(${messageId},${userId},${matchId},${flagType},${source},${confidence},${providerRef},${JSON.stringify(matchedRules)},${action}) ON CONFLICT(message_id,flag_type,source) DO UPDATE SET confidence=EXCLUDED.confidence,provider_ref=EXCLUDED.provider_ref,matched_rules=EXCLUDED.matched_rules WHERE message_moderation_flags.status='new' RETURNING *`;return rows[0]??null;}
+export async function getMessageModerationFlagQueue(status?:string){return sql()`SELECT f.id,f.message_id,f.flag_type,f.source,f.confidence,f.status,f.action,f.created_at,f.matched_rules,u.display_name AS sender_display FROM message_moderation_flags f JOIN users u ON u.id=f.user_id WHERE(${status??null} IS NULL OR f.status=${status??null}) ORDER BY f.created_at ASC LIMIT 200`;}
+export async function getMessageModerationFlag(id:string){const rows=await sql()`SELECT * FROM message_moderation_flags WHERE id=${id}`;return rows[0]??null;}
+export async function hideMessage(messageId:number,reason:string){const rows=await sql()`UPDATE messages SET moderation_state='hidden',hidden_at=NOW(),hidden_reason=${reason} WHERE id=${messageId} RETURNING id`;return rows[0]??null;}
+export async function releaseMessage(messageId:number,reviewerId:number){const rows=await sql()`UPDATE messages SET moderation_state='released',hidden_at=NULL WHERE id=${messageId} RETURNING id`;return rows[0]??null;}
+export async function reviewMessageModerationFlag(id:string,status:string,reviewerId:number,notes?:string){const rows=await sql()`UPDATE message_moderation_flags SET status=${status},reviewed_at=NOW(),reviewed_by=${reviewerId},review_notes=${notes??null} WHERE id=${id} AND status='new' RETURNING *`;return rows[0]??null;}
+export async function getMessageModerationContext(id:string){const rows=await sql()`SELECT f.id AS flag_id,f.flag_type,f.source,f.confidence,f.status,f.action,f.matched_rules,f.created_at,m.id AS message_id,m.content,m.match_id,u.id AS sender_id,u.display_name AS sender_display,m.created_at AS message_created_at FROM message_moderation_flags f JOIN messages m ON m.id=f.message_id JOIN users u ON u.id=m.sender_id WHERE f.id=${id}`;return rows[0]??null;}

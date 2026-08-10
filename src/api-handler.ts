@@ -44,6 +44,7 @@ import {
   getMessages,
   getUnreadMessageCount,
   markMessagesRead,
+  upsertMessageModerationFlag, hideMessage,
   blockUser,
   isBlocked,
   getBlockedUserIds,
@@ -132,6 +133,7 @@ import { canReviewPhoto, canTransitionQuarantine, isQuarantineStatus, privateRev
 import { issueReviewAccess, readReviewPhoto, quarantinePhoto, privateReviewReady, ReviewAccessDeniedError } from "./private-review-storage";
 import { getPrivateReviewProvider } from "./private-review-provider";
 import { scanPhoto, policyForPhotoScan } from "./photo-moderation";
+import { scanMessage, scanMessageHeuristics, policyForMessageScan } from "./message-moderation";
 import { isSuspensionReason, isSuspensionDuration, isAppealStatus, canReviewAppeal, canOverrideSuspension, durationEnds, APPEAL_TEXT_MAX } from "./suspensions";
 import { hasPermission, isSuspended, isSuspensionException, privilegedMfaReady, type PrivilegedRole } from "./safety";
 import { registrationOptions, authenticationOptions, verifyRegistration, verifyAuthentication, MFA_CHALLENGE_TTL_MS } from "./webauthn-mfa";
@@ -1573,6 +1575,9 @@ async function handleSendMessage(req: Request): Promise<Response> {
   if (!content || typeof content !== "string" || content.trim().length === 0) {
     return json({ error: "content is required" }, 400);
   }
+  if (typeof content === "string" && content.length > 2000) {
+    return json({ error: "content must be 2000 characters or fewer" }, 413);
+  }
 
   // Profanity filter
   const filterResult = filterMessage(content.trim());
@@ -1589,7 +1594,17 @@ async function handleSendMessage(req: Request): Promise<Response> {
     return json({ error: "You are not a participant in this match" }, 403);
   }
 
-  const message = await createMessage(match_id, user.id, content.trim());
+  const heuristic = scanMessageHeuristics(content.trim());
+  const policy = policyForMessageScan(heuristic);
+  const moderationState = policy.hide ? "hidden" : heuristic.classification === "clean" ? "clear" : "pending_review";
+  const message = await createMessage(match_id, user.id, content.trim(), moderationState, policy.hide ? heuristic.classification : null);
+  if (heuristic.classification !== "clean") await upsertMessageModerationFlag(message.id, user.id, match_id, heuristic.classification, "heuristic", heuristic.confidence, null, heuristic.matchedRules, policy.lockAccount ? "lock_account" : policy.hide ? "hide" : "review");
+  if (policy.lockAccount) {
+    await createSuspension({ userId: user.id, reason: "underage", duration: "indefinite", endsAt: null, actorUserId: null, sourceCaseId: String(message.id) });
+    await recordAdminAuditEvent({ actorUserId: null, action: "message_moderation.enforcement", targetType: "message", targetId: String(message.id), metadata: { classification: heuristic.classification, action: "lock_account" } });
+  } else if (policy.hide) await recordAdminAuditEvent({ actorUserId: null, action: "message_moderation.enforcement", targetType: "message", targetId: String(message.id), metadata: { classification: heuristic.classification, action: "hide" } });
+  if (!policy.hide && !policy.lockAccount) void scanMessage(content.trim()).then(async result => { if (result.classification !== "clean") await upsertMessageModerationFlag(message.id, user.id, match_id, result.classification, "provider", result.confidence, result.providerRef, result.matchedRules, "review"); }).catch(err => logWarn("message_moderation.provider_failed", { error: err }));
+  if (moderationState !== "clear") return json({ ok: true, message: { id: message.id, match_id: message.match_id, sender_id: message.sender_id, content: message.content, read: message.read, created_at: message.created_at, sender_name: user.display_name, sender_photo: user.photo_path } });
 
   // Notify the other participant
   const recipientId =
