@@ -1693,6 +1693,19 @@ async function handleUnmatch(req: Request): Promise<Response> {
   return json({ success: true });
 }
 
+function contentTypeForPhotoPath(photoPath: string): string {
+  const extension = path.extname(photoPath).toLowerCase();
+  const types: Record<string, string> = {
+    ".avif": "image/avif",
+    ".gif": "image/gif",
+    ".jpeg": "image/jpeg",
+    ".jpg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+  };
+  return types[extension] ?? "application/octet-stream";
+}
+
 const VALID_REPORT_REASONS = [
   "inappropriate_photo",
   "harassment",
@@ -1748,8 +1761,9 @@ async function handleReport(req: Request): Promise<Response> {
       const provider = getPrivateReviewProvider();
       if (!provider || !privateReviewReady()) throw new Error("Private review storage unavailable");
       const objectKey = `quarantine/${reviewCase.id}/${targetPhotoId}`;
-      await quarantinePhoto(provider, objectKey, await readPhotoBuffer(photo.photo_path), "image/jpeg");
-      await attachPrivatePhotoObject(String(reviewCase.id), objectKey, "image/jpeg");
+      const contentType = contentTypeForPhotoPath(photo.photo_path);
+      await quarantinePhoto(provider, objectKey, await readPhotoBuffer(photo.photo_path), contentType);
+      await attachPrivatePhotoObject(String(reviewCase.id), objectKey, contentType);
       if (reviewCase.status !== "quarantined") await transitionPhotoModerationCase(String(reviewCase.id), "quarantined", user.id);
     }
     if (reason === "underage") {
