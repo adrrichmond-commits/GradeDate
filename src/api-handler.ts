@@ -44,7 +44,7 @@ import {
   getMessages,
   getUnreadMessageCount,
   markMessagesRead,
-  upsertMessageModerationFlag, hideMessage,
+  upsertMessageModerationFlag, hideMessage, releaseMessage, getMessageModerationFlagQueue, getMessageModerationContext, reviewMessageModerationFlag,
   blockUser,
   isBlocked,
   getBlockedUserIds,
@@ -1903,6 +1903,36 @@ async function handlePhotoModerationMutation(req: Request, id: string): Promise<
   await recordAdminAuditEvent({ actorUserId: user.id, action: "photo_moderation.transition", targetType: "photo_moderation", targetId: id, metadata: { status } });
   return json({ ok: true, case: redactPhotoCase((updated ?? {}) as any) });
 }
+async function handleMessageModerationQueue(req: Request): Promise<Response> {
+  const status = new URL(req.url).searchParams.get("status") ?? undefined;
+  if (status && !["new","reviewed","dismissed","actioned"].includes(status)) return json({ error: "Invalid status" }, 400);
+  const rows = await getMessageModerationFlagQueue(status);
+  await recordAdminAuditEvent({ actorUserId: (await getCurrentUser(req))!.id, action: "message_moderation.queue.read", targetType: "message_moderation" });
+  return json({ flags: rows });
+}
+async function handleMessageModerationDetail(req: Request, id: string): Promise<Response> {
+  const session = await getCurrentSession(req); const recent = session?.mfa_verified_at && Date.now() - new Date(session.mfa_verified_at).getTime() <= 5 * 60 * 1000;
+  if (!recent) return json({ error: "Recent MFA reauthentication required" }, 403);
+  const item = await getMessageModerationContext(id); if (!item) return json({ error: "Not found" }, 404);
+  const actor = await getCurrentUser(req)!;
+  await recordAdminAuditEvent({ actorUserId: actor.id, action: "message_moderation.read", targetType: "message_moderation", targetId: id });
+  return json({ flag: item });
+}
+async function handleMessageModerationMutation(req: Request, id: string): Promise<Response> {
+  const session = await getCurrentSession(req); const recent = session?.mfa_verified_at && Date.now() - new Date(session.mfa_verified_at).getTime() <= 5 * 60 * 1000;
+  if (!recent) return json({ error: "Recent MFA reauthentication required" }, 403);
+  const actor = await getCurrentUser(req)!; const item = await getMessageModerationContext(id); if (!item) return json({ error: "Not found" }, 404);
+  const body = await req.json().catch(() => null); const action = body?.action;
+  if (!["dismiss","keep_hidden","release","lock_account"].includes(action)) return json({ error: "Invalid action" }, 400);
+  if (!["new","reviewed","dismissed","actioned"].includes(item.status)) return json({ error: "Invalid transition" }, 409);
+  if (action === "release") await releaseMessage(Number(item.message_id), actor.id);
+  if (action === "keep_hidden") await hideMessage(Number(item.message_id), "moderator_review");
+  if (action === "lock_account") await createSuspension({ userId: Number(item.sender_id), reason: "other", duration: "indefinite", endsAt: null, actorUserId: actor.id, sourceCaseId: String(item.message_id) });
+  const reviewed = await reviewMessageModerationFlag(id, action === "dismiss" ? "dismissed" : "actioned", actor.id, action);
+  if (!reviewed) return json({ error: "Invalid transition" }, 409);
+  await recordAdminAuditEvent({ actorUserId: actor.id, action: "message_moderation.mutate", targetType: "message_moderation", targetId: id, metadata: { action } });
+  return json({ ok: true });
+}
 async function handleDeleteAccount(req: Request): Promise<Response> {
   const user = await getCurrentUser(req);
   if (!user) {
@@ -3104,6 +3134,10 @@ export async function handleApiRoute(
     return handleDeleteAccount(req);
   }
 
+  const messageModerationMatch = pathname.match(/^\/api\/admin\/message-moderation\/([^/]+)$/);
+  if (pathname === "/api/admin/message-moderation" && method === "GET") return handleMessageModerationQueue(req);
+  if (messageModerationMatch && method === "GET") return handleMessageModerationDetail(req, messageModerationMatch[1]);
+  if (messageModerationMatch && method === "POST") { const csrfErr = checkCsrf(req); if (csrfErr) return csrfErr; return handleMessageModerationMutation(req, messageModerationMatch[1]); }
   const photoModerationMatch = pathname.match(/^\/api\/admin\/photo-moderation\/([^/]+)$/);
   if (pathname === "/api/admin/photo-moderation" && method === "GET") return handlePhotoModerationQueue(req);
   const reviewAccess = pathname.match(/^\/api\/admin\/photo-moderation\/([^/]+)\/access$/); if (reviewAccess && method === "GET") return handlePhotoReviewAccess(req, reviewAccess[1]);
