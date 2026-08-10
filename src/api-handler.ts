@@ -44,6 +44,7 @@ import {
   getMessages,
   getUnreadMessageCount,
   markMessagesRead,
+  upsertMessageModerationFlag, hideMessage, releaseMessage, getMessageModerationFlagQueue, getMessageModerationContext, reviewMessageModerationFlag,
   blockUser,
   isBlocked,
   getBlockedUserIds,
@@ -132,6 +133,7 @@ import { canReviewPhoto, canTransitionQuarantine, isQuarantineStatus, privateRev
 import { issueReviewAccess, readReviewPhoto, quarantinePhoto, privateReviewReady, ReviewAccessDeniedError } from "./private-review-storage";
 import { getPrivateReviewProvider } from "./private-review-provider";
 import { scanPhoto, policyForPhotoScan } from "./photo-moderation";
+import { scanMessage, scanMessageHeuristics, policyForMessageScan } from "./message-moderation";
 import { isSuspensionReason, isSuspensionDuration, isAppealStatus, canReviewAppeal, canOverrideSuspension, durationEnds, APPEAL_TEXT_MAX } from "./suspensions";
 import { hasPermission, isSuspended, isSuspensionException, privilegedMfaReady, type PrivilegedRole } from "./safety";
 import { registrationOptions, authenticationOptions, verifyRegistration, verifyAuthentication, MFA_CHALLENGE_TTL_MS } from "./webauthn-mfa";
@@ -1573,6 +1575,9 @@ async function handleSendMessage(req: Request): Promise<Response> {
   if (!content || typeof content !== "string" || content.trim().length === 0) {
     return json({ error: "content is required" }, 400);
   }
+  if (typeof content === "string" && content.length > 2000) {
+    return json({ error: "content must be 2000 characters or fewer" }, 413);
+  }
 
   // Profanity filter
   const filterResult = filterMessage(content.trim());
@@ -1589,7 +1594,17 @@ async function handleSendMessage(req: Request): Promise<Response> {
     return json({ error: "You are not a participant in this match" }, 403);
   }
 
-  const message = await createMessage(match_id, user.id, content.trim());
+  const heuristic = scanMessageHeuristics(content.trim());
+  const policy = policyForMessageScan(heuristic);
+  const moderationState = policy.hide ? "hidden" : heuristic.classification === "clean" ? "clear" : "pending_review";
+  const message = await createMessage(match_id, user.id, content.trim(), moderationState, policy.hide ? heuristic.classification : null);
+  if (heuristic.classification !== "clean") await upsertMessageModerationFlag(message.id, user.id, match_id, heuristic.classification, "heuristic", heuristic.confidence, null, heuristic.matchedRules, policy.lockAccount ? "lock_account" : policy.hide ? "hide" : "review");
+  if (policy.lockAccount) {
+    await createSuspension({ userId: user.id, reason: "underage", duration: "indefinite", endsAt: null, actorUserId: null, sourceCaseId: String(message.id) });
+    await recordAdminAuditEvent({ actorUserId: null, action: "message_moderation.enforcement", targetType: "message", targetId: String(message.id), metadata: { classification: heuristic.classification, action: "lock_account" } });
+  } else if (policy.hide) await recordAdminAuditEvent({ actorUserId: null, action: "message_moderation.enforcement", targetType: "message", targetId: String(message.id), metadata: { classification: heuristic.classification, action: "hide" } });
+  if (!policy.hide && !policy.lockAccount) void scanMessage(content.trim()).then(async result => { if (result.classification !== "clean") await upsertMessageModerationFlag(message.id, user.id, match_id, result.classification, "provider", result.confidence, result.providerRef, result.matchedRules, "review"); }).catch(err => logWarn("message_moderation.provider_failed", { error: err }));
+  if (moderationState !== "clear") return json({ ok: true, message: { id: message.id, match_id: message.match_id, sender_id: message.sender_id, content: message.content, read: message.read, created_at: message.created_at, sender_name: user.display_name, sender_photo: user.photo_path } });
 
   // Notify the other participant
   const recipientId =
@@ -1887,6 +1902,41 @@ async function handlePhotoModerationMutation(req: Request, id: string): Promise<
   const updated = await transitionPhotoModerationCase(id, status, user.id, status === "approved" || status === "restored" ? "safe" : status === "removed" ? "unsafe" : undefined);
   await recordAdminAuditEvent({ actorUserId: user.id, action: "photo_moderation.transition", targetType: "photo_moderation", targetId: id, metadata: { status } });
   return json({ ok: true, case: redactPhotoCase((updated ?? {}) as any) });
+}
+async function handleMessageModerationQueue(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user || !canReviewPhoto(user.role)) return json({ error: "Forbidden" }, 403);
+  const status = new URL(req.url).searchParams.get("status") ?? undefined;
+  if (status && !["new","reviewed","dismissed","actioned"].includes(status)) return json({ error: "Invalid status" }, 400);
+  const rows = await getMessageModerationFlagQueue(status);
+  await recordAdminAuditEvent({ actorUserId: user.id, action: "message_moderation.queue.read", targetType: "message_moderation" });
+  return json({ flags: rows });
+}
+async function handleMessageModerationDetail(req: Request, id: string): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user || !canReviewPhoto(user.role)) return json({ error: "Forbidden" }, 403);
+  const session = await getCurrentSession(req); const recent = session?.mfa_verified_at && Date.now() - new Date(session.mfa_verified_at).getTime() <= 5 * 60 * 1000;
+  if (!recent) return json({ error: "Recent MFA reauthentication required" }, 403);
+  const item = await getMessageModerationContext(id); if (!item) return json({ error: "Not found" }, 404);
+  await recordAdminAuditEvent({ actorUserId: user.id, action: "message_moderation.read", targetType: "message_moderation", targetId: id });
+  return json({ flag: item });
+}
+async function handleMessageModerationMutation(req: Request, id: string): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user || !canReviewPhoto(user.role)) return json({ error: "Forbidden" }, 403);
+  const session = await getCurrentSession(req); const recent = session?.mfa_verified_at && Date.now() - new Date(session.mfa_verified_at).getTime() <= 5 * 60 * 1000;
+  if (!recent) return json({ error: "Recent MFA reauthentication required" }, 403);
+  const actor = user; const item = await getMessageModerationContext(id); if (!item) return json({ error: "Not found" }, 404);
+  const body = await req.json().catch(() => null); const action = body?.action;
+  if (!["dismiss","keep_hidden","release","lock_account"].includes(action)) return json({ error: "Invalid action" }, 400);
+  if (!["new","reviewed","dismissed","actioned"].includes(item.status)) return json({ error: "Invalid transition" }, 409);
+  if (action === "release") await releaseMessage(Number(item.message_id), actor.id);
+  if (action === "keep_hidden") await hideMessage(Number(item.message_id), "moderator_review");
+  if (action === "lock_account") await createSuspension({ userId: Number(item.sender_id), reason: "other", duration: "indefinite", endsAt: null, actorUserId: actor.id, sourceCaseId: String(item.message_id) });
+  const reviewed = await reviewMessageModerationFlag(id, action === "dismiss" ? "dismissed" : "actioned", actor.id, action);
+  if (!reviewed) return json({ error: "Invalid transition" }, 409);
+  await recordAdminAuditEvent({ actorUserId: actor.id, action: "message_moderation.mutate", targetType: "message_moderation", targetId: id, metadata: { action } });
+  return json({ ok: true });
 }
 async function handleDeleteAccount(req: Request): Promise<Response> {
   const user = await getCurrentUser(req);
@@ -3089,6 +3139,10 @@ export async function handleApiRoute(
     return handleDeleteAccount(req);
   }
 
+  const messageModerationMatch = pathname.match(/^\/api\/admin\/message-moderation\/([^/]+)$/);
+  if (pathname === "/api/admin/message-moderation" && method === "GET") return handleMessageModerationQueue(req);
+  if (messageModerationMatch && method === "GET") return handleMessageModerationDetail(req, messageModerationMatch[1]);
+  if (messageModerationMatch && method === "POST") { const csrfErr = checkCsrf(req); if (csrfErr) return csrfErr; return handleMessageModerationMutation(req, messageModerationMatch[1]); }
   const photoModerationMatch = pathname.match(/^\/api\/admin\/photo-moderation\/([^/]+)$/);
   if (pathname === "/api/admin/photo-moderation" && method === "GET") return handlePhotoModerationQueue(req);
   const reviewAccess = pathname.match(/^\/api\/admin\/photo-moderation\/([^/]+)\/access$/); if (reviewAccess && method === "GET") return handlePhotoReviewAccess(req, reviewAccess[1]);
