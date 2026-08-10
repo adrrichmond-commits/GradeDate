@@ -9,9 +9,16 @@ import {
 import { useModalAccessibility } from "~/modal-accessibility";
 import { useAuth } from "~/auth-context";
 import { AuthUnavailable } from "~/auth-unavailable";
-import { useRequireSubscription, SubscriptionBanner } from "~/subscription-guard";
+import {
+  useRequireSubscription,
+  SubscriptionBanner,
+} from "~/subscription-guard";
 import { getCsrfToken } from "~/csrf-client";
-import { getMatchActionError, matchActionFailureMessage } from "~/matches-action";
+import {
+  getMatchActionError,
+  matchActionFailureMessage,
+} from "~/matches-action";
+import { VerifiedBadge } from "~/age-verification";
 import { apiFetch, safeApiError } from "~/client-api";
 import {
   computeSwipeFrame,
@@ -51,6 +58,7 @@ interface MatchProfile {
   is_outside_range?: boolean;
   compatibility_score?: number;
   badges?: { id: string; label: string; emoji: string }[];
+  verification_status?: "unverified" | "pending" | "verified";
 }
 
 const REPORT_REASONS = [
@@ -73,7 +81,9 @@ function MatchesPage() {
   const [currentIdx, setCurrentIdx] = useState(0);
   const [fetching, setFetching] = useState(true);
   const [error, setError] = useState("");
-  const [animState, setAnimState] = useState<"idle" | "like" | "pass" | null>(null);
+  const [animState, setAnimState] = useState<"idle" | "like" | "pass" | null>(
+    null,
+  );
   // Live swipe-drag frame (null when not dragging). Drives the card transform
   // directly so the card tracks the pointer without waiting for a commit.
   const [drag, setDrag] = useState<SwipeFrame | null>(null);
@@ -86,10 +96,16 @@ function MatchesPage() {
     lastTime: number;
     velocityX: number;
   } | null>(null);
-  const [failedAction, setFailedAction] = useState<"like" | "pass" | null>(null);
+  const [failedAction, setFailedAction] = useState<"like" | "pass" | null>(
+    null,
+  );
   const [matchCelebration, setMatchCelebration] = useState<{
     match_id: number;
-    other_user: { id: number; display_name: string | null; photo_path: string | null } | null;
+    other_user: {
+      id: number;
+      display_name: string | null;
+      photo_path: string | null;
+    } | null;
     league_score: number | null;
   } | null>(null);
 
@@ -97,7 +113,9 @@ function MatchesPage() {
   const [photoIndex, setPhotoIndex] = useState(0);
 
   // Daily likes state
-  const [likesRemaining, setLikesRemaining] = useState<number | "unlimited" | null>(null);
+  const [likesRemaining, setLikesRemaining] = useState<
+    number | "unlimited" | null
+  >(null);
   const [likePacks, setLikePacks] = useState<number>(0);
   const [showLikesLimitOverlay, setShowLikesLimitOverlay] = useState(false);
 
@@ -108,11 +126,23 @@ function MatchesPage() {
   const [reportDone, setReportDone] = useState(false);
   const [reportError, setReportError] = useState("");
   const closeCelebration = useCallback(() => setMatchCelebration(null), []);
-  const closeLikesLimit = useCallback(() => setShowLikesLimitOverlay(false), []);
+  const closeLikesLimit = useCallback(
+    () => setShowLikesLimitOverlay(false),
+    [],
+  );
   const closeReport = useCallback(() => setShowReportModal(false), []);
-  const celebrationA11y = useModalAccessibility<HTMLDivElement>(!!matchCelebration, closeCelebration);
-  const likesLimitA11y = useModalAccessibility<HTMLDivElement>(showLikesLimitOverlay, closeLikesLimit);
-  const reportA11y = useModalAccessibility<HTMLDivElement>(showReportModal, closeReport);
+  const celebrationA11y = useModalAccessibility<HTMLDivElement>(
+    !!matchCelebration,
+    closeCelebration,
+  );
+  const likesLimitA11y = useModalAccessibility<HTMLDivElement>(
+    showLikesLimitOverlay,
+    closeLikesLimit,
+  );
+  const reportA11y = useModalAccessibility<HTMLDivElement>(
+    showReportModal,
+    closeReport,
+  );
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -133,8 +163,15 @@ function MatchesPage() {
     setFetching(true);
     setError("");
     try {
-      const data = await apiFetch<{ matches?: MatchProfile[]; code?: string }>("/api/matches", undefined, "Failed to load matches.");
-      if (data.code === "NO_GRADE") { navigate({ to: "/profile" }); return; }
+      const data = await apiFetch<{ matches?: MatchProfile[]; code?: string }>(
+        "/api/matches",
+        undefined,
+        "Failed to load matches.",
+      );
+      if (data.code === "NO_GRADE") {
+        navigate({ to: "/profile" });
+        return;
+      }
       setMatches(data.matches || []);
       setCurrentIdx(0);
       setPhotoIndex(0);
@@ -298,7 +335,9 @@ function MatchesPage() {
   const isInteractiveTarget = (target: EventTarget | null) => {
     if (!(target instanceof Element)) return false;
     return Boolean(
-      target.closest("button, a, input, select, textarea, label, [role='button']"),
+      target.closest(
+        "button, a, input, select, textarea, label, [role='button']",
+      ),
     );
   };
 
@@ -335,11 +374,18 @@ function MatchesPage() {
     const dt = now - g.lastTime;
     if (dt > 0) {
       const instant = (e.clientX - g.lastX) / dt;
-      g.velocityX = g.velocityX === 0 ? instant : g.velocityX * 0.7 + instant * 0.3;
+      g.velocityX =
+        g.velocityX === 0 ? instant : g.velocityX * 0.7 + instant * 0.3;
     }
     g.lastX = e.clientX;
     g.lastTime = now;
-    setDrag(computeSwipeFrame(e.clientX - g.startX, e.clientY - g.startY, g.threshold));
+    setDrag(
+      computeSwipeFrame(
+        e.clientX - g.startX,
+        e.clientY - g.startY,
+        g.threshold,
+      ),
+    );
   };
 
   const endSwipe = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -392,14 +438,19 @@ function MatchesPage() {
             <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-400 border border-amber-500/20">
               0 likes remaining —{" "}
               {likePacks > 0 ? (
-                <span>{likePacks} extra like{likePacks !== 1 ? "s" : ""} available</span>
+                <span>
+                  {likePacks} extra like{likePacks !== 1 ? "s" : ""} available
+                </span>
               ) : (
-                <a href="/subscribe" className="underline hover:text-amber-300">Subscribe for premium</a>
+                <a href="/subscribe" className="underline hover:text-amber-300">
+                  Subscribe for premium
+                </a>
               )}
             </span>
           ) : (
             <span className="inline-flex items-center gap-1.5 rounded-full bg-gray-800 px-3 py-1 text-xs font-medium text-gray-400 border border-gray-700">
-              {likesRemaining} like{likesRemaining !== 1 ? "s" : ""} remaining today
+              {likesRemaining} like{likesRemaining !== 1 ? "s" : ""} remaining
+              today
             </span>
           )}
         </div>
@@ -413,17 +464,27 @@ function MatchesPage() {
         </p>
         {user.grade !== null && (
           <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-rose-500/10 px-3 py-1 text-xs text-rose-400">
-            Top {user.percentile != null ? `${Math.round(100 - user.percentile)}%` : `${user.grade}/10`} in your area
+            Top{" "}
+            {user.percentile != null
+              ? `${Math.round(100 - user.percentile)}%`
+              : `${user.grade}/10`}{" "}
+            in your area
           </div>
         )}
       </div>
 
       {error && (
-        <div role="alert" aria-live="polite" className="mb-6 rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-center text-sm text-red-400">
+        <div
+          role="alert"
+          aria-live="polite"
+          className="mb-6 rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-center text-sm text-red-400"
+        >
           <p>{error}</p>
           {failedAction ? (
             <button
-              onClick={() => (failedAction === "like" ? handleLike() : handlePass())}
+              onClick={() =>
+                failedAction === "like" ? handleLike() : handlePass()
+              }
               disabled={animState !== null}
               className="mt-2 block w-full text-center text-xs font-medium underline disabled:opacity-50"
             >
@@ -464,7 +525,9 @@ function MatchesPage() {
               />
             </svg>
           </div>
-          <h3 className="text-lg font-semibold">Set your location to see nearby matches</h3>
+          <h3 className="text-lg font-semibold">
+            Set your location to see nearby matches
+          </h3>
           <p className="text-sm text-gray-500">
             Add your ZIP code so we can show you singles near you.
           </p>
@@ -496,10 +559,7 @@ function MatchesPage() {
           <p className="text-sm text-gray-500">
             We're looking for more singles in your grade range. Check back soon!
           </p>
-          <button
-            onClick={fetchMatches}
-            className="btn-secondary"
-          >
+          <button onClick={fetchMatches} className="btn-secondary">
             Refresh
           </button>
         </div>
@@ -532,7 +592,10 @@ function MatchesPage() {
                       "0 0 20px 1px rgba(244,63,94,0.1), 0 0 40px 5px rgba(244,63,94,0.04)",
                   }
                 : {
-                    animation: animState === null ? "cardEnter 0.4s ease-out" : undefined,
+                    animation:
+                      animState === null
+                        ? "cardEnter 0.4s ease-out"
+                        : undefined,
                     boxShadow:
                       "0 0 20px 1px rgba(244,63,94,0.1), 0 0 40px 5px rgba(244,63,94,0.04)",
                   }
@@ -542,19 +605,30 @@ function MatchesPage() {
             <div className="relative aspect-[3/4] w-full bg-gray-800 overflow-hidden">
               {(() => {
                 // Sort photos: primary first, then by sort_order
-                const photos = current.photos && current.photos.length > 0
-                  ? [...current.photos].sort((a, b) => {
-                      if (a.is_primary) return -1;
-                      if (b.is_primary) return 1;
-                      return a.sort_order - b.sort_order;
-                    })
-                  : null;
+                const photos =
+                  current.photos && current.photos.length > 0
+                    ? [...current.photos].sort((a, b) => {
+                        if (a.is_primary) return -1;
+                        if (b.is_primary) return 1;
+                        return a.sort_order - b.sort_order;
+                      })
+                    : null;
 
                 if (!photos && !current.photo_path) {
                   return (
                     <div className="flex h-full w-full items-center justify-center text-gray-600">
-                      <svg className="h-20 w-20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+                      <svg
+                        className="h-20 w-20"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={1.5}
+                          d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"
+                        />
                       </svg>
                     </div>
                   );
@@ -584,26 +658,50 @@ function MatchesPage() {
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setPhotoIndex((prev) => (prev > 0 ? prev - 1 : totalPhotos - 1));
+                            setPhotoIndex((prev) =>
+                              prev > 0 ? prev - 1 : totalPhotos - 1,
+                            );
                           }}
                           className="absolute left-2 top-1/2 -translate-y-1/2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-black/40 text-white/80 transition hover:bg-black/60 hover:text-white"
                           aria-label="Previous photo"
                         >
-                          <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                          <svg
+                            className="h-5 w-5"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M15 19l-7-7 7-7"
+                            />
                           </svg>
                         </button>
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setPhotoIndex((prev) => (prev < totalPhotos - 1 ? prev + 1 : 0));
+                            setPhotoIndex((prev) =>
+                              prev < totalPhotos - 1 ? prev + 1 : 0,
+                            );
                           }}
                           className="absolute right-2 top-1/2 -translate-y-1/2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-black/40 text-white/80 transition hover:bg-black/60 hover:text-white"
                           aria-label="Next photo"
                         >
-                          <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          <svg
+                            className="h-5 w-5"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M9 5l7 7-7 7"
+                            />
                           </svg>
                         </button>
                       </>
@@ -648,7 +746,9 @@ function MatchesPage() {
                 >
                   <span
                     className={`rounded-xl border-[3px] border-green-400 px-8 py-3 text-4xl font-black text-green-400 -rotate-12 shadow-2xl motion-reduce:animate-none ${
-                      animState === "like" ? "animate-[likeStamp_0.3s_ease-out]" : "opacity-70"
+                      animState === "like"
+                        ? "animate-[likeStamp_0.3s_ease-out]"
+                        : "opacity-70"
                     }`}
                   >
                     LIKE
@@ -667,7 +767,9 @@ function MatchesPage() {
                 >
                   <span
                     className={`rounded-xl border-[3px] border-red-400 px-8 py-3 text-4xl font-black text-red-400 rotate-12 shadow-2xl motion-reduce:animate-none ${
-                      animState === "pass" ? "animate-[passStamp_0.3s_ease-out]" : "opacity-70"
+                      animState === "pass"
+                        ? "animate-[passStamp_0.3s_ease-out]"
+                        : "opacity-70"
                     }`}
                   >
                     PASS
@@ -678,7 +780,10 @@ function MatchesPage() {
               {/* Player info gradient overlay */}
               <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-gray-950/95 via-gray-950/40 to-transparent p-6 pt-20">
                 <h2 className="text-2xl font-bold">
-                  {current.display_name || "Anonymous"}, {current.age || "?"}
+                  {current.display_name || "Anonymous"}, {current.age || "?"}{" "}
+                  {current.verification_status === "verified" && (
+                    <VerifiedBadge />
+                  )}
                 </h2>
                 {current.gender && (
                   <p className="mt-1 text-sm capitalize text-gray-400">
@@ -695,17 +800,20 @@ function MatchesPage() {
                     🌟 New perspectives
                   </span>
                 )}
-                {current.compatibility_score != null && current.compatibility_score > 0 && (
-                  <div className="mt-2 flex items-center gap-1.5">
-                    <div className="h-1.5 flex-1 rounded-full bg-gray-700 overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400"
-                        style={{ width: `${current.compatibility_score}%` }}
-                      />
+                {current.compatibility_score != null &&
+                  current.compatibility_score > 0 && (
+                    <div className="mt-2 flex items-center gap-1.5">
+                      <div className="h-1.5 flex-1 rounded-full bg-gray-700 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400"
+                          style={{ width: `${current.compatibility_score}%` }}
+                        />
+                      </div>
+                      <span className="text-xs text-gray-500">
+                        {current.compatibility_score}%
+                      </span>
                     </div>
-                    <span className="text-xs text-gray-500">{current.compatibility_score}%</span>
-                  </div>
-                )}
+                  )}
               </div>
             </div>
 
@@ -714,29 +822,45 @@ function MatchesPage() {
               <p className="text-sm leading-relaxed text-gray-300">
                 {current.bio || "No bio yet."}
               </p>
-              {(current.communication_style || current.lifestyle || current.dating_goals) && (
+              {(current.communication_style ||
+                current.lifestyle ||
+                current.dating_goals) && (
                 <div className="mt-3 flex flex-wrap gap-1.5">
                   {current.communication_style && (
                     <span className="rounded-full bg-gray-800 px-2.5 py-0.5 text-xs text-gray-400 border border-gray-700">
-                      {current.communication_style === "texter" ? "💬 Texting" :
-                       current.communication_style === "caller" ? "📞 Phone Calls" :
-                       current.communication_style === "either" ? "💬📞 Either" : current.communication_style}
+                      {current.communication_style === "texter"
+                        ? "💬 Texting"
+                        : current.communication_style === "caller"
+                          ? "📞 Phone Calls"
+                          : current.communication_style === "either"
+                            ? "💬📞 Either"
+                            : current.communication_style}
                     </span>
                   )}
                   {current.lifestyle && (
                     <span className="rounded-full bg-gray-800 px-2.5 py-0.5 text-xs text-gray-400 border border-gray-700">
-                      {current.lifestyle === "active" ? "🏃 Active" :
-                       current.lifestyle === "chill" ? "😌 Chill" :
-                       current.lifestyle === "social" ? "🎉 Social" :
-                       current.lifestyle === "homebody" ? "🏠 Homebody" : current.lifestyle}
+                      {current.lifestyle === "active"
+                        ? "🏃 Active"
+                        : current.lifestyle === "chill"
+                          ? "😌 Chill"
+                          : current.lifestyle === "social"
+                            ? "🎉 Social"
+                            : current.lifestyle === "homebody"
+                              ? "🏠 Homebody"
+                              : current.lifestyle}
                     </span>
                   )}
                   {current.dating_goals && (
                     <span className="rounded-full bg-gray-800 px-2.5 py-0.5 text-xs text-gray-400 border border-gray-700">
-                      {current.dating_goals === "long_term" ? "💍 Long Term" :
-                       current.dating_goals === "casual" ? "🍸 Casual" :
-                       current.dating_goals === "still_figuring_it_out" ? "🤔 Figuring Out" :
-                       current.dating_goals === "new_connections" ? "🔗 New Connections" : current.dating_goals}
+                      {current.dating_goals === "long_term"
+                        ? "💍 Long Term"
+                        : current.dating_goals === "casual"
+                          ? "🍸 Casual"
+                          : current.dating_goals === "still_figuring_it_out"
+                            ? "🤔 Figuring Out"
+                            : current.dating_goals === "new_connections"
+                              ? "🔗 New Connections"
+                              : current.dating_goals}
                     </span>
                   )}
                 </div>
@@ -824,8 +948,16 @@ function MatchesPage() {
 
       {/* Match Celebration Modal */}
       {matchCelebration && (
-        <div {...celebrationA11y} aria-labelledby="match-celebration-title" className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-          <div ref={celebrationA11y.containerRef} tabIndex={-1} className="mx-4 w-full max-w-sm animate-[bounceIn_0.5s_ease-out] rounded-2xl bg-gray-900 p-8 text-center shadow-2xl">
+        <div
+          {...celebrationA11y}
+          aria-labelledby="match-celebration-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+        >
+          <div
+            ref={celebrationA11y.containerRef}
+            tabIndex={-1}
+            className="mx-4 w-full max-w-sm animate-[bounceIn_0.5s_ease-out] rounded-2xl bg-gray-900 p-8 text-center shadow-2xl"
+          >
             <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-rose-500/20 to-amber-500/20">
               <svg
                 className="h-10 w-10 text-rose-400"
@@ -841,7 +973,10 @@ function MatchesPage() {
                 />
               </svg>
             </div>
-            <h2 id="match-celebration-title" className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-rose-400 to-amber-400">
+            <h2
+              id="match-celebration-title"
+              className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-rose-400 to-amber-400"
+            >
               It's a Match!
             </h2>
             {matchCelebration.league_score != null && (
@@ -850,7 +985,9 @@ function MatchesPage() {
                   <span className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-rose-400 to-purple-400">
                     {matchCelebration.league_score}%
                   </span>
-                  <span className="text-sm font-semibold text-rose-300">League Match</span>
+                  <span className="text-sm font-semibold text-rose-300">
+                    League Match
+                  </span>
                 </div>
                 <p className="mt-2 text-xs text-gray-500">
                   You're both in each other's ideal range
@@ -870,7 +1007,8 @@ function MatchesPage() {
                   Why this score?
                 </summary>
                 <p className="mt-2 text-xs text-gray-500 leading-relaxed">
-                  Your attractiveness, interests, and profile quality align exceptionally well.
+                  Your attractiveness, interests, and profile quality align
+                  exceptionally well.
                 </p>
               </details>
             )}
@@ -896,14 +1034,34 @@ function MatchesPage() {
 
       {/* Daily Likes Limit Overlay */}
       {showLikesLimitOverlay && (
-        <div {...likesLimitA11y} aria-labelledby="likes-limit-title" className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-          <div ref={likesLimitA11y.containerRef} tabIndex={-1} className="mx-4 w-full max-w-sm animate-[bounceIn_0.5s_ease-out] rounded-2xl bg-gray-900 p-8 text-center shadow-2xl">
+        <div
+          {...likesLimitA11y}
+          aria-labelledby="likes-limit-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+        >
+          <div
+            ref={likesLimitA11y.containerRef}
+            tabIndex={-1}
+            className="mx-4 w-full max-w-sm animate-[bounceIn_0.5s_ease-out] rounded-2xl bg-gray-900 p-8 text-center shadow-2xl"
+          >
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-amber-500/10">
-              <svg className="h-8 w-8 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              <svg
+                className="h-8 w-8 text-amber-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                />
               </svg>
             </div>
-            <h2 id="likes-limit-title" className="text-xl font-bold">You're out of likes!</h2>
+            <h2 id="likes-limit-title" className="text-xl font-bold">
+              You're out of likes!
+            </h2>
             <p className="mt-2 text-sm text-gray-400">
               You've used all your likes for today.
               {likePacks > 0
@@ -930,16 +1088,30 @@ function MatchesPage() {
 
       {/* Report Modal */}
       {showReportModal && current && (
-        <div {...reportA11y} aria-labelledby="matches-report-title" className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-          <div ref={reportA11y.containerRef} tabIndex={-1} className="mx-4 w-full max-w-sm rounded-2xl bg-gray-900 p-6 shadow-2xl">
-            <h3 id="matches-report-title" className="text-lg font-bold">Report {current.display_name || "User"}</h3>
+        <div
+          {...reportA11y}
+          aria-labelledby="matches-report-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+        >
+          <div
+            ref={reportA11y.containerRef}
+            tabIndex={-1}
+            className="mx-4 w-full max-w-sm rounded-2xl bg-gray-900 p-6 shadow-2xl"
+          >
+            <h3 id="matches-report-title" className="text-lg font-bold">
+              Report {current.display_name || "User"}
+            </h3>
             <p className="mt-1 text-sm text-gray-400">
               {reportDone
                 ? "Thank you. Your report has been submitted."
                 : "Why are you reporting this user?"}
             </p>
 
-            {reportError && <p role="alert" className="mt-3 text-sm text-red-400">{reportError}</p>}
+            {reportError && (
+              <p role="alert" className="mt-3 text-sm text-red-400">
+                {reportError}
+              </p>
+            )}
             {!reportDone && (
               <>
                 <div className="mt-4 space-y-2">
@@ -983,9 +1155,19 @@ function MatchesPage() {
                             "Content-Type": "application/json",
                             "X-CSRF-Token": getCsrfToken() || "",
                           },
-                          body: JSON.stringify({ user_id: current.id, reason: reportReason }),
+                          body: JSON.stringify({
+                            user_id: current.id,
+                            reason: reportReason,
+                          }),
                         });
-                        if (!reportRes.ok) { const data = await reportRes.json().catch(() => null); setReportError(data?.error || "Could not submit report. Please try again."); return; }
+                        if (!reportRes.ok) {
+                          const data = await reportRes.json().catch(() => null);
+                          setReportError(
+                            data?.error ||
+                              "Could not submit report. Please try again.",
+                          );
+                          return;
+                        }
                         setReportDone(true);
                       } catch {
                         setReportError("Network error. Please try again.");

@@ -3,11 +3,15 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useAuth } from "~/auth-context";
 import { AuthUnavailable } from "~/auth-unavailable";
 import { getCsrfToken } from "~/csrf-client";
-import { useRequireSubscription, SubscriptionBanner } from "~/subscription-guard";
+import {
+  useRequireSubscription,
+  SubscriptionBanner,
+} from "~/subscription-guard";
 import { photoFromUploadResponse } from "~/photo-upload";
 import { useModalAccessibility } from "~/modal-accessibility";
 import { startRegistration } from "@simplewebauthn/browser";
 import { apiFetch, safeApiError } from "~/client-api";
+import { AgeVerificationCard, VerifiedBadge } from "~/age-verification";
 
 export const Route = createFileRoute("/profile/")({
   component: ProfilePage,
@@ -91,8 +95,18 @@ function ReferralSection() {
   return (
     <div>
       <div className="flex items-center gap-2 mb-4">
-        <svg className="h-5 w-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8.25v-1.5m0 1.5c-1.355 0-2.697.056-4.024.166C6.845 8.51 6 9.473 6 10.608v2.513m6-4.871c1.355 0 2.697.056 4.024.166C17.155 8.51 18 9.473 18 10.608v2.513m-3-4.871v-1.5c0-.346-.077-.675-.22-.98M15 8.25H9m6 0a41.29 41.29 0 00-6 0m-6 0v7.5c0 .69.56 1.25 1.25 1.25h.5v2.25l2.25-2.25h3.75c.69 0 1.25-.56 1.25-1.25V13.5" />
+        <svg
+          className="h-5 w-5 text-amber-400"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M12 8.25v-1.5m0 1.5c-1.355 0-2.697.056-4.024.166C6.845 8.51 6 9.473 6 10.608v2.513m6-4.871c1.355 0 2.697.056 4.024.166C17.155 8.51 18 9.473 18 10.608v2.513m-3-4.871v-1.5c0-.346-.077-.675-.22-.98M15 8.25H9m6 0a41.29 41.29 0 00-6 0m-6 0v7.5c0 .69.56 1.25 1.25 1.25h.5v2.25l2.25-2.25h3.75c.69 0 1.25-.56 1.25-1.25V13.5"
+          />
         </svg>
         <h3 className="text-lg font-semibold text-amber-400">Refer a Friend</h3>
       </div>
@@ -106,11 +120,17 @@ function ReferralSection() {
       {/* Stats */}
       <div className="mb-5 grid grid-cols-2 gap-3">
         <div className="rounded-lg border border-amber-500/15 bg-amber-500/5 px-4 py-3 text-center">
-          <span className="text-2xl font-bold text-amber-400">{referralData.uses}</span>
-          <p className="text-xs text-gray-500">of {referralData.max_uses} uses</p>
+          <span className="text-2xl font-bold text-amber-400">
+            {referralData.uses}
+          </span>
+          <p className="text-xs text-gray-500">
+            of {referralData.max_uses} uses
+          </p>
         </div>
         <div className="rounded-lg border border-amber-500/15 bg-amber-500/5 px-4 py-3 text-center">
-          <span className="text-2xl font-bold text-amber-400">{referralData.rewards_earned}</span>
+          <span className="text-2xl font-bold text-amber-400">
+            {referralData.rewards_earned}
+          </span>
           <p className="text-xs text-gray-500">rewards earned</p>
         </div>
       </div>
@@ -154,7 +174,13 @@ function ReferralSection() {
   );
 }
 
-function CollapsibleCard({ title, content }: { title: string; content: string }) {
+function CollapsibleCard({
+  title,
+  content,
+}: {
+  title: string;
+  content: string;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <div className="rounded-lg border border-white/5 bg-gray-800/40 overflow-hidden">
@@ -170,7 +196,12 @@ function CollapsibleCard({ title, content }: { title: string; content: string })
           stroke="currentColor"
           viewBox="0 0 24 24"
         >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M19 9l-7 7-7-7"
+          />
         </svg>
       </button>
       {open && (
@@ -288,7 +319,7 @@ function ProfilePage() {
             if (b.is_primary) return 1;
             return a.sort_order - b.sort_order;
           })
-        : []
+        : [],
     );
     setUploadingIdx(null);
     setDeletingId(null);
@@ -296,7 +327,12 @@ function ProfilePage() {
     setEditMaxDistance(user.max_distance || 50);
     setEditLocationResult(
       user.location_city && user.location_state
-        ? { lat: user.latitude || 0, lng: user.longitude || 0, city: user.location_city, state: user.location_state }
+        ? {
+            lat: user.latitude || 0,
+            lng: user.longitude || 0,
+            city: user.location_city,
+            state: user.location_state,
+          }
         : null,
     );
     setLocationError("");
@@ -350,7 +386,7 @@ function ProfilePage() {
     try {
       const res = await fetch(`/api/photos/${photoId}`, {
         method: "DELETE",
-      headers: { "X-CSRF-Token": getCsrfToken() || "" },
+        headers: { "X-CSRF-Token": getCsrfToken() || "" },
       });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
@@ -370,7 +406,7 @@ function ProfilePage() {
     try {
       const res = await fetch(`/api/photos/${photoId}/primary`, {
         method: "PUT",
-      headers: { "X-CSRF-Token": getCsrfToken() || "" },
+        headers: { "X-CSRF-Token": getCsrfToken() || "" },
       });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
@@ -384,7 +420,7 @@ function ProfilePage() {
             if (a.is_primary) return -1;
             if (b.is_primary) return 1;
             return a.sort_order - b.sort_order;
-          })
+          }),
       );
     } catch {
       setSaveError("Network error. Please try again.");
@@ -403,7 +439,10 @@ function ProfilePage() {
     try {
       const res = await fetch("/api/location/lookup", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-CSRF-Token": getCsrfToken() || "" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": getCsrfToken() || "",
+        },
         body: JSON.stringify({ zip: trimmed }),
       });
       const data = await res.json();
@@ -412,7 +451,12 @@ function ProfilePage() {
         setEditLocationResult(null);
         return;
       }
-      setEditLocationResult({ lat: data.lat, lng: data.lng, city: data.city, state: data.state });
+      setEditLocationResult({
+        lat: data.lat,
+        lng: data.lng,
+        city: data.city,
+        state: data.state,
+      });
       setLocationError("");
     } catch {
       setLocationError("Network error. Please try again.");
@@ -425,7 +469,10 @@ function ProfilePage() {
     setGrading(true);
     setGradeError("");
     try {
-      const res = await fetch("/api/grade", { method: "POST", headers: { "X-CSRF-Token": getCsrfToken() || "" } });
+      const res = await fetch("/api/grade", {
+        method: "POST",
+        headers: { "X-CSRF-Token": getCsrfToken() || "" },
+      });
       const data = await res.json();
       if (!res.ok) {
         setGradeError(data.error || "Grading failed");
@@ -527,7 +574,10 @@ function ProfilePage() {
 
       const res = await fetch("/api/auth/update-profile", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-CSRF-Token": getCsrfToken() || "" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": getCsrfToken() || "",
+        },
         body: JSON.stringify(payload),
       });
 
@@ -573,27 +623,72 @@ function ProfilePage() {
   return (
     <div className="mx-auto max-w-2xl px-4 py-12">
       <SubscriptionBanner />
-      {(["owner", "admin", "moderator"] as string[]).includes(user.role || "") && <section aria-labelledby="passkey-heading" className="mb-6 rounded-2xl border border-white/10 bg-gray-900/60 p-5">
-        <h2 id="passkey-heading" className="text-lg font-semibold">Privileged passkey</h2>
-        <p className="mt-1 text-sm text-gray-400">Enroll a device passkey for secure privileged sign-in. GradeDate never sees your credential.</p>
-        {passkeyStatus && <p role="status" className="mt-3 text-sm text-emerald-300">{passkeyStatus}</p>}
-        {passkeyError && <p role="alert" className="mt-3 text-sm text-red-300">{passkeyError}</p>}
-        <button type="button" onClick={enrollPasskey} disabled={enrollingPasskey} className="mt-4 rounded-full bg-rose-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{enrollingPasskey ? "Waiting for passkey…" : "Enroll a passkey"}</button>
-      </section>}
+      <div className="mt-5">
+        <AgeVerificationCard user={user} onComplete={refetch} compact />
+      </div>
+      {(["owner", "admin", "moderator"] as string[]).includes(
+        user.role || "",
+      ) && (
+        <section
+          aria-labelledby="passkey-heading"
+          className="mb-6 rounded-2xl border border-white/10 bg-gray-900/60 p-5"
+        >
+          <h2 id="passkey-heading" className="text-lg font-semibold">
+            Privileged passkey
+          </h2>
+          <p className="mt-1 text-sm text-gray-400">
+            Enroll a device passkey for secure privileged sign-in. GradeDate
+            never sees your credential.
+          </p>
+          {passkeyStatus && (
+            <p role="status" className="mt-3 text-sm text-emerald-300">
+              {passkeyStatus}
+            </p>
+          )}
+          {passkeyError && (
+            <p role="alert" className="mt-3 text-sm text-red-300">
+              {passkeyError}
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={enrollPasskey}
+            disabled={enrollingPasskey}
+            className="mt-4 rounded-full bg-rose-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+          >
+            {enrollingPasskey ? "Waiting for passkey…" : "Enroll a passkey"}
+          </button>
+        </section>
+      )}
       {/* Success Toast */}
       {saveSuccess && (
         <div className="fixed top-6 left-1/2 z-50 -translate-x-1/2 animate-[fadeInUp_0.3s_ease-out]">
           <div className="flex items-center gap-2.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-5 py-2.5 shadow-lg backdrop-blur-sm">
-            <svg className="h-4 w-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            <svg
+              className="h-4 w-4 text-emerald-400"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M5 13l4 4L19 7"
+              />
             </svg>
-            <span className="text-sm font-medium text-emerald-400">Profile updated successfully!</span>
+            <span className="text-sm font-medium text-emerald-400">
+              Profile updated successfully!
+            </span>
           </div>
         </div>
       )}
 
       <div className="mb-8 text-center">
-        <h1 className="text-3xl font-bold">Your Profile</h1>
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="text-3xl font-bold">Your Profile</h1>
+          {user.verification_status === "verified" && <VerifiedBadge />}
+        </div>
         <p className="mt-2 text-gray-400">
           This is how other GradeDate members see you.
         </p>
@@ -707,11 +802,11 @@ function ProfilePage() {
                         disabled={deletingId === photo!.id}
                         onClick={() => handleSetPrimary(photo!.id)}
                         className={`absolute left-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-black/50 text-sm transition hover:bg-black/70 ${
-                          photo!.is_primary
-                            ? "text-amber-400"
-                            : "text-gray-400"
+                          photo!.is_primary ? "text-amber-400" : "text-gray-400"
                         }`}
-                        title={photo!.is_primary ? "Primary photo" : "Set as primary"}
+                        title={
+                          photo!.is_primary ? "Primary photo" : "Set as primary"
+                        }
                       >
                         ★
                       </button>
@@ -778,8 +873,18 @@ function ProfilePage() {
                 to="/store"
                 className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-4 py-1.5 text-xs font-medium text-amber-400 transition hover:bg-amber-500/20"
               >
-                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
+                <svg
+                  className="h-3.5 w-3.5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"
+                  />
                 </svg>
                 Boost Profile — $3.99
               </Link>
@@ -877,7 +982,10 @@ function ProfilePage() {
 
             {/* Display Name */}
             <div>
-              <label htmlFor="editName" className="mb-1.5 block text-sm font-medium text-gray-300">
+              <label
+                htmlFor="editName"
+                className="mb-1.5 block text-sm font-medium text-gray-300"
+              >
                 Display Name
               </label>
               <input
@@ -893,7 +1001,10 @@ function ProfilePage() {
 
             {/* Age */}
             <div>
-              <label htmlFor="editAge" className="mb-1.5 block text-sm font-medium text-gray-300">
+              <label
+                htmlFor="editAge"
+                className="mb-1.5 block text-sm font-medium text-gray-300"
+              >
                 Age
               </label>
               <input
@@ -911,7 +1022,10 @@ function ProfilePage() {
 
             {/* Gender */}
             <div>
-              <label htmlFor="editGender" className="mb-1.5 block text-sm font-medium text-gray-300">
+              <label
+                htmlFor="editGender"
+                className="mb-1.5 block text-sm font-medium text-gray-300"
+              >
                 Gender
               </label>
               <select
@@ -934,7 +1048,10 @@ function ProfilePage() {
 
             {/* Looking For */}
             <div>
-              <label htmlFor="editLookingFor" className="mb-1.5 block text-sm font-medium text-gray-300">
+              <label
+                htmlFor="editLookingFor"
+                className="mb-1.5 block text-sm font-medium text-gray-300"
+              >
                 Looking For
               </label>
               <select
@@ -955,7 +1072,10 @@ function ProfilePage() {
 
             {/* Bio */}
             <div>
-              <label htmlFor="editBio" className="mb-1.5 block text-sm font-medium text-gray-300">
+              <label
+                htmlFor="editBio"
+                className="mb-1.5 block text-sm font-medium text-gray-300"
+              >
                 Bio
               </label>
               <textarea
@@ -970,7 +1090,10 @@ function ProfilePage() {
 
             {/* Communication Style */}
             <div>
-              <label htmlFor="editCommunicationStyle" className="mb-1.5 block text-sm font-medium text-gray-300">
+              <label
+                htmlFor="editCommunicationStyle"
+                className="mb-1.5 block text-sm font-medium text-gray-300"
+              >
                 Communication Style
               </label>
               <select
@@ -988,7 +1111,10 @@ function ProfilePage() {
 
             {/* Lifestyle */}
             <div>
-              <label htmlFor="editLifestyle" className="mb-1.5 block text-sm font-medium text-gray-300">
+              <label
+                htmlFor="editLifestyle"
+                className="mb-1.5 block text-sm font-medium text-gray-300"
+              >
                 Lifestyle
               </label>
               <select
@@ -1007,7 +1133,10 @@ function ProfilePage() {
 
             {/* Dating Goals */}
             <div>
-              <label htmlFor="editDatingGoals" className="mb-1.5 block text-sm font-medium text-gray-300">
+              <label
+                htmlFor="editDatingGoals"
+                className="mb-1.5 block text-sm font-medium text-gray-300"
+              >
                 Dating Goals
               </label>
               <select
@@ -1019,14 +1148,19 @@ function ProfilePage() {
                 <option value="">Prefer not to say</option>
                 <option value="long_term">Long-term relationship</option>
                 <option value="casual">Casual dating</option>
-                <option value="still_figuring_it_out">Still figuring it out</option>
+                <option value="still_figuring_it_out">
+                  Still figuring it out
+                </option>
                 <option value="new_connections">New connections</option>
               </select>
             </div>
 
             {/* College */}
             <div>
-              <label htmlFor="editCollege" className="mb-1.5 block text-sm font-medium text-gray-300">
+              <label
+                htmlFor="editCollege"
+                className="mb-1.5 block text-sm font-medium text-gray-300"
+              >
                 College
               </label>
               <input
@@ -1041,7 +1175,10 @@ function ProfilePage() {
 
             {/* Occupation */}
             <div>
-              <label htmlFor="editOccupation" className="mb-1.5 block text-sm font-medium text-gray-300">
+              <label
+                htmlFor="editOccupation"
+                className="mb-1.5 block text-sm font-medium text-gray-300"
+              >
                 Occupation
               </label>
               <input
@@ -1057,7 +1194,10 @@ function ProfilePage() {
             {/* Height & Pronouns row */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label htmlFor="editHeight" className="mb-1.5 block text-sm font-medium text-gray-300">
+                <label
+                  htmlFor="editHeight"
+                  className="mb-1.5 block text-sm font-medium text-gray-300"
+                >
                   Height
                 </label>
                 <input
@@ -1070,7 +1210,10 @@ function ProfilePage() {
                 />
               </div>
               <div>
-                <label htmlFor="editPronouns" className="mb-1.5 block text-sm font-medium text-gray-300">
+                <label
+                  htmlFor="editPronouns"
+                  className="mb-1.5 block text-sm font-medium text-gray-300"
+                >
                   Pronouns
                 </label>
                 <input
@@ -1086,7 +1229,10 @@ function ProfilePage() {
 
             {/* Hobbies */}
             <div>
-              <label htmlFor="editHobbies" className="mb-1.5 block text-sm font-medium text-gray-300">
+              <label
+                htmlFor="editHobbies"
+                className="mb-1.5 block text-sm font-medium text-gray-300"
+              >
                 Hobbies
               </label>
               <textarea
@@ -1101,11 +1247,16 @@ function ProfilePage() {
 
             {/* Expanded Bio Section */}
             <div className="rounded-lg border border-white/5 bg-gray-800/30 p-4">
-              <h3 className="mb-3 text-sm font-semibold text-gray-300">💭 Your Vibe</h3>
+              <h3 className="mb-3 text-sm font-semibold text-gray-300">
+                💭 Your Vibe
+              </h3>
 
               <div className="space-y-4">
                 <div>
-                  <label htmlFor="editIdealFirstDate" className="mb-1 block text-xs font-medium text-gray-500">
+                  <label
+                    htmlFor="editIdealFirstDate"
+                    className="mb-1 block text-xs font-medium text-gray-500"
+                  >
                     Ideal First Date
                   </label>
                   <textarea
@@ -1118,7 +1269,10 @@ function ProfilePage() {
                   />
                 </div>
                 <div>
-                  <label htmlFor="editGreenFlags" className="mb-1 block text-xs font-medium text-gray-500">
+                  <label
+                    htmlFor="editGreenFlags"
+                    className="mb-1 block text-xs font-medium text-gray-500"
+                  >
                     Green Flags
                   </label>
                   <textarea
@@ -1131,7 +1285,10 @@ function ProfilePage() {
                   />
                 </div>
                 <div>
-                  <label htmlFor="editRedFlags" className="mb-1 block text-xs font-medium text-gray-500">
+                  <label
+                    htmlFor="editRedFlags"
+                    className="mb-1 block text-xs font-medium text-gray-500"
+                  >
                     Red Flags
                   </label>
                   <textarea
@@ -1144,7 +1301,10 @@ function ProfilePage() {
                   />
                 </div>
                 <div>
-                  <label htmlFor="editObsessions" className="mb-1 block text-xs font-medium text-gray-500">
+                  <label
+                    htmlFor="editObsessions"
+                    className="mb-1 block text-xs font-medium text-gray-500"
+                  >
                     Obsessions
                   </label>
                   <textarea
@@ -1161,13 +1321,14 @@ function ProfilePage() {
 
             {/* Location Section (Edit Mode) */}
             <div className="rounded-lg border border-white/5 bg-gray-800/30 p-4">
-              <h3 className="mb-3 text-sm font-semibold text-gray-300">📍 Location</h3>
+              <h3 className="mb-3 text-sm font-semibold text-gray-300">
+                📍 Location
+              </h3>
 
               {/* Current location display */}
               {editLocationResult && (
                 <p className="mb-3 text-sm text-emerald-400">
-                  📍 {editLocationResult.city}, {editLocationResult.state}
-                  {" "}
+                  📍 {editLocationResult.city}, {editLocationResult.state}{" "}
                   <button
                     type="button"
                     onClick={() => {
@@ -1184,7 +1345,10 @@ function ProfilePage() {
               {/* ZIP Code + Lookup */}
               <div className="flex gap-2">
                 <div className="flex-1">
-                  <label htmlFor="editZipCode" className="mb-1 block text-xs text-gray-500">
+                  <label
+                    htmlFor="editZipCode"
+                    className="mb-1 block text-xs text-gray-500"
+                  >
                     ZIP Code
                   </label>
                   <input
@@ -1224,7 +1388,10 @@ function ProfilePage() {
 
               {/* Max Distance */}
               <div className="mt-4">
-                <label htmlFor="editMaxDistance" className="mb-1 block text-xs text-gray-500">
+                <label
+                  htmlFor="editMaxDistance"
+                  className="mb-1 block text-xs text-gray-500"
+                >
                   Maximum Distance
                 </label>
                 <select
@@ -1247,14 +1414,18 @@ function ProfilePage() {
               <button
                 type="button"
                 onClick={handleCancelEdit}
-                disabled={saving || uploadingIdx !== null || deletingId !== null}
+                disabled={
+                  saving || uploadingIdx !== null || deletingId !== null
+                }
                 className="flex-1 rounded-full border border-gray-600 px-6 py-2.5 text-sm font-semibold text-gray-300 transition hover:border-gray-500 hover:text-white disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                disabled={saving || uploadingIdx !== null || deletingId !== null}
+                disabled={
+                  saving || uploadingIdx !== null || deletingId !== null
+                }
                 className="flex-1 rounded-full bg-rose-600 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-rose-500 disabled:opacity-50"
               >
                 {saving ? "Saving..." : "Save Changes"}
@@ -1309,9 +1480,13 @@ function ProfilePage() {
                     Communication
                   </span>
                   <p className="mt-1 text-sm font-semibold text-gray-100">
-                    {user.communication_style === "texter" ? "Texting" :
-                     user.communication_style === "caller" ? "Phone Calls" :
-                     user.communication_style === "either" ? "Either" : "—"}
+                    {user.communication_style === "texter"
+                      ? "Texting"
+                      : user.communication_style === "caller"
+                        ? "Phone Calls"
+                        : user.communication_style === "either"
+                          ? "Either"
+                          : "—"}
                   </p>
                 </div>
                 <div className="rounded-lg border border-white/5 bg-gray-800/40 p-4">
@@ -1319,10 +1494,15 @@ function ProfilePage() {
                     Lifestyle
                   </span>
                   <p className="mt-1 text-sm font-semibold text-gray-100">
-                    {user.lifestyle === "active" ? "Active" :
-                     user.lifestyle === "chill" ? "Chill" :
-                     user.lifestyle === "social" ? "Social" :
-                     user.lifestyle === "homebody" ? "Homebody" : "—"}
+                    {user.lifestyle === "active"
+                      ? "Active"
+                      : user.lifestyle === "chill"
+                        ? "Chill"
+                        : user.lifestyle === "social"
+                          ? "Social"
+                          : user.lifestyle === "homebody"
+                            ? "Homebody"
+                            : "—"}
                   </p>
                 </div>
                 <div className="rounded-lg border border-white/5 bg-gray-800/40 p-4">
@@ -1330,10 +1510,15 @@ function ProfilePage() {
                     Dating Goals
                   </span>
                   <p className="mt-1 text-sm font-semibold text-gray-100">
-                    {user.dating_goals === "long_term" ? "Long Term" :
-                     user.dating_goals === "casual" ? "Casual" :
-                     user.dating_goals === "still_figuring_it_out" ? "Figuring Out" :
-                     user.dating_goals === "new_connections" ? "New Connections" : "—"}
+                    {user.dating_goals === "long_term"
+                      ? "Long Term"
+                      : user.dating_goals === "casual"
+                        ? "Casual"
+                        : user.dating_goals === "still_figuring_it_out"
+                          ? "Figuring Out"
+                          : user.dating_goals === "new_connections"
+                            ? "New Connections"
+                            : "—"}
                   </p>
                 </div>
               </div>
@@ -1363,7 +1548,11 @@ function ProfilePage() {
               )}
 
               {/* Optional Field Chips */}
-              {(user.college || user.occupation || user.hobbies || user.height || user.pronouns) && (
+              {(user.college ||
+                user.occupation ||
+                user.hobbies ||
+                user.height ||
+                user.pronouns) && (
                 <div className="flex flex-wrap gap-2">
                   {user.college && (
                     <span className="inline-flex items-center gap-1 rounded-full border border-gray-700 bg-gray-800/50 px-3 py-1 text-xs text-gray-300">
@@ -1394,7 +1583,10 @@ function ProfilePage() {
               )}
 
               {/* Expanded Bio Cards */}
-              {(user.ideal_first_date || user.green_flags || user.red_flags || user.obsessions) && (
+              {(user.ideal_first_date ||
+                user.green_flags ||
+                user.red_flags ||
+                user.obsessions) && (
                 <div className="space-y-3">
                   {user.ideal_first_date && (
                     <CollapsibleCard
@@ -1479,10 +1671,12 @@ function ProfilePage() {
 
             {/* ── Delete Account ── */}
             <div className="mt-12 border-t border-red-500/20 pt-8">
-              <h3 className="text-lg font-semibold text-red-400">Danger Zone</h3>
+              <h3 className="text-lg font-semibold text-red-400">
+                Danger Zone
+              </h3>
               <p className="mt-1 text-sm text-gray-500">
-                Permanently delete your account, photos, grade, and all associated
-                data. This action cannot be undone.
+                Permanently delete your account, photos, grade, and all
+                associated data. This action cannot be undone.
               </p>
               <button
                 type="button"
@@ -1506,12 +1700,15 @@ function ProfilePage() {
                     tabIndex={-1}
                     className="mx-4 w-full max-w-sm rounded-2xl bg-gray-900 p-6 shadow-2xl"
                   >
-                    <h2 id="delete-account-title" className="text-lg font-bold text-white">
+                    <h2
+                      id="delete-account-title"
+                      className="text-lg font-bold text-white"
+                    >
                       Delete your account?
                     </h2>
                     <p className="mt-2 text-sm text-gray-400">
-                      This permanently deletes your account, photos, grade, matches,
-                      and messages. This action cannot be undone.
+                      This permanently deletes your account, photos, grade,
+                      matches, and messages. This action cannot be undone.
                     </p>
                     {deleteError && (
                       <p

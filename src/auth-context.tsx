@@ -1,14 +1,29 @@
-import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useCallback,
+  type ReactNode,
+} from "react";
 import { getCsrfToken } from "~/csrf-client";
 
 export type AuthResponseState = "authenticated" | "anonymous" | "error";
 
-export function classifyAuthResponse(status: number, payload: unknown): AuthResponseState {
+export function classifyAuthResponse(
+  status: number,
+  payload: unknown,
+): AuthResponseState {
   if (status === 401) return "anonymous";
   if (status < 200 || status >= 300) return "error";
-  if (!payload || typeof payload !== "object" || !("user" in payload)) return "error";
+  if (!payload || typeof payload !== "object" || !("user" in payload))
+    return "error";
   const user = (payload as { user: unknown }).user;
-  return user === null || (typeof user === "object" && user !== null) ? (user === null ? "anonymous" : "authenticated") : "error";
+  return user === null || (typeof user === "object" && user !== null)
+    ? user === null
+      ? "anonymous"
+      : "authenticated"
+    : "error";
 }
 
 export interface SafeUser {
@@ -49,8 +64,15 @@ export interface SafeUser {
   location_city?: string;
   location_state?: string;
   distance_km?: number;
-  photos?: { id: number; photo_path: string; sort_order: number; is_primary: boolean }[];
+  photos?: {
+    id: number;
+    photo_path: string;
+    sort_order: number;
+    is_primary: boolean;
+  }[];
   badges?: { id: string; label: string; emoji: string }[];
+  verification_status: "unverified" | "pending" | "verified";
+  verification_verified_at: string | null;
 }
 
 interface AuthState {
@@ -79,7 +101,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<SafeUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState(false);
-  const [pushPermission, setPushPermission] = useState<NotificationPermission>("default");
+  const [pushPermission, setPushPermission] =
+    useState<NotificationPermission>("default");
   const [pushSubscribed, setPushSubscribed] = useState(false);
 
   const refetch = async () => {
@@ -94,7 +117,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // A server outage must not look like a logout. Keep a known user usable.
         setAuthError(true);
       } else {
-        if (!data || (data.user !== null && (!data.user || typeof data.user !== "object"))) {
+        if (
+          !data ||
+          (data.user !== null && (!data.user || typeof data.user !== "object"))
+        ) {
           setAuthError(true);
         } else {
           setUser(data.user);
