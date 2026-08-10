@@ -24,6 +24,7 @@ import {
   updateSubscriptionStatus,
   updateUserStripeInfo,
   getUserByStripeCustomerId,
+  getUserByVerificationSessionId, startVerificationSession, updateVerificationOutcome,
   getUsersByGradeRange,
   getUsersWith8020Matching,
   recordLike,
@@ -2084,6 +2085,37 @@ async function handleLikedMe(req: Request): Promise<Response> {
   return json({ paywalled: false, likers: safeLikers });
 }
 
+// ── Stripe Identity verification ───────────────────────────────
+function identityRequirements(): { type: "document"; require_matching_selfie?: boolean } {
+  const configured = (process.env.STRIPE_IDENTITY_REQUIREMENTS || "document").trim().toLowerCase();
+  return { type: "document", ...(configured === "document_selfie" ? { require_matching_selfie: true } : {}) };
+}
+
+async function handleVerificationSession(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user) return json({ error: "Unauthorized" }, 401);
+  if (user.verification_status === "verified") return json({ error: "Already verified", verified: true }, 409);
+  if (user.verification_status === "pending" && user.verification_session_id) {
+    return json({ id: user.verification_session_id, status: "pending", error: "Verification already in progress" }, 409);
+  }
+  const stripe = getStripe();
+  if (!stripe) return json({ error: "Stripe is not configured" }, 503);
+  try {
+    const requirements = identityRequirements();
+    const session = await stripe.identity.verificationSessions.create({
+      type: requirements.type,
+      options: { document: { require_matching_selfie: requirements.require_matching_selfie ?? false } },
+      metadata: { user_id: String(user.id) },
+    });
+    const stored = await startVerificationSession(user.id, session.id);
+    if (!stored) return json({ error: "Verification already in progress" }, 409);
+    return json({ client_secret: session.client_secret, id: session.id });
+  } catch (err) {
+    logError(EVENTS.STRIPE_WEBHOOK_PROCESSING_FAILED, { err });
+    return json({ error: "Unable to start verification" }, 502);
+  }
+}
+
 // ── Stripe Webhook ─────────────────────────────────────────────
 
 function getStripe(): Stripe | null {
@@ -2132,6 +2164,14 @@ async function handleStripeWebhook(req: Request): Promise<Response> {
 
   try {
     switch (event.type) {
+      case "identity.verification_session.verified":
+      case "identity.verification_session.requires_input":
+      case "identity.verification_session.canceled": {
+        const session = event.data.object as Stripe.Identity.VerificationSession;
+        const user = await getUserByVerificationSessionId(session.id);
+        if (user) await updateVerificationOutcome(user.id, session.id, event.type.endsWith(".verified") ? "verified" : "unverified");
+        break;
+      }
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
         const customerEmail = session.customer_details?.email;
@@ -3096,6 +3136,12 @@ export async function handleApiRoute(
   // Liked Me
   if (pathname === "/api/matches/liked-me" && method === "GET") {
     return handleLikedMe(req);
+  }
+
+  if (pathname === "/api/verification/session" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
+    return handleVerificationSession(req);
   }
 
   // Stripe webhook (unauthenticated — validated by Stripe signature, no CSRF)

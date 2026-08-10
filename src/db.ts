@@ -95,6 +95,10 @@ export async function initTables(): Promise<void> {
       subscription_expires_at TIMESTAMPTZ,
       stripe_customer_id TEXT,
       stripe_subscription_id TEXT,
+      verification_status TEXT NOT NULL DEFAULT 'unverified',
+      verification_session_id TEXT,
+      verification_verified_at TIMESTAMPTZ,
+      verification_session_created_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `;
@@ -518,6 +522,10 @@ export interface User {
   subscription_expires_at: string | null;
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
+  verification_status: "unverified" | "pending" | "verified";
+  verification_session_id: string | null;
+  verification_verified_at: string | null;
+  verification_session_created_at: string | null;
   regrades_available: number;
   boost_until: string | null;
   date_of_birth: string | null;
@@ -684,6 +692,24 @@ export async function getUserByEmail(email: string): Promise<User | null> {
 export async function getUserById(id: number): Promise<User | null> {
   const rows = await sql()`SELECT * FROM users WHERE id = ${id}`;
   return rows.length > 0 ? (rows[0] as unknown as User) : null;
+}
+
+export async function getUserByVerificationSessionId(sessionId: string): Promise<User | null> {
+  const rows = await sql()`SELECT * FROM users WHERE verification_session_id = ${sessionId}`;
+  return rows.length > 0 ? (rows[0] as unknown as User) : null;
+}
+
+export async function startVerificationSession(userId: number, sessionId: string): Promise<User | null> {
+  const rows = await sql()`
+    UPDATE users SET verification_status = 'pending', verification_session_id = ${sessionId},
+      verification_session_created_at = NOW(), verification_verified_at = NULL
+    WHERE id = ${userId} AND COALESCE(verification_status, 'unverified') <> 'pending'
+    RETURNING *`;
+  return rows.length > 0 ? (rows[0] as unknown as User) : null;
+}
+
+export async function updateVerificationOutcome(userId: number, sessionId: string, outcome: "verified" | "unverified"): Promise<void> {
+  await sql()`UPDATE users SET verification_status = ${outcome}, verification_session_id = ${sessionId}, verification_verified_at = ${outcome === 'verified' ? sql()`NOW()` : sql()`NULL`} WHERE id = ${userId}`;
 }
 
 export async function updateUserProfile(
