@@ -15,7 +15,7 @@ export class VercelPrivateReviewProvider implements PrivateReviewProvider {
   }
   async put(objectKey: string, bytes: Uint8Array, contentType: string): Promise<void> {
     const { put } = await this.client();
-    await put(this.key(objectKey), bytes, { access: "private", token: this.token, contentType, addRandomSuffix: false });
+    await put(this.key(objectKey), bytes, { access: "private", token: this.token, contentType, addRandomSuffix: false, allowOverwrite: true });
   }
   async get(objectKey: string): Promise<Uint8Array> {
     const { get } = await this.client();
