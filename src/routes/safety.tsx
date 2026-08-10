@@ -82,6 +82,15 @@ function SafetyTips() {
 
         <section className="rounded-lg border border-red-500/20 bg-red-500/5 p-6">
           <h2 className="mb-3 flex items-center gap-2 text-lg font-semibold text-red-400">
+            <span>🛑</span> Exploitation &amp; Trafficking
+          </h2>
+          <p className="text-gray-300">
+            GradeDate has zero tolerance for human trafficking and child sexual abuse material. If you or someone you know may be a victim of trafficking, contact the National Human Trafficking Hotline (1-888-373-7888, text HELP to 233733, humantraffickinghotline.org) or your local emergency services. If you see content that may involve a minor, report it immediately using the Report button.
+          </p>
+        </section>
+
+        <section className="rounded-lg border border-red-500/20 bg-red-500/5 p-6">
+          <h2 className="mb-3 flex items-center gap-2 text-lg font-semibold text-red-400">
             <span>🚨</span> Emergency
           </h2>
           <p className="text-gray-300">

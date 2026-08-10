@@ -8,7 +8,7 @@ function AcceptableUsePolicy() {
   return (
     <div className="mx-auto max-w-3xl px-4 py-16">
       <h1 className="mb-2 text-3xl font-bold text-white">Acceptable Use Policy</h1>
-      <p className="mb-10 text-sm text-gray-400">Last updated: August 9, 2026</p>
+      <p className="mb-10 text-sm text-gray-400">Last updated: August 10, 2026</p>
 
       <div className="space-y-8 text-gray-300">
         <section>
@@ -68,9 +68,31 @@ function AcceptableUsePolicy() {
         </section>
 
         <section>
-          <h2 className="mb-3 text-xl font-semibold text-white">Minors and Underage Content</h2>
+          <h2 className="mb-3 text-xl font-semibold text-white">Minors and Child Safety</h2>
           <p>
-            GradeDate is strictly for adults 18 and older. Minors and underage content are strictly prohibited. Reports involving an underage user or underage content receive the highest priority: affected content is immediately hidden and the account is locked pending review.
+            GradeDate is strictly for adults 18 and older. Anyone under 18 may not use the Service; underage access is prohibited.
+          </p>
+          <p className="mt-2">
+            We have zero tolerance for child sexual abuse material (CSAM), the solicitation of minors, or any content depicting or involving minors in a sexualized or exploitative way.
+          </p>
+          <p className="mt-2">
+            Where we become aware of apparent CSAM or the solicitation of a minor, we immediately hide the affected content, lock the account pending review, preserve the evidence, and report it to the National Center for Missing &amp; Exploited Children (NCMEC) and/or the appropriate law enforcement authorities, as required by applicable law (e.g., 18 U.S.C. § 2258A in the United States).
+          </p>
+          <p className="mt-2">
+            Underage reports receive the highest priority: affected content is immediately hidden and the account is locked pending review.
+          </p>
+        </section>
+
+        <section>
+          <h2 className="mb-3 text-xl font-semibold text-white">Human Trafficking and Exploitation</h2>
+          <p>
+            We have zero tolerance for human trafficking, sex trafficking, forced labor, or any form of exploitation.
+          </p>
+          <p className="mt-2">
+            Any user found to be using GradeDate to facilitate trafficking, exploitation, or modern slavery will have their account permanently removed and the matter reported to law enforcement.
+          </p>
+          <p className="mt-2">
+            If you or someone you know may be a victim of human trafficking, contact the National Human Trafficking Hotline at 1-888-373-7888 (US), text &quot;HELP&quot; to 233733, or visit humantraffickinghotline.org; if you are outside the US, contact your local emergency services or national hotline.
           </p>
         </section>
 
