@@ -563,6 +563,9 @@ function AppShell() {
             <Link to="/legal" className="transition hover:text-gray-300">
               Law Enforcement
             </Link>
+            <Link to="/takedown" className="transition hover:text-gray-300">
+              Takedown Process
+            </Link>
           </div>
         </div>
       </footer>
