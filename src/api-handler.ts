@@ -43,6 +43,8 @@ import {
   updateMatchLeagueScore,
   createMessage,
   getMessages,
+  getMessageById,
+  hasUserReportedMessage,
   getUnreadMessageCount,
   markMessagesRead,
   upsertMessageModerationFlag, hideMessage, releaseMessage, getMessageModerationFlagQueue, getMessageModerationContext, reviewMessageModerationFlag,
@@ -134,7 +136,7 @@ import { canReviewPhoto, canTransitionQuarantine, isQuarantineStatus, privateRev
 import { issueReviewAccess, readReviewPhoto, quarantinePhoto, privateReviewReady, ReviewAccessDeniedError } from "./private-review-storage";
 import { getPrivateReviewProvider } from "./private-review-provider";
 import { scanPhoto, policyForPhotoScan } from "./photo-moderation";
-import { scanMessage, scanMessageHeuristics, policyForMessageScan } from "./message-moderation";
+import { scanMessage, scanMessageHeuristics, policyForMessageScan, messageFlagTypeForReportReason, userReportPolicyForClassification } from "./message-moderation";
 import { isSuspensionReason, isSuspensionDuration, isAppealStatus, canReviewAppeal, canOverrideSuspension, durationEnds, APPEAL_TEXT_MAX } from "./suspensions";
 import { hasPermission, isSuspended, isSuspensionException, privilegedMfaReady, type PrivilegedRole } from "./safety";
 import { registrationOptions, authenticationOptions, verifyRegistration, verifyAuthentication, MFA_CHALLENGE_TTL_MS } from "./webauthn-mfa";
@@ -1763,6 +1765,53 @@ async function handleReport(req: Request): Promise<Response> {
   const reason = body?.reason;
   const details = body?.details;
   const targetPhotoId = body?.photo_id;
+  const targetMessageId = body?.message_id;
+
+  // Message reports: the reported user is derived from the message itself,
+  // never from a client-supplied user_id, so a message can only be reported
+  // by a participant in its match and never by its sender.
+  if (targetMessageId !== undefined) {
+    if (!Number.isInteger(targetMessageId) || targetMessageId < 1) return json({ error: "Invalid message reference" }, 400);
+    if (!isReportReason(reason)) {
+      return json({
+        error: `Invalid reason. Must be one of: ${VALID_REPORT_REASONS.join(", ")}`,
+      }, 400);
+    }
+    if (details !== undefined && (typeof details !== "string" || details.length > REPORT_DETAILS_MAX)) return json({ error: "details is too long" }, 400);
+    const message = await getMessageById(targetMessageId);
+    if (!message) return json({ error: "Message not found" }, 404);
+    const match = await getMatchById(message.match_id);
+    if (!match || (match.user1_id !== user.id && match.user2_id !== user.id)) return json({ error: "You are not a participant in this match" }, 403);
+    if (message.sender_id === user.id) return json({ error: "You cannot report your own message" }, 400);
+    const rateLimitResponse = checkRateLimit(req, "report", { maxRequests: REPORT_RATE_LIMIT, windowMs: 15 * 60 * 1000 });
+    if (rateLimitResponse) return rateLimitResponse;
+    if (await hasUserReportedMessage(user.id, message.id)) return json({ error: "This message has already been reported" }, 409);
+    let reportId: string;
+    try {
+      reportId = await reportUser(user.id, message.sender_id, reason, null, details ?? null, message.id);
+      const classification = messageFlagTypeForReportReason(reason);
+      const policy = userReportPolicyForClassification(classification);
+      // Surface the user report in the admin message-moderation queue exactly
+      // like a heuristic/provider flag, with the protective action applied.
+      await upsertMessageModerationFlag(message.id, message.sender_id, message.match_id, classification, "user_report", 1, null, ["user_report"], policy.lockAccount ? "lock_account" : policy.hide ? "hide" : "review");
+      if (policy.hide) await hideMessage(message.id, `user_report:${classification}`);
+      if (policy.lockAccount) await recordAdminAuditEvent({ actorUserId: user.id, action: "message_moderation.enforcement", targetType: "message", targetId: String(message.id), metadata: { classification, action: "lock_account", source: "user_report" } });
+      // Underage message reports follow the same zero-tolerance protective
+      // action as underage photo reports: quarantine every target photo and
+      // lock the account pending review.
+      if (reason === "underage") {
+        await quarantineUserPhotosForUnderage(message.sender_id, reportId);
+        const suspension = await createSuspension({ userId: message.sender_id, reason: "underage", duration: "indefinite", endsAt: null, actorUserId: user.id, sourceReportId: reportId });
+        await recordAdminAuditEvent({ actorUserId: null, action: "underage.enforcement", targetType: "user", targetId: String(message.sender_id), metadata: { report_id: reportId, suspension_id: String(suspension.id) } });
+      }
+    } catch (err) {
+      logError(EVENTS.REPORT_FAILED, { reporter_id: user.id, reason, err });
+      throw err;
+    }
+    logInfo(EVENTS.REPORT_SUBMITTED, { reporter_id: user.id, reason, target: "message" });
+    logInfo(EVENTS.MODERATION_REPORT_RECEIVED, { reporter_id: user.id, reason });
+    return json({ success: true });
+  }
 
   if (!targetId || typeof targetId !== "number" || !Number.isInteger(targetId)) {
     return json({ error: "user_id is required" }, 400);

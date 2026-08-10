@@ -1,6 +1,6 @@
 import { logInfo, logWarn } from "./observability";
 
-export const MESSAGE_FLAG_TYPES = ["underage_solicitation","csam_or_underage","trafficking_or_exploitation","impersonation","contact_exchange","sexual_solicitation","spam_or_scam"] as const;
+export const MESSAGE_FLAG_TYPES = ["underage_solicitation","csam_or_underage","trafficking_or_exploitation","impersonation","contact_exchange","sexual_solicitation","spam_or_scam","harassment_or_abuse","inappropriate_or_explicit","other"] as const;
 export type MessageFlagType = typeof MESSAGE_FLAG_TYPES[number];
 export type MessageScanResult = { classification: MessageFlagType | "clean" | "error"; confidence: number | null; matchedRules: string[]; providerRef: string | null; source: "heuristic" | "provider" };
 const clamp=(n:unknown)=>typeof n==="number"&&Number.isFinite(n)?Math.max(0,Math.min(1,n)):null;
@@ -24,3 +24,23 @@ export function classifyMessageScan(payload:unknown):MessageScanResult { if(!pay
 export function messageModerationConfigured(env:Record<string,string|undefined>=process.env){return !!env.MODERATION_MESSAGE_PROVIDER;}
 export async function scanMessage(content:string,env:Record<string,string|undefined>=process.env,fetcher:typeof fetch=fetch):Promise<MessageScanResult>{const url=env.MODERATION_MESSAGE_PROVIDER;if(!url){logInfo("message_moderation.disabled",{});return {classification:"clean",confidence:null,matchedRules:[],providerRef:null,source:"provider"};}const c=new AbortController(), timer=setTimeout(()=>c.abort(),15000);try{const r=await fetcher(url,{method:"POST",signal:c.signal,headers:{"content-type":"application/json",...(env.MODERATION_MESSAGE_API_KEY?{authorization:`Bearer ${env.MODERATION_MESSAGE_API_KEY}`}:{})},body:JSON.stringify({text:content})});if(!r.ok)throw Error(`provider_http_${r.status}`);return classifyMessageScan(await r.json());}catch(error){logWarn("message_moderation.scan_failed",{error:error instanceof Error?error.message:"unknown"});return {classification:"error",confidence:null,matchedRules:[],providerRef:null,source:"provider"};}finally{clearTimeout(timer);}}
 export function policyForMessageScan(r:MessageScanResult){if(r.classification==="underage_solicitation"||r.classification==="csam_or_underage")return {hide:true,lockAccount:true,urgent:true};if(r.classification==="trafficking_or_exploitation")return {hide:true,lockAccount:false,urgent:true};return {hide:false,lockAccount:false,urgent:false};}
+/** Map a user-facing report reason to the message-moderation classification
+ * used by the admin queue. Unknown/absent reasons fall back to "other" so a
+ * user report always lands in the queue with a stable flag type. */
+export const USER_REPORT_FLAG_MAP: Record<string, MessageFlagType> = {
+  underage: "csam_or_underage",
+  spam: "spam_or_scam",
+  fake_profile: "impersonation",
+  harassment: "harassment_or_abuse",
+  inappropriate_photo: "inappropriate_or_explicit",
+  other: "other",
+};
+export function messageFlagTypeForReportReason(reason: string): MessageFlagType {
+  return USER_REPORT_FLAG_MAP[reason] ?? "other";
+}
+/** Reuse the existing zero-tolerance message policy so a user-reported
+ * underage/CSAM message gets exactly the same protective action (hide +
+ * lock_account) as a heuristically or provider-flagged one. */
+export function userReportPolicyForClassification(classification: MessageFlagType): { hide: boolean; lockAccount: boolean; urgent: boolean } {
+  return policyForMessageScan({ classification, confidence: 1, matchedRules: [], providerRef: null, source: "heuristic" });
+}
