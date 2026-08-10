@@ -1,5 +1,6 @@
 import type { Server } from "bun";
 import { originFromUrl, resolveSiteUrl } from "./site-url";
+import { PREMIUM_PRICE_ID } from "./canonical-entitlements";
 import { deriveCoachingTips } from "./coaching";
 import { topPercentLabel } from "./percentile";
 import { validateUnmatchRequest } from "./unmatch-flow";
@@ -151,12 +152,10 @@ import {
 
 // ── Stripe constants ──────────────────────────────────────────
 
-/**
- * Stripe Price ID for the GradeDate Premium monthly subscription ($5.99/mo).
- * Created via scripts/create-stripe-product.ts. Update if recreating the product.
- * Also used as the default for Founders Club checkout.
- */
-const PREMIUM_PRICE_ID = "price_1TvMPLDtCG0wmyJUuL2BtfhU";
+// PREMIUM_PRICE_ID is defined in ./canonical-entitlements and overridable via
+// the PREMIUM_PRICE_ID env var (the owner's live Stripe price; falls back to
+// the legacy hardcoded id when unset). Used for subscription checkout and as
+// the default for Founders Club checkout.
 
 // ── Node-compatible password hashing ───────────────────────────
 
