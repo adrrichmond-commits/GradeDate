@@ -387,6 +387,13 @@ export async function initTables(): Promise<void> {
     retention_until TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '30 days'), private_object_key TEXT, private_content_type TEXT DEFAULT 'image/jpeg', private_deleted_at TIMESTAMPTZ, legal_hold BOOLEAN NOT NULL DEFAULT false
   )`;
   try { await sql()`CREATE INDEX IF NOT EXISTS photo_moderation_queue_idx ON photo_moderation_cases(status, created_at)`; } catch {}
+  await sql()`CREATE TABLE IF NOT EXISTS moderation_flags (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(), photo_id INTEGER NOT NULL REFERENCES user_photos(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, flag_type TEXT NOT NULL, confidence REAL, provider_ref TEXT,
+    status TEXT NOT NULL DEFAULT 'new', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), reviewed_at TIMESTAMPTZ, reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    UNIQUE(photo_id, flag_type)
+  )`;
+  try { await sql()`CREATE INDEX IF NOT EXISTS moderation_flags_queue_idx ON moderation_flags(status, created_at)`; } catch {}
   try { await sql()`ALTER TABLE photo_moderation_cases ADD COLUMN IF NOT EXISTS private_object_key TEXT`; } catch {}
   try { await sql()`ALTER TABLE photo_moderation_cases ADD COLUMN IF NOT EXISTS private_content_type TEXT DEFAULT 'image/jpeg'`; } catch {}
   try { await sql()`ALTER TABLE photo_moderation_cases ADD COLUMN IF NOT EXISTS private_deleted_at TIMESTAMPTZ`; } catch {}
@@ -1933,6 +1940,12 @@ export async function transitionReport(id: string, status: string, actorId: numb
   return actorId;
 }
 
+export async function upsertModerationFlag(photoId: number, userId: number, flagType: string, confidence: number | null, providerRef: string | null, status = "new") {
+  const rows = await sql()`INSERT INTO moderation_flags (photo_id,user_id,flag_type,confidence,provider_ref,status) VALUES (${photoId},${userId},${flagType},${confidence},${providerRef},${status}) ON CONFLICT (photo_id,flag_type) DO UPDATE SET confidence=EXCLUDED.confidence, provider_ref=EXCLUDED.provider_ref WHERE moderation_flags.status='new' RETURNING id, photo_id, user_id, flag_type, confidence, provider_ref, status, created_at`;
+  return rows[0] ?? null;
+}
+export async function getModerationFlagQueue(status?: string) { return sql()`SELECT id, photo_id, user_id, flag_type, confidence, provider_ref, status, created_at, reviewed_at, reviewed_by FROM moderation_flags WHERE (${status ?? null} IS NULL OR status=${status ?? null}) ORDER BY created_at ASC LIMIT 200`; }
+export async function reviewModerationFlag(id: string, status: string, reviewerId: number) { const rows = await sql()`UPDATE moderation_flags SET status=${status}, reviewed_at=NOW(), reviewed_by=${reviewerId} WHERE id=${id} RETURNING id, status`; return rows[0] ?? null; }
 export async function createPhotoModerationCase(photoId: number, userId: number, source: string, result = "unknown", reason?: string | null) {
   const rows = await sql()`INSERT INTO photo_moderation_cases (photo_id,user_id,source,result,reason,status) VALUES (${photoId},${userId},${source},${result},${reason ?? null},${result === "unsafe" ? "quarantined" : "pending"}) RETURNING id, photo_id, user_id, status, source, result, reason, created_at, updated_at, reviewed_at, retention_until`;
   return rows[0] ?? null;
