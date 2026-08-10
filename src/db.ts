@@ -385,6 +385,7 @@ export async function initTables(): Promise<void> {
   try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS actioned_at TIMESTAMPTZ`; } catch {}
   try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ`; } catch {}
   try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS resolution_notes TEXT`; } catch {}
+  try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS target_message_id INTEGER REFERENCES messages(id) ON DELETE SET NULL`; } catch {}
   try { await sql()`CREATE UNIQUE INDEX IF NOT EXISTS reports_id_unique ON reports(id)`; } catch {}
   try { await sql()`CREATE INDEX IF NOT EXISTS reports_queue_idx ON reports(status, priority, created_at)`; } catch {}
   await sql()`CREATE TABLE IF NOT EXISTS photo_moderation_cases (
@@ -1827,6 +1828,16 @@ export async function getMessages(
   return rows as unknown as MessageWithSender[];
 }
 
+export async function getMessageById(id: number): Promise<Message | null> {
+  const rows = await sql()`SELECT * FROM messages WHERE id = ${id}`;
+  return rows.length > 0 ? (rows[0] as unknown as Message) : null;
+}
+
+export async function hasUserReportedMessage(reporterId: number, messageId: number): Promise<boolean> {
+  const rows = await sql()`SELECT 1 FROM reports WHERE reporter_id = ${reporterId} AND target_message_id = ${messageId} LIMIT 1`;
+  return rows.length > 0;
+}
+
 export async function getUnreadMessageCount(userId: number): Promise<number> {
   const rows = await sql()`
     SELECT COUNT(*) AS cnt
@@ -1904,10 +1915,10 @@ export async function getBlockedUserIds(userId: number): Promise<number[]> {
 
 // ── Reporting ─────────────────────────────────────────────────
 
-export async function reportUser(reporterId: number, reportedId: number, reason: string, targetPhotoId?: number | null, details?: string | null): Promise<string> {
+export async function reportUser(reporterId: number, reportedId: number, reason: string, targetPhotoId?: number | null, details?: string | null, targetMessageId?: number | null): Promise<string> {
   const rows = await sql()`
-    INSERT INTO reports (reporter_id, reported_id, reason, target_photo_id, details)
-    VALUES (${reporterId}, ${reportedId}, ${reason}, (SELECT id FROM user_photos WHERE id=${targetPhotoId ?? null} AND user_id=${reportedId}), ${details ?? null}) RETURNING id
+    INSERT INTO reports (reporter_id, reported_id, reason, target_photo_id, details, target_message_id)
+    VALUES (${reporterId}, ${reportedId}, ${reason}, (SELECT id FROM user_photos WHERE id=${targetPhotoId ?? null} AND user_id=${reportedId}), ${details ?? null}, ${targetMessageId ?? null}) RETURNING id
   `;
   if (targetPhotoId) {
     await sql()`INSERT INTO photo_moderation_cases (photo_id, user_id, source, result, reason, status)
@@ -1938,9 +1949,9 @@ export async function quarantineUserPhotosForUnderage(userId: number, reportId: 
   void reportId;
 }
 export async function getReportQueue(status?: string) {
-  return await sql()`SELECT id, reported_id, reason, status, priority, assignee_id, created_at, triaged_at, actioned_at, resolved_at FROM reports WHERE (${status ?? null} IS NULL OR status = ${status ?? null}) ORDER BY CASE priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END, created_at ASC LIMIT 200`;
+  return await sql()`SELECT id, reported_id, reason, target_photo_id, target_message_id, status, priority, assignee_id, created_at, triaged_at, actioned_at, resolved_at FROM reports WHERE (${status ?? null} IS NULL OR status = ${status ?? null}) ORDER BY CASE priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END, created_at ASC LIMIT 200`;
 }
-export async function getReportById(id: string) { const rows = await sql()`SELECT id, reported_id, reason, target_photo_id, details, status, priority, assignee_id, created_at, triaged_at, actioned_at, resolved_at, resolution_notes FROM reports WHERE id = ${id}`; return rows[0] ?? null; }
+export async function getReportById(id: string) { const rows = await sql()`SELECT id, reported_id, reason, target_photo_id, target_message_id, details, status, priority, assignee_id, created_at, triaged_at, actioned_at, resolved_at, resolution_notes FROM reports WHERE id = ${id}`; return rows[0] ?? null; }
 export async function assignReport(id: string, assigneeId: number | null) { await sql()`UPDATE reports SET assignee_id = ${assigneeId} WHERE id = ${id}`; }
 export async function transitionReport(id: string, status: string, actorId: number, notes?: string | null) {
   const stamp = status === 'triaged' ? 'triaged_at' : status === 'actioned' ? 'actioned_at' : (status === 'dismissed' || status === 'closed') ? 'resolved_at' : null;

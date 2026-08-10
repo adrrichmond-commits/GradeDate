@@ -35,6 +35,17 @@ const REPORT_REASONS = [
   { value: "other", label: "Other" },
 ];
 
+// Reasons a user can pick when reporting a specific message. Values are the
+// shared REPORT_REASONS vocabulary (inappropriate_photo = "Inappropriate").
+const MESSAGE_REPORT_REASONS = [
+  { value: "harassment", label: "Harassment" },
+  { value: "underage", label: "Underage" },
+  { value: "spam", label: "Spam" },
+  { value: "fake_profile", label: "Fake Profile" },
+  { value: "inappropriate_photo", label: "Inappropriate" },
+  { value: "other", label: "Other" },
+];
+
 export const Route = createFileRoute("/chat/$matchId")({
   component: ChatPage,
 });
@@ -62,6 +73,16 @@ function ChatPage() {
   const [reportReason, setReportReason] = useState("");
   const [reporting, setReporting] = useState(false);
   const [reportDone, setReportDone] = useState(false);
+  // Per-message report flow — you can report another participant's messages.
+  const [msgReportTarget, setMsgReportTarget] = useState<ChatMessage | null>(null);
+  const closeMsgReport = useCallback(() => setMsgReportTarget(null), []);
+  const msgReportCancelRef = useRef<HTMLButtonElement>(null);
+  const msgReportA11y = useModalAccessibility<HTMLDivElement>(msgReportTarget !== null, closeMsgReport, msgReportCancelRef);
+  const [msgReportReason, setMsgReportReason] = useState("");
+  const [msgReporting, setMsgReporting] = useState(false);
+  const [msgReportState, setMsgReportState] = useState<"pick" | "done" | "error">("pick");
+  const [msgReportError, setMsgReportError] = useState("");
+  const [reportedMessageIds, setReportedMessageIds] = useState<Set<number>>(new Set());
   const [blocking, setBlocking] = useState(false);
   const [blockError, setBlockError] = useState("");
 
@@ -190,6 +211,44 @@ function ChatPage() {
       setBlocking(false);
     }
     if (blocked) setShowMenu(false);
+  };
+
+  const handleMessageReport = async () => {
+    if (!msgReportTarget || !msgReportReason || msgReporting) return;
+    setMsgReporting(true);
+    setMsgReportError("");
+    try {
+      const res = await fetch("/api/users/report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": getCsrfToken() || "" },
+        body: JSON.stringify({ message_id: msgReportTarget.id, reason: msgReportReason }),
+      });
+      if (res.status === 409) {
+        // Already reported (by this user) — treat as reported.
+        setReportedMessageIds((prev) => new Set(prev).add(msgReportTarget.id));
+        setMsgReportState("done");
+        return;
+      }
+      if (res.status === 429) {
+        const data = await res.json().catch(() => null);
+        setMsgReportError(data?.error || "You've sent too many reports. Please try again later.");
+        setMsgReportState("error");
+        return;
+      }
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setMsgReportError(data?.error || "Could not submit the report. Please try again.");
+        setMsgReportState("error");
+        return;
+      }
+      setReportedMessageIds((prev) => new Set(prev).add(msgReportTarget.id));
+      setMsgReportState("done");
+    } catch {
+      setMsgReportError("Network error. Please try again.");
+      setMsgReportState("error");
+    } finally {
+      setMsgReporting(false);
+    }
   };
 
   const requestUnmatch = () => {
@@ -349,19 +408,45 @@ function ChatPage() {
         <div className="space-y-3">
           {messages.map((msg) => {
             const isMe = msg.sender_id === user.id;
+            const alreadyReported = reportedMessageIds.has(msg.id);
             return (
               <div key={msg.id} className={`flex ${isMe ? "justify-end" : "justify-start"}`}>
-                <div
-                  className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm ${
-                    isMe
-                      ? "bg-rose-600 text-white rounded-br-md animate-[slideInRight_0.3s_ease-out]"
-                      : "bg-gray-800 text-gray-100 rounded-bl-md animate-[slideInLeft_0.3s_ease-out]"
-                  }`}
-                >
-                  <p className="whitespace-pre-wrap break-words">{msg.content}</p>
-                  <p className={`mt-1 text-right text-xs ${isMe ? "text-rose-200" : "text-gray-500"}`}>
-                    {formatTime(msg.created_at)}
-                  </p>
+                <div className={`flex max-w-[75%] flex-col gap-1 ${isMe ? "items-end" : "items-start"}`}>
+                  <div
+                    className={`rounded-2xl px-4 py-2.5 text-sm ${
+                      isMe
+                        ? "bg-rose-600 text-white rounded-br-md animate-[slideInRight_0.3s_ease-out]"
+                        : "bg-gray-800 text-gray-100 rounded-bl-md animate-[slideInLeft_0.3s_ease-out]"
+                    }`}
+                  >
+                    <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                    <p className={`mt-1 text-right text-xs ${isMe ? "text-rose-200" : "text-gray-500"}`}>
+                      {formatTime(msg.created_at)}
+                    </p>
+                  </div>
+                  {!isMe && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMsgReportTarget(msg);
+                        setMsgReportReason("");
+                        setMsgReportState("pick");
+                        setMsgReportError("");
+                      }}
+                      disabled={alreadyReported}
+                      aria-label={alreadyReported ? "Message reported" : "Report message"}
+                      className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] transition ${
+                        alreadyReported
+                          ? "cursor-default text-emerald-400/80"
+                          : "text-gray-500 hover:bg-gray-800 hover:text-amber-400"
+                      }`}
+                    >
+                      <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                      </svg>
+                      {alreadyReported ? "Reported" : "Report"}
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -485,6 +570,102 @@ function ChatPage() {
                   className="w-full rounded-full border border-gray-600 px-4 py-2 text-sm text-gray-300 transition hover:border-gray-500"
                 >
                   Close
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Message Report Modal */}
+      {msgReportTarget && (
+        <div {...msgReportA11y} aria-labelledby="chat-msg-report-title" className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div ref={msgReportA11y.containerRef} tabIndex={-1} className="mx-4 w-full max-w-sm rounded-2xl bg-gray-900 p-6 shadow-2xl">
+            <h3 id="chat-msg-report-title" className="text-lg font-bold">Report message</h3>
+            <p className="mt-2 line-clamp-2 rounded-lg border border-gray-700/60 bg-gray-800/60 px-3 py-2 text-xs italic text-gray-400">
+              &ldquo;{msgReportTarget.content}&rdquo;
+            </p>
+            <p className="mt-3 text-sm text-gray-400">
+              {msgReportState === "done"
+                ? "Reported — thanks, our team will review."
+                : "Why are you reporting this message?"}
+            </p>
+
+            {msgReportState === "error" && (
+              <p role="alert" className="mt-2 text-sm text-red-400">{msgReportError}</p>
+            )}
+
+            {msgReportState === "pick" && (
+              <>
+                <div className="mt-4 space-y-2">
+                  {MESSAGE_REPORT_REASONS.map((r) => (
+                    <label
+                      key={r.value}
+                      className={`flex cursor-pointer items-center gap-3 rounded-lg border p-3 text-sm transition ${
+                        msgReportReason === r.value
+                          ? "border-rose-500/50 bg-rose-500/10 text-white"
+                          : "border-gray-700 text-gray-300 hover:border-gray-600"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="msgReportReason"
+                        value={r.value}
+                        checked={msgReportReason === r.value}
+                        onChange={(e) => setMsgReportReason(e.target.value)}
+                        className="accent-rose-500"
+                      />
+                      {r.label}
+                    </label>
+                  ))}
+                </div>
+                <div className="mt-5 flex gap-3">
+                  <button
+                    onClick={closeMsgReport}
+                    ref={msgReportCancelRef}
+                    className="flex-1 rounded-full border border-gray-600 px-4 py-2 text-sm text-gray-300 transition hover:border-gray-500"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleMessageReport}
+                    disabled={!msgReportReason || msgReporting}
+                    className="flex-1 rounded-full bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-500 disabled:opacity-50"
+                  >
+                    {msgReporting ? "Submitting..." : "Submit Report"}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {msgReportState === "done" && (
+              <div className="mt-5" role="status" aria-live="polite">
+                <button
+                  onClick={() => {
+                    closeMsgReport();
+                    setMsgReportState("pick");
+                    setMsgReportReason("");
+                  }}
+                  className="w-full rounded-full border border-gray-600 px-4 py-2 text-sm text-gray-300 transition hover:border-gray-500"
+                >
+                  Close
+                </button>
+              </div>
+            )}
+
+            {msgReportState === "error" && (
+              <div className="mt-5 flex gap-3">
+                <button
+                  onClick={closeMsgReport}
+                  className="flex-1 rounded-full border border-gray-600 px-4 py-2 text-sm text-gray-300 transition hover:border-gray-500"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => { setMsgReportState("pick"); setMsgReportError(""); }}
+                  className="flex-1 rounded-full bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-500"
+                >
+                  Try Again
                 </button>
               </div>
             )}
