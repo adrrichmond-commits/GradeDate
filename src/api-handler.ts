@@ -1904,24 +1904,29 @@ async function handlePhotoModerationMutation(req: Request, id: string): Promise<
   return json({ ok: true, case: redactPhotoCase((updated ?? {}) as any) });
 }
 async function handleMessageModerationQueue(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user || !canReviewPhoto(user.role)) return json({ error: "Forbidden" }, 403);
   const status = new URL(req.url).searchParams.get("status") ?? undefined;
   if (status && !["new","reviewed","dismissed","actioned"].includes(status)) return json({ error: "Invalid status" }, 400);
   const rows = await getMessageModerationFlagQueue(status);
-  await recordAdminAuditEvent({ actorUserId: (await getCurrentUser(req))!.id, action: "message_moderation.queue.read", targetType: "message_moderation" });
+  await recordAdminAuditEvent({ actorUserId: user.id, action: "message_moderation.queue.read", targetType: "message_moderation" });
   return json({ flags: rows });
 }
 async function handleMessageModerationDetail(req: Request, id: string): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user || !canReviewPhoto(user.role)) return json({ error: "Forbidden" }, 403);
   const session = await getCurrentSession(req); const recent = session?.mfa_verified_at && Date.now() - new Date(session.mfa_verified_at).getTime() <= 5 * 60 * 1000;
   if (!recent) return json({ error: "Recent MFA reauthentication required" }, 403);
   const item = await getMessageModerationContext(id); if (!item) return json({ error: "Not found" }, 404);
-  const actor = await getCurrentUser(req)!;
-  await recordAdminAuditEvent({ actorUserId: actor.id, action: "message_moderation.read", targetType: "message_moderation", targetId: id });
+  await recordAdminAuditEvent({ actorUserId: user.id, action: "message_moderation.read", targetType: "message_moderation", targetId: id });
   return json({ flag: item });
 }
 async function handleMessageModerationMutation(req: Request, id: string): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user || !canReviewPhoto(user.role)) return json({ error: "Forbidden" }, 403);
   const session = await getCurrentSession(req); const recent = session?.mfa_verified_at && Date.now() - new Date(session.mfa_verified_at).getTime() <= 5 * 60 * 1000;
   if (!recent) return json({ error: "Recent MFA reauthentication required" }, 403);
-  const actor = await getCurrentUser(req)!; const item = await getMessageModerationContext(id); if (!item) return json({ error: "Not found" }, 404);
+  const actor = user; const item = await getMessageModerationContext(id); if (!item) return json({ error: "Not found" }, 404);
   const body = await req.json().catch(() => null); const action = body?.action;
   if (!["dismiss","keep_hidden","release","lock_account"].includes(action)) return json({ error: "Invalid action" }, 400);
   if (!["new","reviewed","dismissed","actioned"].includes(item.status)) return json({ error: "Invalid transition" }, 409);
