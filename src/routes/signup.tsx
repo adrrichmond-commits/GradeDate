@@ -4,6 +4,7 @@ import { useState, useMemo } from "react";
 import { useAuth } from "~/auth-context";
 import { getCsrfToken } from "~/csrf-client";
 import { getSignupDays } from "~/signup-date";
+import { AgeVerificationCard } from "~/age-verification";
 
 export const Route = createFileRoute("/signup")({
   component: Signup,
@@ -117,7 +118,12 @@ function Signup() {
       const data = await apiFetch<any>("/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, date_of_birth: dateOfBirth, referral_code: referralCode || undefined }),
+        body: JSON.stringify({
+          email,
+          password,
+          date_of_birth: dateOfBirth,
+          referral_code: referralCode || undefined,
+        }),
       });
 
       await refetch();
@@ -147,7 +153,6 @@ function Signup() {
         body: JSON.stringify({ plan: "monthly" }),
       });
 
-
       if (data.url) {
         window.location.href = data.url;
       } else {
@@ -174,6 +179,19 @@ function Signup() {
               Your account is ready. Choose how you want to start.
             </p>
           </div>
+
+          {user && (
+            <div className="mb-6">
+              <AgeVerificationCard user={user} onComplete={refetch} />
+              <button
+                type="button"
+                onClick={handleContinueFree}
+                className="mt-3 w-full text-center text-sm text-gray-500 underline-offset-4 hover:text-gray-300 hover:underline"
+              >
+                Skip for now
+              </button>
+            </div>
+          )}
 
           {error && (
             <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-center text-sm text-red-400">
@@ -212,7 +230,9 @@ function Signup() {
                 </div>
                 <p className="mt-2 text-lg font-bold text-amber-300">
                   Become a Founder{" "}
-                  <span className="text-base font-semibold text-amber-400">$5.99</span>
+                  <span className="text-base font-semibold text-amber-400">
+                    $5.99
+                  </span>
                 </p>
                 <ul className="mt-3 space-y-1.5 text-sm text-amber-200/80">
                   <li className="flex items-start gap-2">
@@ -242,7 +262,9 @@ function Signup() {
           </div>
 
           <p className="mt-6 text-center text-xs text-gray-600">
-            Only 1,000 Founder spots will ever exist. Once they're claimed, the Founders Club closes forever. Cancel anytime — but your price lock is yours forever as long as you stay subscribed.
+            Only 1,000 Founder spots will ever exist. Once they're claimed, the
+            Founders Club closes forever. Cancel anytime — but your price lock
+            is yours forever as long as you stay subscribed.
           </p>
         </div>
       </div>
@@ -260,9 +282,18 @@ function Signup() {
         </div>
 
         <div className="rounded-2xl border border-white/5 bg-gray-900/60 p-8 backdrop-blur-sm">
-          <form onSubmit={handleSubmit} className="space-y-5" aria-describedby={error ? "signup-error" : undefined}>
+          <form
+            onSubmit={handleSubmit}
+            className="space-y-5"
+            aria-describedby={error ? "signup-error" : undefined}
+          >
             {error && (
-              <div id="signup-error" role="alert" aria-live="assertive" className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">
+              <div
+                id="signup-error"
+                role="alert"
+                aria-live="assertive"
+                className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400"
+              >
                 {error}
               </div>
             )}
@@ -400,7 +431,9 @@ function Signup() {
                 className="mb-1.5 block text-sm font-medium text-gray-300"
               >
                 Referral Code{" "}
-                <span className="text-xs font-normal text-gray-500">(optional)</span>
+                <span className="text-xs font-normal text-gray-500">
+                  (optional)
+                </span>
               </label>
               <input
                 id="referralCode"
@@ -412,12 +445,14 @@ function Signup() {
               />
               {referralCode && (
                 <p className="mt-1 text-xs text-amber-400">
-                  🎁 You and your friend will both get 1 month free when you subscribe!
+                  🎁 You and your friend will both get 1 month free when you
+                  subscribe!
                 </p>
               )}
               {search.ref && !referralCode && (
                 <p className="mt-1 text-xs text-green-400">
-                  🎉 You've been invited! Enter the code above to claim your free month.
+                  🎉 You've been invited! Enter the code above to claim your
+                  free month.
                 </p>
               )}
             </div>
@@ -438,7 +473,9 @@ function Signup() {
                     termsError ? "border-red-500" : "border-gray-600"
                   }`}
                 />
-                <span className={`text-sm ${termsError ? "text-red-400" : "text-gray-400"}`}>
+                <span
+                  className={`text-sm ${termsError ? "text-red-400" : "text-gray-400"}`}
+                >
                   I am 18+ and agree to the{" "}
                   <a
                     href="/terms"
@@ -480,7 +517,8 @@ function Signup() {
             </Link>
           </p>
           <p className="mt-4 text-center text-xs text-gray-600">
-            By signing up, you agree to our AI-powered facial grading, which is experimental and subjective.
+            By signing up, you agree to our AI-powered facial grading, which is
+            experimental and subjective.
           </p>
         </div>
       </div>
