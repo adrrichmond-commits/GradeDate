@@ -69,7 +69,7 @@ import {
   getUserPhotos,
   getUserPhotoCount,
   getUserPhotoById, getPhotoModerationCaseForPhoto,
-  getPhotoModerationQueue, getPhotoModerationCase, transitionPhotoModerationCase, createPhotoModerationCase,
+  getPhotoModerationQueue, getPhotoModerationCase, transitionPhotoModerationCase, createPhotoModerationCase, upsertModerationFlag, getModerationFlagQueue, reviewModerationFlag,
   createSuspension, revokeSuspension, getActiveSuspension, createAppeal, getAppeals, reviewAppeal, attachPrivatePhotoObject, markPrivatePhotoDeleted, listExpiredPrivatePhotoCases,
   savePushSubscription,
   getPushSubscriptions,
@@ -131,6 +131,7 @@ import { resolveOwnedPhotoPaths, validateAnonymousGradePath } from "./photo-acce
 import { canReviewPhoto, canTransitionQuarantine, isQuarantineStatus, privateReviewStorageReady, redactPhotoCase,  canUseOwnerAction, canTransition, isReportStatus, isReportPriority, isReportReason, REPORT_DETAILS_MAX, REPORT_RATE_LIMIT } from "./report-queue";
 import { issueReviewAccess, readReviewPhoto, quarantinePhoto, privateReviewReady, ReviewAccessDeniedError } from "./private-review-storage";
 import { getPrivateReviewProvider } from "./private-review-provider";
+import { scanPhoto, policyForPhotoScan } from "./photo-moderation";
 import { isSuspensionReason, isSuspensionDuration, isAppealStatus, canReviewAppeal, canOverrideSuspension, durationEnds, APPEAL_TEXT_MAX } from "./suspensions";
 import { hasPermission, isSuspended, isSuspensionException, privilegedMfaReady, type PrivilegedRole } from "./safety";
 import { registrationOptions, authenticationOptions, verifyRegistration, verifyAuthentication, MFA_CHALLENGE_TTL_MS } from "./webauthn-mfa";
@@ -455,6 +456,24 @@ async function handleMe(req: Request): Promise<Response> {
   return response;
 }
 
+async function moderateUploadedPhoto(photoId: number, userId: number, photoPath: string, bytes: ArrayBuffer, contentType: string): Promise<void> {
+  const result = await scanPhoto(new Uint8Array(bytes), contentType);
+  const policy = policyForPhotoScan(result);
+  if (!policy.flag) return;
+  await upsertModerationFlag(photoId, userId, result.classification === "error" ? "error" : result.classification, result.confidence, result.providerRef, "new");
+  const existingCase = await getPhotoModerationCaseForPhoto(photoId, userId);
+  const caseRecord = existingCase ?? await createPhotoModerationCase(photoId, userId, "automated_photo_scan", result.classification, result.classification);
+  if (!caseRecord || !policy.quarantine || existingCase?.private_object_key) return;
+  const provider = getPrivateReviewProvider();
+  if (!provider || !privateReviewReady()) return;
+  const objectKey = `quarantine/${caseRecord.id}/${photoId}`;
+  await quarantinePhoto(provider, objectKey, new Uint8Array(bytes), contentType);
+  await attachPrivatePhotoObject(String(caseRecord.id), objectKey, contentType);
+  await transitionPhotoModerationCase(String(caseRecord.id), "quarantined", userId, result.classification);
+  if (policy.lockAccount) await createSuspension({ userId, reason: "underage", duration: "indefinite", endsAt: null, actorUserId: null, sourceCaseId: String(caseRecord.id) });
+  void photoPath;
+}
+
 async function handleUpload(req: Request): Promise<Response> {
   const request_id = requestIdFrom(req);
   logInfo(EVENTS.PHOTO_UPLOAD_STARTED, { request_id, user_type: "unknown" });
@@ -547,6 +566,8 @@ async function handleUpload(req: Request): Promise<Response> {
       }
 
       uploadResults.push({ id: photo.id, photo_path: photo.photo_path, sort_order: photo.sort_order, is_primary: photo.is_primary });
+      // Scanner is deliberately asynchronous: provider failures never fail uploads.
+      void moderateUploadedPhoto(photo.id, user.id, storedPath, buffer, file.type).catch((error) => logError(EVENTS.PHOTO_UPLOAD_FAILED, { request_id, reason: "moderation_failed", error: error instanceof Error ? error.message : "unknown" }));
     } else {
       // Anonymous free preview — save to temp/blobs
       const anonId = crypto.randomUUID();
@@ -1800,7 +1821,7 @@ async function handleReportQueue(req: Request): Promise<Response> {
   const status = new URL(req.url).searchParams.get("status") ?? undefined;
   if (status && !isReportStatus(status)) return json({ error: "Invalid status" }, 400);
   await recordAdminAuditEvent({ actorUserId: user.id, action: "report.queue.read", targetType: "report" });
-  return json({ reports: await getReportQueue(status) });
+  return json({ reports: await getReportQueue(status), photo_flags: await getModerationFlagQueue(status === "open" ? "new" : undefined) });
 }
 async function handleReportDetail(req: Request, id: string): Promise<Response> {
   const user = await getCurrentUser(req);
@@ -1836,7 +1857,7 @@ async function handlePhotoModerationQueue(req: Request): Promise<Response> {
   const status = new URL(req.url).searchParams.get("status") ?? undefined;
   if (status && !isQuarantineStatus(status)) return json({ error: "Invalid status" }, 400);
   await recordAdminAuditEvent({ actorUserId: user.id, action: "photo_moderation.queue.read", targetType: "photo_moderation" });
-  return json({ cases: (await getPhotoModerationQueue(status)).map((c: any) => redactPhotoCase(c)) });
+  return json({ cases: (await getPhotoModerationQueue(status)).map((c: any) => redactPhotoCase(c)), flags: await getModerationFlagQueue() });
 }
 async function handlePhotoReviewAccess(req: Request, id: string): Promise<Response> {
   const user = await getCurrentUser(req); const session = await getCurrentSession(req);
