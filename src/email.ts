@@ -25,7 +25,7 @@ function sendFailureReason(error: unknown): "provider_error" | "unknown" {
 }
 
 async function deliver(
-  purpose: "password_reset" | "waitlist" | "contact",
+  purpose: "password_reset" | "waitlist" | "contact" | "beta_invite",
   payload: EmailPayload,
   provider: EmailProvider | null = resend,
 ): Promise<boolean> {
@@ -88,6 +88,44 @@ export function sendWaitlistConfirmation(
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char] ?? char);
+}
+/**
+ * Personal closed-beta invite email. One recipient, one unique invite link —
+ * never a shared list of codes. The waitlist fallback link is derived from the
+ * invite link's origin so it always points at the site the invite came from.
+ */
+export function sendBetaInviteEmail(
+  input: { email: string; inviteUrl: string },
+  provider?: EmailProvider | null,
+): Promise<boolean> {
+  const url = escapeHtml(input.inviteUrl);
+  let waitlistOrigin: string | null = null;
+  try {
+    waitlistOrigin = new URL(input.inviteUrl).origin;
+  } catch { /* fall back to no link */ }
+  const fallback = waitlistOrigin
+    ? `<p>If you're outside the Austin metro area — or the cohort fills up before you sign up — join the waitlist at <a href="${escapeHtml(waitlistOrigin)}">${escapeHtml(waitlistOrigin)}</a> and we'll invite you in a future wave.</p>`
+    : `<p>If you're outside the Austin metro area, join the waitlist at gradedate.app and we'll invite you in a future wave.</p>`;
+  return deliver(
+    "beta_invite",
+    {
+      from: "GradeDate <noreply@gradedate.app>",
+      to: input.email,
+      subject: "Your invite to the GradeDate Austin beta",
+      html: `<p>You're in — your personal invite to the GradeDate Austin beta is ready.</p>
+<p><a href="${url}">${url}</a></p>
+<p>Your invite link is personal to you, so please don't share it.</p>
+<h3>What to expect when you sign up</h3>
+<ul>
+  <li><strong>14 days of Premium free.</strong> Every beta invite includes a free 14-day Premium trial from signup.</li>
+  <li><strong>Age verification is required.</strong> For everyone's safety, you'll need to verify your age with a government ID and a selfie before you can like or message.</li>
+  <li><strong>Austin metro only.</strong> The beta is open to people in the Austin, TX area, and signup checks your location.</li>
+</ul>
+${fallback}
+<p>See you inside,<br>The GradeDate team</p>`,
+    },
+    provider,
+  );
 }
 
 export function sendContactMessage(

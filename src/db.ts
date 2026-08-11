@@ -516,18 +516,23 @@ export async function initTables(): Promise<void> {
   // Closed-beta invite codes (Austin cohort). Each code is a one-time redeemable
   // token tied to the inviter's account so the existing referral reward
   // machinery fires on redemption. The cohort cap is enforced at redemption
-  // time (count of redeemed codes), not at issuance.
+  // time (count of redeemed codes), not at issuance. referrer_user_id is NULL
+  // for plain waitlist invites (no referrer → no referral reward).
   await sql()`
     CREATE TABLE IF NOT EXISTS beta_invite_codes (
       id SERIAL PRIMARY KEY,
       code TEXT UNIQUE NOT NULL,
-      referrer_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      referrer_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
       issued_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       issued_at TIMESTAMPTZ DEFAULT NOW(),
       redeemed_at TIMESTAMPTZ,
       redeemed_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL
     )
   `;
+  try {
+    // Migration for databases created before plain (no-referrer) invites existed.
+    await sql()`ALTER TABLE beta_invite_codes ALTER COLUMN referrer_user_id DROP NOT NULL`;
+  } catch { /* already nullable (or table missing on a fresh path) */ }
   try {
     await sql()`CREATE UNIQUE INDEX IF NOT EXISTS idx_beta_invite_codes_redeemed_by ON beta_invite_codes(redeemed_by_user_id) WHERE redeemed_by_user_id IS NOT NULL`;
   } catch { /* ignore */ }
@@ -2520,9 +2525,11 @@ export function betaCohortCap(): number {
  * Issue beta invite codes. Each code is also inserted into referral_codes
  * (max_uses=1) tied to the same referrer, so redeeming it fires the existing
  * referral reward flow (both users get 1 month Premium when the referee
- * subscribes). Returns the codes that were actually inserted.
+ * subscribes). A null referrerUserId issues a plain code with no referrer —
+ * used for waitlist invites, where the referral reward must never fire.
+ * Returns the codes that were actually inserted.
  */
-export async function issueBetaInviteCodes(input: { codes: string[]; referrerUserId: number; issuedByUserId: number }): Promise<string[]> {
+export async function issueBetaInviteCodes(input: { codes: string[]; referrerUserId: number | null; issuedByUserId: number }): Promise<string[]> {
   const inserted: string[] = [];
   for (const code of input.codes) {
     const row = await sql()`
@@ -2532,11 +2539,13 @@ export async function issueBetaInviteCodes(input: { codes: string[]; referrerUse
       RETURNING id
     `;
     if (row.length === 0) continue;
-    await sql()`
-      INSERT INTO referral_codes (user_id, code, max_uses)
-      VALUES (${input.referrerUserId}, ${code}, 1)
-      ON CONFLICT (code) DO NOTHING
-    `;
+    if (input.referrerUserId != null) {
+      await sql()`
+        INSERT INTO referral_codes (user_id, code, max_uses)
+        VALUES (${input.referrerUserId}, ${code}, 1)
+        ON CONFLICT (code) DO NOTHING
+      `;
+    }
     inserted.push(code);
   }
   return inserted;
@@ -2694,6 +2703,39 @@ export async function confirmWaitlistEntry(email: string): Promise<void> {
     UPDATE waitlist SET confirmed_at = NOW()
     WHERE email = ${email}
   `;
+}
+// ── Waitlist admin (Austin beta launch ops) ────────────────────
+/** Row shape returned to owner/admin waitlist views (no confirmed_at, no PII beyond email). */
+export interface WaitlistAdminEntry {
+  id: number;
+  email: string;
+  zip_code: string | null;
+  created_at: string;
+}
+/** Oldest-first waitlist entries, capped by limit. Used both for admin listing and to pick invite recipients. */
+export async function listWaitlistEntries(input: { limit: number; offset?: number }): Promise<WaitlistAdminEntry[]> {
+  const rows = await sql()`
+    SELECT id, email, zip_code, created_at
+    FROM waitlist
+    ORDER BY created_at ASC, id ASC
+    LIMIT ${input.limit} OFFSET ${input.offset ?? 0}
+  `;
+  return rows as unknown as WaitlistAdminEntry[];
+}
+export async function getWaitlistCount(): Promise<number> {
+  const rows = await sql()`SELECT COUNT(*)::int AS cnt FROM waitlist`;
+  return rows.length > 0 ? Number((rows[0] as { cnt: number }).cnt) : 0;
+}
+/** Specific waitlist entries by id (for targeted invite sends); oldest-first when several match. */
+export async function getWaitlistEntriesByIds(ids: number[]): Promise<WaitlistAdminEntry[]> {
+  if (ids.length === 0) return [];
+  const rows = await sql()`
+    SELECT id, email, zip_code, created_at
+    FROM waitlist
+    WHERE id = ANY(${ids})
+    ORDER BY created_at ASC, id ASC
+  `;
+  return rows as unknown as WaitlistAdminEntry[];
 }
 
 /** Persist a claim nonce before sending it to the browser. Duplicate nonces fail closed. */

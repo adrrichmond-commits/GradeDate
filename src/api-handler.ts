@@ -110,6 +110,9 @@ import {
   redeemBetaInviteCode,
   getBetaInviteStats,
   betaCohortCap,
+  listWaitlistEntries,
+  getWaitlistCount,
+  getWaitlistEntriesByIds,
   grantPaidUpsell,
   createPendingUpsell,
   clearPendingUpsell,
@@ -127,7 +130,17 @@ import {
 } from "../src/db.ts";
 import { sendPasswordResetEmail } from "../src/email.ts";
 import { isGradeCardOwner } from "./grade-card-access";
-import { sendWaitlistConfirmation, sendContactMessage } from "../src/email.ts";
+import { sendWaitlistConfirmation, sendContactMessage, sendBetaInviteEmail } from "../src/email.ts";
+/**
+ * Beta-invite email sender seam (same injectable pattern as fetchFn in
+ * anonymous-grading.ts). Production default is the real Resend path; tests
+ * replace it to capture sends without mocking the email module.
+ */
+type BetaInviteEmailInput = { email: string; inviteUrl: string };
+let betaInviteEmailSender: (input: BetaInviteEmailInput) => Promise<boolean> = (input) => sendBetaInviteEmail(input);
+export function setBetaInviteEmailSenderForTesting(fn: (input: BetaInviteEmailInput) => Promise<boolean>): void {
+  betaInviteEmailSender = fn;
+}
 import { lookupZip } from "../src/zipcode.ts";
 import { checkAuthRateLimit, checkStrictRateLimit, checkRateLimit } from "../src/rate-limit.ts";
 import { getApproximateLocation } from "../src/geo.ts";
@@ -2906,8 +2919,14 @@ async function handleFounderSpotsRemaining(_req: Request): Promise<Response> {
 // additionally restricts issuance to owner/admin (moderators can review but
 // cannot mint codes). Issuance is audit-logged (counts only — codes are
 // redeemable tokens and are never logged).
+//
+// Launch flow: POST /api/admin/beta-invites { count, notify: true } issues N
+// plain codes and emails the first N waitlist entries (oldest-first, or the
+// explicit waitlist_ids list) their personal invite link — one email per
+// recipient, never a shared list. The notify path clamps to the cohort's
+// remaining redeemable spots so we never email more invites than can be used.
 const BETA_INVITE_ISSUE_MAX = 100;
-
+const WAITLIST_ADMIN_LIST_MAX = 200;
 async function handleBetaInvitesIssue(req: Request): Promise<Response> {
   const actor = await getCurrentUser(req);
   if (!actor || !hasPermission(actor, ["owner", "admin"])) {
@@ -2918,8 +2937,46 @@ async function handleBetaInvitesIssue(req: Request): Promise<Response> {
   if (!Number.isInteger(count) || count < 1 || count > BETA_INVITE_ISSUE_MAX) {
     return json({ error: `count must be an integer between 1 and ${BETA_INVITE_ISSUE_MAX}` }, 400);
   }
-  let referrerUserId = actor.id;
-  if (body?.referrer_email) {
+  const notify = body?.notify === true;
+  const rawWaitlistIds = Array.isArray(body?.waitlist_ids) ? (body.waitlist_ids as unknown[]) : [];
+  const waitlistIds = rawWaitlistIds.map((v) => Number(v)).filter((n) => Number.isInteger(n) && n > 0);
+  if (notify && body?.referrer_email != null) {
+    return json({ error: "referrer_email cannot be combined with notify — waitlist invites are plain codes with no referrer" }, 400);
+  }
+  // Cohort-capacity clamp for the notify path: never email more invites than
+  // there are redeemable spots. Plain issuance stays unclamped (the redemption
+  // cap is enforced atomically at signup), preserving the existing flow.
+  const stats = await getBetaInviteStats();
+  const remaining = Math.max(0, stats.cap - stats.redeemed);
+  let effective = count;
+  let clamped = false;
+  if (notify && effective > remaining) { effective = remaining; clamped = true; }
+  if (notify && effective < 1) {
+    return json({ error: "The Austin beta cohort is full — no spots remain to invite.", code: "BETA_COHORT_FULL" }, 409);
+  }
+  // Resolve notify recipients: explicit waitlist_ids or oldest-first order.
+  // Only waitlist entries are ever emailed — never arbitrary addresses.
+  let recipients: Array<{ id: number; email: string }> = [];
+  if (notify) {
+    const rows = waitlistIds.length > 0
+      ? await getWaitlistEntriesByIds(waitlistIds)
+      : await listWaitlistEntries({ limit: effective, offset: 0 });
+    recipients = ((rows ?? []) as Array<{ id: number; email: string }>).slice(0, effective);
+    if (recipients.length < effective) {
+      if (recipients.length === 0) {
+        return json({ error: "No waitlist entries to invite — ask people to join the waitlist first.", code: "WAITLIST_EMPTY" }, 409);
+      }
+      effective = recipients.length;
+      clamped = true;
+    }
+  }
+  // Referrer linkage: plain issuance keeps the actor (or referrer_email) as the
+  // referrer; waitlist invites are always plain codes (referrer_user_id NULL),
+  // so the referral reward never fires for a waitlist invite.
+  let referrerUserId: number | null = actor.id;
+  if (notify) {
+    referrerUserId = null;
+  } else if (body?.referrer_email) {
     const referrer = await getUserByEmail(String(body.referrer_email).trim().toLowerCase());
     if (!referrer) return json({ error: "Referrer account not found" }, 400);
     referrerUserId = referrer.id;
@@ -2929,7 +2986,7 @@ async function handleBetaInvitesIssue(req: Request): Promise<Response> {
   const codes: string[] = [];
   const seen = new Set<string>();
   let attempts = 0;
-  while (codes.length < count && attempts < count * 25) {
+  while (codes.length < effective && attempts < effective * 25) {
     attempts++;
     const code = generateRandomCode();
     if (seen.has(code)) continue;
@@ -2938,7 +2995,7 @@ async function handleBetaInvitesIssue(req: Request): Promise<Response> {
     if (dup) continue;
     codes.push(code);
   }
-  if (codes.length < count) {
+  if (codes.length < effective) {
     return json({ error: "Could not generate enough unique codes — please try again" }, 503);
   }
   const issued = await issueBetaInviteCodes({ codes, referrerUserId, issuedByUserId: actor.id });
@@ -2947,25 +3004,81 @@ async function handleBetaInvitesIssue(req: Request): Promise<Response> {
     actorRole: actor.role ?? "admin",
     action: "beta_invites.issue",
     targetType: "beta_invite",
-    metadata: { count: issued.length, referrer_user_id: referrerUserId },
+    metadata: { count: issued.length, referrer_user_id: referrerUserId, notify },
   });
-  const stats = await getBetaInviteStats();
+  // Email each recipient their personal invite link. Each send carries only
+  // that recipient's code; failures are logged by email.ts and counted here
+  // (the codes stay valid either way). Recipient addresses are never logged.
+  let emailed = 0;
+  if (notify) {
+    const origin = originFromUrl(req.url) ?? "https://gradedate.app";
+    let failed = 0;
+    for (let i = 0; i < recipients.length; i++) {
+      const code = issued[i];
+      if (!code) continue;
+      const ok = await betaInviteEmailSender({
+        email: recipients[i].email,
+        inviteUrl: `${origin}/signup?ref=${encodeURIComponent(code)}`,
+      });
+      if (ok) emailed++;
+      else failed++;
+    }
+    if (failed > 0) {
+      await recordAdminAuditEvent({
+        actorUserId: actor.id,
+        actorRole: actor.role ?? "admin",
+        action: "beta_invites.notify",
+        targetType: "waitlist",
+        metadata: { attempted: recipients.length, delivered: emailed, failed },
+      });
+    }
+  }
+  const statsAfter = await getBetaInviteStats();
   return json({
     codes: issued,
-    cohort: { cap: stats.cap, redeemed: stats.redeemed, remaining: Math.max(0, stats.cap - stats.redeemed) },
+    cohort: { cap: statsAfter.cap, redeemed: statsAfter.redeemed, remaining: Math.max(0, statsAfter.cap - statsAfter.redeemed) },
+    ...(notify ? { emailed, clamped } : {}),
   });
 }
-
 async function handleBetaInvitesStats(req: Request): Promise<Response> {
   const actor = await getCurrentUser(req);
   if (!actor || !hasPermission(actor, ["owner", "admin"])) {
     return json({ error: "Forbidden" }, 403);
   }
-  const stats = await getBetaInviteStats();
+  const [stats, waitlistTotal] = await Promise.all([getBetaInviteStats(), getWaitlistCount()]);
   return json({
     cohort: { cap: stats.cap, redeemed: stats.redeemed, remaining: Math.max(0, stats.cap - stats.redeemed) },
     issued: stats.issued,
+    waitlist: { total: Number(waitlistTotal ?? 0) },
   });
+}
+// ── Waitlist Admin (Austin beta launch ops) ────────────────────
+// Owner/admin-only waitlist listing for launch ops (see who joined, then issue
+// + notify). Already behind the privileged-MFA gate in enforceSafety
+// (/api/admin/*); the handler additionally restricts to owner/admin so the
+// email list is never exposed to moderators or regular users. Audit-logged
+// with counts only.
+async function handleWaitlistAdminList(req: Request): Promise<Response> {
+  const actor = await getCurrentUser(req);
+  if (!actor || !hasPermission(actor, ["owner", "admin"])) {
+    return json({ error: "Forbidden" }, 403);
+  }
+  const url = new URL(req.url);
+  const limitRaw = Number(url.searchParams.get("limit") ?? 100);
+  const offsetRaw = Number(url.searchParams.get("offset") ?? 0);
+  const limit = Number.isInteger(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, WAITLIST_ADMIN_LIST_MAX) : 100;
+  const offset = Number.isInteger(offsetRaw) && offsetRaw > 0 ? offsetRaw : 0;
+  const [rows, total] = await Promise.all([listWaitlistEntries({ limit, offset }), getWaitlistCount()]);
+  const entries = ((rows ?? []) as Array<{ id: number; email: string; zip_code: string | null; created_at: string }>)
+    .map(({ id, email, zip_code, created_at }) => ({ id, email, zip_code, created_at }));
+  await recordAdminAuditEvent({
+    actorUserId: actor.id,
+    actorRole: actor.role ?? "admin",
+    action: "waitlist.read",
+    targetType: "waitlist",
+    metadata: { limit, offset, total: Number(total ?? 0) },
+  });
+  return json({ total: Number(total ?? 0), limit, offset, entries });
 }
 
 // ── Waitlist ────────────────────────────────────────────────────
@@ -3466,6 +3579,7 @@ export async function handleApiRoute(
   const suspensionMatch = pathname.match(/^\/api\/admin\/suspensions\/([^/]+)$/); if(suspensionMatch && method === "POST"){const csrfErr=checkCsrf(req);if(csrfErr)return csrfErr;return handleSuspensionAdmin(req,suspensionMatch[1]);}
   if (pathname === "/api/admin/beta-invites" && method === "POST") { const csrfErr = checkCsrf(req); if (csrfErr) return csrfErr; return handleBetaInvitesIssue(req); }
   if (pathname === "/api/admin/beta-invites" && method === "GET") return handleBetaInvitesStats(req);
+  if (pathname === "/api/admin/waitlist" && method === "GET") return handleWaitlistAdminList(req);
   // Subscription
   if (pathname === "/api/subscription/status" && method === "GET") {
     return handleSubscriptionStatus(req);
