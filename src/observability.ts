@@ -97,6 +97,7 @@ export const EVENTS = {
   STRIPE_WEBHOOK_PROCESSING_FAILED: "stripe.webhook.processing_failed",
   STRIPE_WEBHOOK_NO_USER: "stripe.webhook.no_user",
   STRIPE_WEBHOOK_INCOMPLETE: "stripe.webhook.incomplete",
+  STRIPE_UPSELL_CHECKOUT_FAILED: "stripe.upsell_checkout.failed",
   STRIPE_UPSELL_GRANTED: "stripe.upsell_granted",
   STRIPE_SUBSCRIPTION_ACTIVATED: "stripe.subscription_activated",
   STRIPE_SUBSCRIPTION_CANCELLED: "stripe.subscription_cancelled",
