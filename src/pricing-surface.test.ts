@@ -57,7 +57,7 @@ describe("canonical pricing surface (smoke-test findings)", () => {
     const handler = read("api-handler.ts");
     expect(handler).toContain("Only the monthly Premium plan is available");
     expect(handler).not.toMatch(/reveal-likes|activate-reveal/i);
-    expect(handler).toMatch(/"re-grade": process\.env\.STRIPE_REGRADE_PRICE_ID/);
+    expect(handler).toMatch(/case "re-grade": return process\.env\.STRIPE_REGRADE_PRICE_ID/);
   });
 
   test("no dead annual/reveal code remains in db.ts", () => {

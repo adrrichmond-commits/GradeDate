@@ -2114,6 +2114,19 @@ export async function createPendingUpsell(
   return inserted.length > 0;
 }
 
+/** Drop any in-flight (pending) entitlement for a product, e.g. after a failed
+ * checkout attempt, so the user can immediately retry the purchase. No-op when
+ * nothing is pending; never touches granted entitlements. */
+export async function clearPendingUpsell(
+  userId: number,
+  product: PaidUpsellProduct,
+): Promise<void> {
+  await sql()`
+    DELETE FROM paid_upsell_entitlements
+    WHERE user_id = ${userId} AND product = ${product} AND status = 'pending'
+  `;
+}
+
 /** Authenticated entitlement state for a one-time product, used by the store
  * page's bounded confirmation polling and by the duplicate-purchase check.
  * - "entitled" means the product is currently usable: an unused re-grade

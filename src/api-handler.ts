@@ -104,6 +104,7 @@ import {
   assignFounderNumber,
   grantPaidUpsell,
   createPendingUpsell,
+  clearPendingUpsell,
   getUpsellEntitlementState,
   checkDatabaseReady,
   persistAttributionClaim,
@@ -141,6 +142,7 @@ import { isSuspensionReason, isSuspensionDuration, isAppealStatus, canReviewAppe
 import { hasPermission, isSuspended, isSuspensionException, privilegedMfaReady, type PrivilegedRole } from "./safety";
 import { registrationOptions, authenticationOptions, verifyRegistration, verifyAuthentication, MFA_CHALLENGE_TTL_MS } from "./webauthn-mfa";
 import { isCheckoutBlocked } from "./subscription-confirmation";
+import { stripeErrorClientFields, stripeErrorDetails, stripeErrorMessage, stripeErrorStatus } from "./stripe-error";
 import { retentionCronHandler } from "./retention-cron";
 import { isStorePurchaseBlocked } from "./store-confirmation";
 import { parseModerationContent, MODERATION_UNAVAILABLE_CODE, type ModerationResult } from "./moderation";
@@ -2022,7 +2024,7 @@ async function handleCreateCheckout(req: Request): Promise<Response> {
     return json({ error: "Unauthorized" }, 401);
   }
 
-  if (isCheckoutBlocked(user.subscription_status)) {
+  if (isCheckoutBlocked(user.subscription_status, user.subscription_updated_at)) {
     return json({
       error: "Subscription already active",
       subscription_status: user.subscription_status,
@@ -2042,36 +2044,74 @@ async function handleCreateCheckout(req: Request): Promise<Response> {
 
   const priceId = PREMIUM_PRICE_ID;
 
+  if (user.subscription_status === "processing") {
+    // The stored "processing" marker is stale — isCheckoutBlocked let us
+    // through only because it is (see isProcessingStale). A previous checkout
+    // attempt crashed before any webhook could resolve it; clear the marker
+    // so this retry starts from a clean state. No entitlement is granted here.
+    await updateSubscriptionStatus(user.id, "none");
+  }
+
   await updateSubscriptionStatus(user.id, "processing");
 
-  const session = await stripe.checkout.sessions.create({
-    mode: "subscription",
-    line_items: [{ price: priceId, quantity: 1 }],
-    // Return URLs come from the current origin and land on the real /subscribe
-    // route, which renders ?success=true / ?canceled=true. Fulfillment is
-    // webhook-based; the return URL is only UX.
-    ...subscriptionCheckoutUrls(req.url),
-    client_reference_id: String(user.id),
-    customer_email: user.email,
-    metadata: { user_id: String(user.id) },
-  });
+  let session: Stripe.Checkout.Session;
+  try {
+    session = await stripe.checkout.sessions.create({
+      mode: "subscription",
+      line_items: [{ price: priceId, quantity: 1 }],
+      // Return URLs come from the current origin and land on the real /subscribe
+      // route, which renders ?success=true / ?canceled=true. Fulfillment is
+      // webhook-based; the return URL is only UX.
+      ...subscriptionCheckoutUrls(req.url),
+      client_reference_id: String(user.id),
+      customer_email: user.email,
+      metadata: { user_id: String(user.id) },
+    });
+  } catch (err) {
+    // Never leave the user locked in "processing": reset so they can retry,
+    // and surface Stripe's own error message so the failure is diagnosable.
+    await updateSubscriptionStatus(user.id, "none");
+    logError(EVENTS.PREMIUM_CHECKOUT_FAILED, {
+      request_id,
+      user_id: user.id,
+      ...stripeErrorDetails(err),
+    });
+    return json({
+      error: stripeErrorMessage(err),
+      code: "STRIPE_CHECKOUT_FAILED",
+      stripe: stripeErrorClientFields(err),
+    }, stripeErrorStatus(err));
+  }
   logInfo(EVENTS.PREMIUM_CHECKOUT_COMPLETED, { request_id, plan: "monthly" });
   return json({ url: session.url });
 }
 
 // ── Upsell checkout and activation ─────────────────────────────
-const UPSELL_PRICES: Record<PaidUpsellProduct, string | undefined> = {
-  "re-grade": process.env.STRIPE_REGRADE_PRICE_ID,
-  boost: process.env.STRIPE_BOOST_PRICE_ID,
-  "like-pack": process.env.STRIPE_LIKE_PACK_PRICE_ID,
-};
+const UPSELL_PRODUCTS: readonly PaidUpsellProduct[] = ["re-grade", "boost", "like-pack"];
+
+function isUpsellProduct(product: string | null | undefined): product is PaidUpsellProduct {
+  return !!product && (UPSELL_PRODUCTS as readonly string[]).includes(product);
+}
+
+/** Read the Stripe price id at call time (same pattern as getStripe) so a
+ * product is considered configured only when its env price id is present at
+ * request time, and so tests can set env without depending on module
+ * evaluation order. */
+function upsellPriceId(product: PaidUpsellProduct): string | undefined {
+  switch (product) {
+    case "re-grade": return process.env.STRIPE_REGRADE_PRICE_ID;
+    case "boost": return process.env.STRIPE_BOOST_PRICE_ID;
+    case "like-pack": return process.env.STRIPE_LIKE_PACK_PRICE_ID;
+  }
+  return undefined;
+}
 
 async function handleUpsellCheckout(req: Request): Promise<Response> {
   const user = await getCurrentUser(req);
   if (!user) return json({ error: "Unauthorized" }, 401);
   const body = await req.json().catch(() => null);
   const product = body?.product as PaidUpsellProduct;
-  if (!Object.prototype.hasOwnProperty.call(UPSELL_PRICES, product)) return json({ error: "Invalid product" }, 400);
+  if (!isUpsellProduct(product)) return json({ error: "Invalid product" }, 400);
   // Duplicate-purchase guard: an in-flight (pending) checkout for the same
   // product blocks a new one, and an active re-grade/boost blocks a new one.
   // Like-packs stay stackable (canonical product decision), so only a pending
@@ -2086,15 +2126,34 @@ async function handleUpsellCheckout(req: Request): Promise<Response> {
       code,
     }, 409);
   }
-  const price = UPSELL_PRICES[product];
+  const price = upsellPriceId(product);
   const stripe = getStripe();
   if (!stripe || !price) return json({ error: "This purchase is not configured yet" }, 503);
-  const session = await stripe.checkout.sessions.create({
-    mode: "payment", line_items: [{ price, quantity: 1 }],
-    ...storeUpsellCheckoutUrls(req.url, product),
-    client_reference_id: String(user.id), customer_email: user.email,
-    metadata: { user_id: String(user.id), product },
-  });
+  const request_id = requestIdFrom(req);
+  let session: Stripe.Checkout.Session;
+  try {
+    session = await stripe.checkout.sessions.create({
+      mode: "payment", line_items: [{ price, quantity: 1 }],
+      ...storeUpsellCheckoutUrls(req.url, product),
+      client_reference_id: String(user.id), customer_email: user.email,
+      metadata: { user_id: String(user.id), product },
+    });
+  } catch (err) {
+    // Clear any in-flight marker for this product so the user can retry, and
+    // surface Stripe's own error message so the failure is diagnosable.
+    await clearPendingUpsell(user.id, product).catch(() => {});
+    logError(EVENTS.STRIPE_UPSELL_CHECKOUT_FAILED, {
+      request_id,
+      user_id: user.id,
+      product,
+      ...stripeErrorDetails(err),
+    });
+    return json({
+      error: stripeErrorMessage(err),
+      code: "STRIPE_CHECKOUT_FAILED",
+      stripe: stripeErrorClientFields(err),
+    }, stripeErrorStatus(err));
+  }
   const recorded = await createPendingUpsell(user.id, product, session.id);
   if (!recorded) {
     // A concurrent checkout recorded the pending entitlement while this
@@ -2115,7 +2174,7 @@ async function handleUpsellEntitlementStatus(req: Request): Promise<Response> {
   if (!user) return json({ error: "Unauthorized" }, 401);
   const url = new URL(req.url);
   const product = url.searchParams.get("product") as PaidUpsellProduct | null;
-  if (!product || !Object.prototype.hasOwnProperty.call(UPSELL_PRICES, product)) {
+  if (!isUpsellProduct(product)) {
     return json({ error: "Invalid product" }, 400);
   }
   const sessionId = url.searchParams.get("session_id");
@@ -2134,7 +2193,7 @@ async function handleActivateUpsell(req: Request): Promise<Response> {
   let session: Stripe.Checkout.Session;
   try { session = await stripe.checkout.sessions.retrieve(sessionId); } catch { return json({ error: "Unable to verify payment" }, 400); }
   const product = session.metadata?.product as PaidUpsellProduct | undefined;
-  if (session.payment_status !== "paid" || session.metadata?.user_id !== String(user.id) || !product || !UPSELL_PRICES[product]) {
+  if (session.payment_status !== "paid" || session.metadata?.user_id !== String(user.id) || !product || !upsellPriceId(product)) {
     return json({ error: "Payment is not verified yet", code: "PAYMENT_PENDING" }, 409);
   }
   const granted = await grantPaidUpsell(user.id, product, session.id);
@@ -2328,7 +2387,7 @@ async function handleStripeWebhook(req: Request): Promise<Response> {
         // One-time upsells are granted only from a paid Checkout Session. The
         // entitlement table makes webhook retries and manual activation idempotent.
         const upsellProduct = session.metadata?.product as PaidUpsellProduct | undefined;
-        if (session.mode === "payment" && upsellProduct && session.payment_status === "paid" && session.metadata?.user_id === String(user.id) && UPSELL_PRICES[upsellProduct]) {
+        if (session.mode === "payment" && upsellProduct && session.payment_status === "paid" && session.metadata?.user_id === String(user.id) && upsellPriceId(upsellProduct)) {
           await grantPaidUpsell(user.id, upsellProduct, session.id);
           logInfo(EVENTS.STRIPE_UPSELL_GRANTED, { user_id: user.id, product: upsellProduct });
           break;
