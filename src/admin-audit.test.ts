@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { auditRecordShape, redactAuditMetadata, AUDIT_RETENTION_MONTHS, RESOLVED_REPORT_RETENTION_MONTHS, QUARANTINED_PHOTO_RETENTION_DAYS } from "./admin-audit";
+import { auditRecordShape, redactAuditMetadata, AUDIT_RETENTION_MONTHS, RESOLVED_REPORT_RETENTION_MONTHS, QUARANTINED_PHOTO_RETENTION_DAYS, STALE_UNRESOLVED_CASE_RETENTION_MONTHS } from "./admin-audit";
 
 describe("privileged audit hardening", () => {
-  test("retention contract is explicit", () => { expect(AUDIT_RETENTION_MONTHS).toBe(24); expect(RESOLVED_REPORT_RETENTION_MONTHS).toBe(12); expect(QUARANTINED_PHOTO_RETENTION_DAYS).toBe(30); });
+  test("retention contract is explicit", () => { expect(AUDIT_RETENTION_MONTHS).toBe(24); expect(RESOLVED_REPORT_RETENTION_MONTHS).toBe(12); expect(QUARANTINED_PHOTO_RETENTION_DAYS).toBe(30); expect(STALE_UNRESOLVED_CASE_RETENTION_MONTHS).toBe(12); });
   test("metadata is allowlisted and sensitive evidence is dropped", () => {
     const result = redactAuditMetadata({ status: "closed", reason: "underage", path: "/private/x", url: "https://x", bytes: 4, token: "x", body: "message", reporter_id: 8, report_id: "r1" });
     expect(result).toEqual({ status: "closed", reason: "underage", report_id: "r1" });

@@ -12,6 +12,7 @@ import { deletePhoto } from "./blob-store";
 import { buildAccountDeletionQueries, collectOwnedPhotoPaths } from "./account-deletion";
 import { EVENTS, logInfo } from "./observability";
 import { auditRecordShape } from "./admin-audit";
+import type { CronRunState, CronRunOutcome } from "./retention-cron-state";
 
 let _sql: NeonQueryFunction<false, false> | null = null;
 
@@ -388,6 +389,7 @@ export async function initTables(): Promise<void> {
       status TEXT NOT NULL DEFAULT 'open',
       priority TEXT NOT NULL DEFAULT 'normal',
       assignee_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      legal_hold BOOLEAN NOT NULL DEFAULT false,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       triaged_at TIMESTAMPTZ, actioned_at TIMESTAMPTZ, resolved_at TIMESTAMPTZ, resolution_notes TEXT
     )
@@ -407,8 +409,8 @@ export async function initTables(): Promise<void> {
   try { await sql()`CREATE UNIQUE INDEX IF NOT EXISTS reports_id_unique ON reports(id)`; } catch {}
   try { await sql()`CREATE INDEX IF NOT EXISTS reports_queue_idx ON reports(status, priority, created_at)`; } catch {}
   await sql()`CREATE TABLE IF NOT EXISTS photo_moderation_cases (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(), photo_id INTEGER NOT NULL REFERENCES user_photos(id) ON DELETE CASCADE,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, status TEXT NOT NULL DEFAULT 'pending',
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(), photo_id INTEGER REFERENCES user_photos(id) ON DELETE SET NULL,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL, status TEXT NOT NULL DEFAULT 'pending',
     source TEXT NOT NULL, result TEXT NOT NULL DEFAULT 'unknown', reason TEXT, actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), reviewed_at TIMESTAMPTZ,
     retention_until TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '30 days'), private_object_key TEXT, private_content_type TEXT DEFAULT 'image/jpeg', private_deleted_at TIMESTAMPTZ, legal_hold BOOLEAN NOT NULL DEFAULT false
@@ -425,6 +427,28 @@ export async function initTables(): Promise<void> {
   try { await sql()`ALTER TABLE photo_moderation_cases ADD COLUMN IF NOT EXISTS private_content_type TEXT DEFAULT 'image/jpeg'`; } catch {}
   try { await sql()`ALTER TABLE photo_moderation_cases ADD COLUMN IF NOT EXISTS private_deleted_at TIMESTAMPTZ`; } catch {}
   try { await sql()`ALTER TABLE photo_moderation_cases ADD COLUMN IF NOT EXISTS legal_hold BOOLEAN NOT NULL DEFAULT false`; } catch {}
+  // Orphaned-blob fix: a case row must SURVIVE account deletion so the retention
+  // sweep still finds its private_object_key and purges the blob per policy. The
+  // references are SET NULL (case row preserved, photo/user linkage cleared) instead
+  // of CASCADE (case row deleted with the photo, orphaning the private blob).
+  try { await sql()`ALTER TABLE photo_moderation_cases ALTER COLUMN photo_id DROP NOT NULL`; } catch {}
+  try { await sql()`ALTER TABLE photo_moderation_cases ALTER COLUMN user_id DROP NOT NULL`; } catch {}
+  try { await sql()`ALTER TABLE photo_moderation_cases DROP CONSTRAINT IF EXISTS photo_moderation_cases_photo_id_fkey`; } catch {}
+  try { await sql()`ALTER TABLE photo_moderation_cases ADD CONSTRAINT photo_moderation_cases_photo_id_fkey FOREIGN KEY (photo_id) REFERENCES user_photos(id) ON DELETE SET NULL`; } catch {}
+  try { await sql()`ALTER TABLE photo_moderation_cases DROP CONSTRAINT IF EXISTS photo_moderation_cases_user_id_fkey`; } catch {}
+  try { await sql()`ALTER TABLE photo_moderation_cases ADD CONSTRAINT photo_moderation_cases_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL`; } catch {}
+  try { await sql()`CREATE INDEX IF NOT EXISTS photo_moderation_retention_idx ON photo_moderation_cases(status, retention_until, private_deleted_at)`; } catch {}
+  try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS legal_hold BOOLEAN NOT NULL DEFAULT false`; } catch {}
+  await sql()`CREATE TABLE IF NOT EXISTS retention_cron_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    last_run_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_outcome TEXT NOT NULL,
+    last_resolved_reports INTEGER NOT NULL DEFAULT 0,
+    last_audit_events_deleted INTEGER NOT NULL DEFAULT 0,
+    last_quarantined_photo_cases_purged INTEGER NOT NULL DEFAULT 0,
+    consecutive_failures INTEGER NOT NULL DEFAULT 0,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`;
   await sql()`CREATE TABLE IF NOT EXISTS user_suspensions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     reason TEXT NOT NULL, duration TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active',
@@ -2025,6 +2049,26 @@ export async function getPhotoModerationCaseForPhoto(photoId: number, userId: nu
 export async function attachPrivatePhotoObject(caseId: string, objectKey: string, contentType: string) { const rows = await sql()`UPDATE photo_moderation_cases SET private_object_key=${objectKey}, private_content_type=${contentType} WHERE id=${caseId} RETURNING id`; return rows[0] ?? null; }
 export async function markPrivatePhotoDeleted(caseId: string) { await sql()`UPDATE photo_moderation_cases SET private_deleted_at=NOW() WHERE id=${caseId}`; }
 export async function listExpiredPrivatePhotoCases() { return sql()`SELECT id, private_object_key FROM photo_moderation_cases WHERE private_object_key IS NOT NULL AND private_deleted_at IS NULL AND legal_hold=false AND retention_until <= NOW() AND status IN ('approved','removed','restored')`; }
+export async function getRetentionCronState(): Promise<CronRunState | null> {
+  try {
+    // Real tagged-template read (no string/values adapter — the neon tagged
+    // template is the query interface used everywhere else in this module).
+    // Fail-closed: any error (table missing, DB down) yields null, never a throw.
+    const rows = await sql()`SELECT last_run_at, last_outcome, last_resolved_reports, last_audit_events_deleted, last_quarantined_photo_cases_purged, consecutive_failures FROM retention_cron_state WHERE id = 1`;
+    const row = rows[0] as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return {
+      lastRunAt: String(row.last_run_at),
+      lastOutcome: String(row.last_outcome) as CronRunOutcome,
+      resolvedReports: Number(row.last_resolved_reports ?? 0),
+      auditEvents: Number(row.last_audit_events_deleted ?? 0),
+      quarantinedPhotoCases: Number(row.last_quarantined_photo_cases_purged ?? 0),
+      consecutiveFailures: Number(row.consecutive_failures ?? 0),
+    };
+  } catch {
+    return null;
+  }
+}
 export async function transitionPhotoModerationCase(id: string, status: string, actorId: number, result?: string) {
   const rows = await sql()`UPDATE photo_moderation_cases SET status=${status}, result=COALESCE(${result ?? null}, result), actor_user_id=${actorId}, updated_at=NOW(), reviewed_at=NOW() WHERE id=${id} RETURNING photo_id,user_id,status`;
   return rows[0] ?? null;

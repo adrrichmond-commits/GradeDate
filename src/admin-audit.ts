@@ -2,6 +2,15 @@
 export const AUDIT_RETENTION_MONTHS = 24;
 export const RESOLVED_REPORT_RETENTION_MONTHS = 12;
 export const QUARANTINED_PHOTO_RETENTION_DAYS = 30;
+/**
+ * How long a quarantined photo case that can never be reviewed (its owner
+ * deleted their account, so user_id was set NULL by the ON DELETE SET NULL
+ * FK) is kept before its private blob is purged. Matches the 12-month safety
+ * evidence-retention period: a deleted user's unresolved case is not evidence
+ * under a legal hold, so keeping it indefinitely would orphan the blob beyond
+ * policy. Zero-tolerance / legal-hold cases are never swept early.
+ */
+export const STALE_UNRESOLVED_CASE_RETENTION_MONTHS = 12;
 
 // Audit metadata is deliberately narrow: never accept arbitrary request payloads.
 export const AUDIT_METADATA_KEYS = [

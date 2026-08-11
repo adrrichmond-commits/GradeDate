@@ -118,6 +118,7 @@ import {
   clearPendingUpsell,
   getUpsellEntitlementState,
   checkDatabaseReady,
+  getRetentionCronState,
   persistAttributionClaim,
   createSuspension,
   quarantineUserPhotosForUnderage,
@@ -3340,8 +3341,29 @@ async function handleReady(_req: Request): Promise<Response> {
   if (!result.ok) {
     return json({ ok: false, status: "unavailable", reason: result.reason }, 503);
   }
-  return json({ ok: true, status: "ready" });
+  // Read-only retention-cron heartbeat (coarse operational facts only: last
+  // run time, outcome, result counts, consecutive-failure streak). Fail-closed:
+  // null/absent when the state was never recorded or cannot be read — never a
+  // throw, and never user data, blob keys, or secrets.
+  return json({ ok: true, status: "ready", retention: retentionReadyPayload(await getRetentionCronState()) });
 }
+/**
+ * Shape the retention-cron heartbeat for /api/ready. Exported so the payload
+ * contract is unit-testable without a database. Deliberately coarse and
+ * key-free; the raw state contains nothing sensitive.
+ */
+export function retentionReadyPayload(state: { lastRunAt: string; lastOutcome: string; resolvedReports: number; auditEvents: number; quarantinedPhotoCases: number; consecutiveFailures: number } | null) {
+  if (!state) return null;
+  return {
+    last_run_at: state.lastRunAt,
+    last_outcome: state.lastOutcome,
+    resolved_reports: state.resolvedReports,
+    audit_events_deleted: state.auditEvents,
+    quarantined_photo_cases_purged: state.quarantinedPhotoCases,
+    consecutive_failures: state.consecutiveFailures,
+  };
+}
+
 
 function b64url(bytes: Uint8Array): string { return Buffer.from(bytes).toString("base64url"); }
 function fromB64url(value: string): Uint8Array { return new Uint8Array(Buffer.from(value, "base64url")); }
