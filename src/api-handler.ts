@@ -103,6 +103,13 @@ import {
   getFounderSpotsRemaining,
   assignFounderNumber,
   revokeFounderState,
+  generateRandomCode,
+  issueBetaInviteCodes,
+  getBetaInviteCodeByCode,
+  getRedeemedBetaInviteCount,
+  redeemBetaInviteCode,
+  getBetaInviteStats,
+  betaCohortCap,
   grantPaidUpsell,
   createPendingUpsell,
   clearPendingUpsell,
@@ -365,6 +372,32 @@ async function handleSignup(req: Request): Promise<Response> {
     return json({ error: "An account with this email already exists" }, 409);
   }
 
+  // Closed-beta gate (Austin cohort). When BETA_INVITE_REQUIRED=true, signup
+  // requires a valid beta invite code AND an Austin-metro IP location. The
+  // invite code also lives in referral_codes (max_uses=1), so the inviter's
+  // referral reward fires through the existing machinery on redemption below.
+  if (betaInviteRequired()) {
+    if (!referralCode) {
+      return json({ error: "An invite code is required to join the Austin beta — join the waitlist to be notified when it opens.", code: "BETA_INVITE_REQUIRED" }, 400);
+    }
+    const invite = await getBetaInviteCodeByCode(referralCode);
+    if (!invite) {
+      return json({ error: "Invalid invite code — join the waitlist to be notified when the Austin beta opens.", code: "BETA_INVITE_INVALID" }, 403);
+    }
+    if (invite.redeemed_at) {
+      return json({ error: "This invite code has already been used — join the waitlist for the next cohort.", code: "BETA_INVITE_ALREADY_REDEEMED" }, 409);
+    }
+    const location = await getApproximateLocation(req);
+    if (!location.isAustinMetro) {
+      return json({ error: "The Austin beta is open to the Austin metro area only — join the waitlist and we'll let you know when it expands.", code: "BETA_AUSTIN_ONLY" }, 403);
+    }
+    const redeemedCount = await getRedeemedBetaInviteCount();
+    if (redeemedCount >= betaCohortCap()) {
+      await enrollInWaitlistOnFull(email);
+      return json({ error: "The Austin beta cohort is full — we've added you to the waitlist.", code: "BETA_COHORT_FULL" }, 409);
+    }
+  }
+
   let user: User;
   try {
     const passwordHash = await BunPw.hash(password);
@@ -380,6 +413,21 @@ async function handleSignup(req: Request): Promise<Response> {
     return json({ error: "Signup is temporarily unavailable. Please try again shortly.", code: "SIGNUP_UNAVAILABLE" }, 503);
   }
   const session = await createSession(user.id);
+
+  // Beta redemption claims the code atomically against the cohort cap. If a
+  // concurrent signup took the last spot between the pre-check above and now,
+  // unwind the just-created account so no orphan user exists outside the beta.
+  if (betaInviteRequired() && referralCode) {
+    const redeemed = await redeemBetaInviteCode(referralCode, user.id);
+    if (!redeemed.success) {
+      await deleteUserAccount(user.id).catch(() => {});
+      if (redeemed.error === "cohort_full") {
+        await enrollInWaitlistOnFull(email);
+        return json({ error: "The Austin beta cohort is full — we've added you to the waitlist.", code: "BETA_COHORT_FULL" }, 409);
+      }
+      return json({ error: "This invite code is no longer valid — join the waitlist for the next cohort.", code: "BETA_INVITE_INVALID" }, 409);
+    }
+  }
 
   // Process referral code if provided
   if (referralCode) {
@@ -2286,6 +2334,14 @@ function verificationRequired(): boolean {
   return process.env.VERIFICATION_REQUIRED === "true";
 }
 
+// Closed-beta gate for the Austin cohort. When BETA_INVITE_REQUIRED=true,
+// signup additionally requires a valid beta invite code and an Austin-metro
+// IP location. Defaults to OFF in code; production/preview flip it on for
+// the closed beta.
+function betaInviteRequired(): boolean {
+  return process.env.BETA_INVITE_REQUIRED === "true";
+}
+
 function verificationGate(user: User): Response | null {
   if (verificationRequired() && user.verification_status !== "verified") {
     return json(
@@ -2674,7 +2730,7 @@ async function handleGeoCheck(req: Request): Promise<Response> {
   if (rateLimitResponse) return rateLimitResponse;
 
   const { city, region, isAustinMetro } = await getApproximateLocation(req);
-  return json({ isAustinMetro, city, region });
+  return json({ isAustinMetro, city, region, beta_invite_required: betaInviteRequired() });
 }
 
 // ── Location ─────────────────────────────────────────────────
@@ -2844,7 +2900,86 @@ async function handleFounderSpotsRemaining(_req: Request): Promise<Response> {
   return json({ remaining, total });
 }
 
+// ── Beta Invite Admin (Austin cohort issuance) ────────────────
+// Owner/admin-only issuance of closed-beta invite codes. The route is already
+// behind the privileged-MFA gate in enforceSafety (/api/admin/*); the handler
+// additionally restricts issuance to owner/admin (moderators can review but
+// cannot mint codes). Issuance is audit-logged (counts only — codes are
+// redeemable tokens and are never logged).
+const BETA_INVITE_ISSUE_MAX = 100;
+
+async function handleBetaInvitesIssue(req: Request): Promise<Response> {
+  const actor = await getCurrentUser(req);
+  if (!actor || !hasPermission(actor, ["owner", "admin"])) {
+    return json({ error: "Forbidden" }, 403);
+  }
+  const body = await req.json().catch(() => null);
+  const count = Number(body?.count);
+  if (!Number.isInteger(count) || count < 1 || count > BETA_INVITE_ISSUE_MAX) {
+    return json({ error: `count must be an integer between 1 and ${BETA_INVITE_ISSUE_MAX}` }, 400);
+  }
+  let referrerUserId = actor.id;
+  if (body?.referrer_email) {
+    const referrer = await getUserByEmail(String(body.referrer_email).trim().toLowerCase());
+    if (!referrer) return json({ error: "Referrer account not found" }, 400);
+    referrerUserId = referrer.id;
+  }
+  // Mint unique codes (deduped against the beta table; the redemption cap is
+  // enforced separately at signup, so issuing more than the cap is fine).
+  const codes: string[] = [];
+  const seen = new Set<string>();
+  let attempts = 0;
+  while (codes.length < count && attempts < count * 25) {
+    attempts++;
+    const code = generateRandomCode();
+    if (seen.has(code)) continue;
+    seen.add(code);
+    const dup = await getBetaInviteCodeByCode(code);
+    if (dup) continue;
+    codes.push(code);
+  }
+  if (codes.length < count) {
+    return json({ error: "Could not generate enough unique codes — please try again" }, 503);
+  }
+  const issued = await issueBetaInviteCodes({ codes, referrerUserId, issuedByUserId: actor.id });
+  await recordAdminAuditEvent({
+    actorUserId: actor.id,
+    actorRole: actor.role ?? "admin",
+    action: "beta_invites.issue",
+    targetType: "beta_invite",
+    metadata: { count: issued.length, referrer_user_id: referrerUserId },
+  });
+  const stats = await getBetaInviteStats();
+  return json({
+    codes: issued,
+    cohort: { cap: stats.cap, redeemed: stats.redeemed, remaining: Math.max(0, stats.cap - stats.redeemed) },
+  });
+}
+
+async function handleBetaInvitesStats(req: Request): Promise<Response> {
+  const actor = await getCurrentUser(req);
+  if (!actor || !hasPermission(actor, ["owner", "admin"])) {
+    return json({ error: "Forbidden" }, 403);
+  }
+  const stats = await getBetaInviteStats();
+  return json({
+    cohort: { cap: stats.cap, redeemed: stats.redeemed, remaining: Math.max(0, stats.cap - stats.redeemed) },
+    issued: stats.issued,
+  });
+}
+
 // ── Waitlist ────────────────────────────────────────────────────
+
+// Best-effort waitlist enrollment used when the beta cohort is full, so
+// blocked signups still land in the funnel. Mirrors handleWaitlistJoin's
+// email validation; never throws.
+async function enrollInWaitlistOnFull(email: string): Promise<void> {
+  try {
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      await joinWaitlist(email, undefined);
+    }
+  } catch { /* best-effort — the signup rejection is the primary outcome */ }
+}
 
 async function handleWaitlistJoin(req: Request): Promise<Response> {
   const rateLimitResponse = checkStrictRateLimit(req);
@@ -3329,6 +3464,8 @@ export async function handleApiRoute(
   const appealMatch = pathname.match(/^\/api\/admin\/appeals\/([^/]+)$/); if(appealMatch && method === "POST"){const csrfErr=checkCsrf(req);if(csrfErr)return csrfErr;return handleSuspensionAdmin(req,appealMatch[1]);}
   if (pathname === "/api/admin/suspensions" && method === "POST"){const csrfErr=checkCsrf(req);if(csrfErr)return csrfErr;return handleSuspensionAdmin(req);}
   const suspensionMatch = pathname.match(/^\/api\/admin\/suspensions\/([^/]+)$/); if(suspensionMatch && method === "POST"){const csrfErr=checkCsrf(req);if(csrfErr)return csrfErr;return handleSuspensionAdmin(req,suspensionMatch[1]);}
+  if (pathname === "/api/admin/beta-invites" && method === "POST") { const csrfErr = checkCsrf(req); if (csrfErr) return csrfErr; return handleBetaInvitesIssue(req); }
+  if (pathname === "/api/admin/beta-invites" && method === "GET") return handleBetaInvitesStats(req);
   // Subscription
   if (pathname === "/api/subscription/status" && method === "GET") {
     return handleSubscriptionStatus(req);
