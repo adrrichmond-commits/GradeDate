@@ -110,6 +110,19 @@ export async function initTables(): Promise<void> {
   try {
     await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT`;
   } catch { /* ignore */ }
+  // Age verification (Stripe Identity) columns - migration for existing DBs
+  try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_status TEXT NOT NULL DEFAULT 'unverified'`;
+  } catch { /* ignore */ }
+  try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_session_id TEXT`;
+  } catch { /* ignore */ }
+  try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_verified_at TIMESTAMPTZ`;
+  } catch { /* ignore */ }
+  try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_session_created_at TIMESTAMPTZ`;
+  } catch { /* ignore */ }
   try {
     await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS looking_for TEXT DEFAULT 'everyone'`;
   } catch { /* ignore */ }
