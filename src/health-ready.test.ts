@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { handleApiRoute } from "./api-handler";
-import { checkDatabaseReady } from "./db";
+import { handleApiRoute, retentionReadyPayload } from "./api-handler";
+import { checkDatabaseReady, getRetentionCronState } from "./db";
 
 const ORIGINAL_URL = process.env.DATABASE_URL;
 
@@ -50,6 +50,41 @@ describe("GET /api/ready", () => {
     expect(raw).not.toContain("not-a-postgres-url");
     expect(raw).not.toContain("DATABASE_URL");
     expect(raw).toContain("invalid_config");
+  });
+});
+
+describe("GET /api/ready retention heartbeat", () => {
+  test("the 503 body never exposes a retention field (no leak on failure)", async () => {
+    delete process.env.DATABASE_URL;
+    const res = await get("/api/ready");
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.retention).toBeUndefined();
+    expect(body).toEqual({ ok: false, status: "unavailable", reason: "not_configured" });
+  });
+
+  test("retentionReadyPayload maps the coarse state and returns null when absent", () => {
+    expect(retentionReadyPayload({
+      lastRunAt: "2026-08-12T03:00:00.000Z",
+      lastOutcome: "success",
+      resolvedReports: 2,
+      auditEvents: 0,
+      quarantinedPhotoCases: 1,
+      consecutiveFailures: 0,
+    })).toEqual({
+      last_run_at: "2026-08-12T03:00:00.000Z",
+      last_outcome: "success",
+      resolved_reports: 2,
+      audit_events_deleted: 0,
+      quarantined_photo_cases_purged: 1,
+      consecutive_failures: 0,
+    });
+    expect(retentionReadyPayload(null)).toBeNull();
+  });
+
+  test("getRetentionCronState is fail-closed (null) when the database is not configured", async () => {
+    delete process.env.DATABASE_URL;
+    await expect(getRetentionCronState()).resolves.toBeNull();
   });
 });
 
