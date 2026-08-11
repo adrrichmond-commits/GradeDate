@@ -1,4 +1,5 @@
 import { logInfo, logWarn } from "./observability";
+import { OPENAI_PROVIDER, openAiConfigured, scanMessageWithOpenAi } from "./openai-moderation";
 
 export const MESSAGE_FLAG_TYPES = ["underage_solicitation","csam_or_underage","trafficking_or_exploitation","impersonation","contact_exchange","sexual_solicitation","spam_or_scam","harassment_or_abuse","inappropriate_or_explicit","other"] as const;
 export type MessageFlagType = typeof MESSAGE_FLAG_TYPES[number];
@@ -22,7 +23,24 @@ export function scanMessageHeuristics(content:string): MessageScanResult {
 }
 export function classifyMessageScan(payload:unknown):MessageScanResult { if(!payload||typeof payload!=="object")return {classification:"error",confidence:null,matchedRules:[],providerRef:null,source:"provider"}; const p=payload as Record<string,unknown>; const raw=String(p.classification??p.category??p.result??"").toLowerCase().replace(/[ -]/g,"_"); const aliases:Record<string,MessageScanResult["classification"]>={underage:"csam_or_underage",csam:"csam_or_underage",trafficking:"trafficking_or_exploitation",exploitation:"trafficking_or_exploitation",impersonation:"impersonation",contact_exchange:"contact_exchange",sexual_solicitation:"sexual_solicitation",spam:"spam_or_scam",scam:"spam_or_scam",clean:"clean"}; const classification=aliases[raw]??(MESSAGE_FLAG_TYPES.includes(raw as MessageFlagType)?raw as MessageFlagType:"error"); return {classification,confidence:clamp(p.confidence??p.score),matchedRules:Array.isArray(p.matched_rules)?p.matched_rules.filter((x):x is string=>typeof x==="string"):[],providerRef:typeof p.id==="string"?p.id:typeof p.reference==="string"?p.reference:null,source:"provider"}; }
 export function messageModerationConfigured(env:Record<string,string|undefined>=process.env){return !!env.MODERATION_MESSAGE_PROVIDER;}
-export async function scanMessage(content:string,env:Record<string,string|undefined>=process.env,fetcher:typeof fetch=fetch):Promise<MessageScanResult>{const url=env.MODERATION_MESSAGE_PROVIDER;if(!url){logInfo("message_moderation.disabled",{});return {classification:"clean",confidence:null,matchedRules:[],providerRef:null,source:"provider"};}const c=new AbortController(), timer=setTimeout(()=>c.abort(),15000);try{const r=await fetcher(url,{method:"POST",signal:c.signal,headers:{"content-type":"application/json",...(env.MODERATION_MESSAGE_API_KEY?{authorization:`Bearer ${env.MODERATION_MESSAGE_API_KEY}`}:{})},body:JSON.stringify({text:content})});if(!r.ok)throw Error(`provider_http_${r.status}`);return classifyMessageScan(await r.json());}catch(error){logWarn("message_moderation.scan_failed",{error:error instanceof Error?error.message:"unknown"});return {classification:"error",confidence:null,matchedRules:[],providerRef:null,source:"provider"};}finally{clearTimeout(timer);}}
+function isHttpUrl(value: string): boolean { return /^https?:\/\//i.test(value); }
+/**
+ * Scan message content with the configured provider.
+ *  - MODERATION_MESSAGE_PROVIDER=openai -> OpenAI Moderation endpoint (uses
+ *    the existing OPENAI_API_KEY; missing key fails closed as "error").
+ *  - MODERATION_MESSAGE_PROVIDER=http(s)://... -> legacy generic HTTP provider.
+ *  - Unknown provider values fail closed as "error".
+ *  - Unset provider -> disabled (returns "clean" without calling anything).
+ */
+export async function scanMessage(content:string,env:Record<string,string|undefined>=process.env,fetcher:typeof fetch=fetch):Promise<MessageScanResult>{
+ const provider=env.MODERATION_MESSAGE_PROVIDER;
+ if(!provider){logInfo("message_moderation.disabled",{});return {classification:"clean",confidence:null,matchedRules:[],providerRef:null,source:"provider"};}
+ if(provider===OPENAI_PROVIDER){
+   if(!openAiConfigured(env)){logWarn("message_moderation.unconfigured",{provider,reason:"openai_api_key_missing"});return {classification:"error",confidence:null,matchedRules:[],providerRef:"openai_api_key_missing",source:"provider"};}
+   return scanMessageWithOpenAi(content,env,fetcher);
+ }
+ if(!isHttpUrl(provider)){logWarn("message_moderation.unconfigured",{provider,reason:"unknown_provider"});return {classification:"error",confidence:null,matchedRules:[],providerRef:"unknown_provider",source:"provider"};}
+ const url=provider;const c=new AbortController(), timer=setTimeout(()=>c.abort(),15000);try{const r=await fetcher(url,{method:"POST",signal:c.signal,headers:{"content-type":"application/json",...(env.MODERATION_MESSAGE_API_KEY?{authorization:`Bearer ${env.MODERATION_MESSAGE_API_KEY}`}:{})},body:JSON.stringify({text:content})});if(!r.ok)throw Error(`provider_http_${r.status}`);return classifyMessageScan(await r.json());}catch(error){logWarn("message_moderation.scan_failed",{error:error instanceof Error?error.message:"unknown"});return {classification:"error",confidence:null,matchedRules:[],providerRef:null,source:"provider"};}finally{clearTimeout(timer);}}
 export function policyForMessageScan(r:MessageScanResult){if(r.classification==="underage_solicitation"||r.classification==="csam_or_underage")return {hide:true,lockAccount:true,urgent:true};if(r.classification==="trafficking_or_exploitation")return {hide:true,lockAccount:false,urgent:true};return {hide:false,lockAccount:false,urgent:false};}
 /** Map a user-facing report reason to the message-moderation classification
  * used by the admin queue. Unknown/absent reasons fall back to "other" so a

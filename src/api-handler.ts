@@ -160,6 +160,7 @@ import { issueReviewAccess, readReviewPhoto, quarantinePhoto, privateReviewReady
 import { getPrivateReviewProvider } from "./private-review-provider";
 import { scanPhoto, policyForPhotoScan } from "./photo-moderation";
 import { scanMessage, scanMessageHeuristics, policyForMessageScan, messageFlagTypeForReportReason, userReportPolicyForClassification } from "./message-moderation";
+import { notifySafetyReviewer } from "./safety-review-notify";
 import { isSuspensionReason, isSuspensionDuration, isAppealStatus, canReviewAppeal, canOverrideSuspension, durationEnds, APPEAL_TEXT_MAX } from "./suspensions";
 import { hasPermission, isSuspended, isSuspensionException, privilegedMfaReady, type PrivilegedRole } from "./safety";
 import { registrationOptions, authenticationOptions, verifyRegistration, verifyAuthentication, MFA_CHALLENGE_TTL_MS } from "./webauthn-mfa";
@@ -531,6 +532,10 @@ async function moderateUploadedPhoto(photoId: number, userId: number, photoPath:
   await upsertModerationFlag(photoId, userId, result.classification === "error" ? "error" : result.classification, result.confidence, result.providerRef, "new");
   const existingCase = await getPhotoModerationCaseForPhoto(photoId, userId);
   const caseRecord = existingCase ?? await createPhotoModerationCase(photoId, userId, "automated_photo_scan", result.classification, result.classification);
+  if (caseRecord) {
+    // Owner safety-reviewer notification — fire and forget, never fails uploads.
+    void notifySafetyReviewer({ kind: "photo", caseId: String(caseRecord.id), flagType: result.classification, source: "automated_photo_scan", confidence: result.confidence, reason: result.classification }).catch(() => {});
+  }
   if (!caseRecord || !policy.quarantine || existingCase?.private_object_key) return;
   const provider = getPrivateReviewProvider();
   if (!provider || !privateReviewReady()) return;
@@ -1668,12 +1673,28 @@ async function handleSendMessage(req: Request): Promise<Response> {
   const policy = policyForMessageScan(heuristic);
   const moderationState = policy.hide ? "hidden" : heuristic.classification === "clean" ? "clear" : "pending_review";
   const message = await createMessage(match_id, user.id, content.trim(), moderationState, policy.hide ? heuristic.classification : null);
-  if (heuristic.classification !== "clean") await upsertMessageModerationFlag(message.id, user.id, match_id, heuristic.classification, "heuristic", heuristic.confidence, null, heuristic.matchedRules, policy.lockAccount ? "lock_account" : policy.hide ? "hide" : "review");
+  if (heuristic.classification !== "clean") {
+    const flag = await upsertMessageModerationFlag(message.id, user.id, match_id, heuristic.classification, "heuristic", heuristic.confidence, null, heuristic.matchedRules, policy.lockAccount ? "lock_account" : policy.hide ? "hide" : "review");
+    if (flag?.id) void notifySafetyReviewer({ kind: "message", caseId: String(flag.id), flagType: heuristic.classification, source: "heuristic", confidence: heuristic.confidence, reason: heuristic.classification }).catch(() => {});
+  }
   if (policy.lockAccount) {
     await createSuspension({ userId: user.id, reason: "underage", duration: "indefinite", endsAt: null, actorUserId: null, sourceCaseId: String(message.id) });
     await recordAdminAuditEvent({ actorUserId: null, action: "message_moderation.enforcement", targetType: "message", targetId: String(message.id), metadata: { classification: heuristic.classification, action: "lock_account" } });
   } else if (policy.hide) await recordAdminAuditEvent({ actorUserId: null, action: "message_moderation.enforcement", targetType: "message", targetId: String(message.id), metadata: { classification: heuristic.classification, action: "hide" } });
-  if (!policy.hide && !policy.lockAccount) void scanMessage(content.trim()).then(async result => { if (result.classification !== "clean") await upsertMessageModerationFlag(message.id, user.id, match_id, result.classification, "provider", result.confidence, result.providerRef, result.matchedRules, "review"); }).catch(err => logWarn("message_moderation.provider_failed", { error: err }));
+  if (!policy.hide && !policy.lockAccount) void scanMessage(content.trim()).then(async result => {
+    if (result.classification === "clean") return;
+    const providerPolicy = policyForMessageScan(result);
+    const flag = await upsertMessageModerationFlag(message.id, user.id, match_id, result.classification, "provider", result.confidence, result.providerRef, result.matchedRules, providerPolicy.lockAccount ? "lock_account" : providerPolicy.hide ? "hide" : "review");
+    if (flag?.id && result.classification !== "error") void notifySafetyReviewer({ kind: "message", caseId: String(flag.id), flagType: result.classification, source: "provider", confidence: result.confidence, reason: result.classification }).catch(() => {});
+    if (providerPolicy.lockAccount) {
+      await hideMessage(message.id, `provider_scan:${result.classification}`);
+      await createSuspension({ userId: user.id, reason: "underage", duration: "indefinite", endsAt: null, actorUserId: null, sourceCaseId: String(message.id) });
+      await recordAdminAuditEvent({ actorUserId: null, action: "message_moderation.enforcement", targetType: "message", targetId: String(message.id), metadata: { classification: result.classification, action: "lock_account", source: "provider_scan" } });
+    } else if (providerPolicy.hide) {
+      await hideMessage(message.id, `provider_scan:${result.classification}`);
+      await recordAdminAuditEvent({ actorUserId: null, action: "message_moderation.enforcement", targetType: "message", targetId: String(message.id), metadata: { classification: result.classification, action: "hide", source: "provider_scan" } });
+    }
+  }).catch(err => logWarn("message_moderation.provider_failed", { error: err }));
   if (moderationState !== "clear") return json({ ok: true, message: { id: message.id, match_id: message.match_id, sender_id: message.sender_id, content: message.content, read: message.read, created_at: message.created_at, sender_name: user.display_name, sender_photo: user.photo_path } });
 
   // Notify the other participant
@@ -1862,7 +1883,8 @@ async function handleReport(req: Request): Promise<Response> {
       const policy = userReportPolicyForClassification(classification);
       // Surface the user report in the admin message-moderation queue exactly
       // like a heuristic/provider flag, with the protective action applied.
-      await upsertMessageModerationFlag(message.id, message.sender_id, message.match_id, classification, "user_report", 1, null, ["user_report"], policy.lockAccount ? "lock_account" : policy.hide ? "hide" : "review");
+      const reportFlag = await upsertMessageModerationFlag(message.id, message.sender_id, message.match_id, classification, "user_report", 1, null, ["user_report"], policy.lockAccount ? "lock_account" : policy.hide ? "hide" : "review");
+      if (reportFlag?.id) void notifySafetyReviewer({ kind: "message", caseId: String(reportFlag.id), flagType: classification, source: "user_report", confidence: 1, reason: classification }).catch(() => {});
       if (policy.hide) await hideMessage(message.id, `user_report:${classification}`);
       if (policy.lockAccount) await recordAdminAuditEvent({ actorUserId: user.id, action: "message_moderation.enforcement", targetType: "message", targetId: String(message.id), metadata: { classification, action: "lock_account", source: "user_report" } });
       // Underage message reports follow the same zero-tolerance protective
