@@ -25,7 +25,7 @@ import {
   updateSubscriptionStatus,
   updateUserStripeInfo,
   getUserByStripeCustomerId,
-  getUserByVerificationSessionId, startVerificationSession, updateVerificationOutcome,
+  getUserByVerificationSessionId, startVerificationSession, updateVerificationOutcome, resetVerificationSession,
   getUsersByGradeRange,
   getUsersWith8020Matching,
   recordLike,
@@ -2275,7 +2275,34 @@ async function handleVerificationSession(req: Request): Promise<Response> {
   if (!user) return json({ error: "Unauthorized" }, 401);
   if (user.verification_status === "verified") return json({ error: "Already verified", verified: true }, 409);
   if (user.verification_status === "pending" && user.verification_session_id) {
-    return json({ id: user.verification_session_id, status: "pending", error: "Verification already in progress" }, 409);
+    // A pending session must never dead-end in a 409: resume it when it is
+    // still active, persist the outcome when Stripe already finished it, or
+    // transparently replace it with a fresh session when it is dead.
+    const stripe = getStripe();
+    if (stripe) {
+      let existing: Stripe.Identity.VerificationSession | null = null;
+      try {
+        existing = await stripe.identity.verificationSessions.retrieve(user.verification_session_id);
+      } catch {
+        // Retrieval failed (session expired or vanished): drop the stale row
+        // and start a fresh session below.
+        await resetVerificationSession(user.id);
+      }
+      if (existing) {
+        if (existing.status === "processing" || existing.status === "requires_input") {
+          // Resume the SAME modal: retrieve returns the same client_secret.
+          return json({ client_secret: existing.client_secret, id: existing.id, resumed: true });
+        }
+        if (existing.status === "verified") {
+          // Stripe finished the check but the webhook may not have landed yet.
+          await updateVerificationOutcome(user.id, existing.id, "verified");
+          return json({ verified: true });
+        }
+        // Terminal (canceled/expired/etc.) or unknown: replace with a fresh
+        // session below.
+        await resetVerificationSession(user.id);
+      }
+    }
   }
   const stripe = getStripe();
   if (!stripe) return json({ error: "Stripe is not configured" }, 503);
@@ -2347,8 +2374,13 @@ async function handleStripeWebhook(req: Request): Promise<Response> {
       case "identity.verification_session.requires_input":
       case "identity.verification_session.canceled": {
         const session = event.data.object as Stripe.Identity.VerificationSession;
+        // Stale-session guard: only apply the event when it matches the user's
+        // CURRENT verification_session_id. A late event for a replaced or
+        // abandoned session must never flip the user's status.
         const user = await getUserByVerificationSessionId(session.id);
-        if (user) await updateVerificationOutcome(user.id, session.id, event.type.endsWith(".verified") ? "verified" : "unverified");
+        if (user && user.verification_session_id === session.id) {
+          await updateVerificationOutcome(user.id, session.id, event.type.endsWith(".verified") ? "verified" : "unverified");
+        }
         break;
       }
       case "checkout.session.completed": {
