@@ -103,6 +103,7 @@ export const EVENTS = {
   STRIPE_SUBSCRIPTION_CANCELLED: "stripe.subscription_cancelled",
   STRIPE_FOUNDERS_ASSIGNED: "stripe.founders.assigned",
   STRIPE_FOUNDERS_FULL: "stripe.founders.full",
+  STRIPE_FOUNDER_RELEASED: "stripe.founder.released",
   STRIPE_REFERRAL_REWARD_APPLIED: "stripe.referral_reward_applied",
   // Matching & chat
   MATCH_LIKE: "match.like",

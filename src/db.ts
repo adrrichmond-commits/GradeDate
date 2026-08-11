@@ -2509,6 +2509,26 @@ export async function assignFounderNumber(userId: number): Promise<number | null
   return founderNumber;
 }
 
+/**
+ * Release a user's founder claim (number, flag, price lock, and badge).
+ * Idempotent — safe to call even when the user already has no founder state
+ * (e.g. Stripe webhook retries). Restores a spot toward the 1,000-member
+ * Founders Club cap so founder spots remaining stays honest.
+ */
+export async function revokeFounderState(userId: number): Promise<void> {
+  await sql()`
+    UPDATE users SET
+      is_founder = false,
+      founder_number = NULL,
+      founder_price_lock_price_id = NULL
+    WHERE id = ${userId}
+  `;
+  await sql()`
+    DELETE FROM user_badges
+    WHERE user_id = ${userId} AND badge_type = 'founding_member'
+  `;
+}
+
 
 // ── Waitlist ──────────────────────────────────────────────────────
 
