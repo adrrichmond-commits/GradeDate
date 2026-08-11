@@ -287,7 +287,7 @@ type SafeUser = Omit<User, "password_hash">;
 
 function toSafeUser(user: User): SafeUser {
   const { password_hash: _, ...safe } = user;
-  return safe;
+  return { ...safe, verification_required: verificationRequired() } as SafeUser;
 }
 
 function requireSubscription(user: User): Response | null {
@@ -1421,6 +1421,8 @@ async function handleLike(req: Request): Promise<Response> {
   if (!user) {
     return json({ error: "Unauthorized" }, 401);
   }
+  const verificationErr = verificationGate(user);
+  if (verificationErr) return verificationErr;
 
   const body = await req.json().catch(() => null);
   const likedId = body?.liked_id;
@@ -1569,6 +1571,8 @@ async function handleSendMessage(req: Request): Promise<Response> {
   if (!user) {
     return json({ error: "Unauthorized" }, 401);
   }
+  const verificationErr = verificationGate(user);
+  if (verificationErr) return verificationErr;
 
   const body = await req.json().catch(() => null);
   const { match_id, content } = body || {};
@@ -2024,6 +2028,8 @@ async function handleCreateCheckout(req: Request): Promise<Response> {
   if (!user) {
     return json({ error: "Unauthorized" }, 401);
   }
+  const verificationErr = verificationGate(user);
+  if (verificationErr) return verificationErr;
 
   if (isCheckoutBlocked(user.subscription_status, user.subscription_updated_at)) {
     return json({
@@ -2110,6 +2116,8 @@ function upsellPriceId(product: PaidUpsellProduct): string | undefined {
 async function handleUpsellCheckout(req: Request): Promise<Response> {
   const user = await getCurrentUser(req);
   if (!user) return json({ error: "Unauthorized" }, 401);
+  const verificationErr = verificationGate(user);
+  if (verificationErr) return verificationErr;
   const body = await req.json().catch(() => null);
   const product = body?.product as PaidUpsellProduct;
   if (!isUpsellProduct(product)) return json({ error: "Invalid product" }, 400);
@@ -2266,8 +2274,26 @@ async function handleLikedMe(req: Request): Promise<Response> {
 
 // ── Stripe Identity verification ───────────────────────────────
 function identityRequirements(): { type: "document"; require_matching_selfie?: boolean } {
-  const configured = (process.env.STRIPE_IDENTITY_REQUIREMENTS || "document").trim().toLowerCase();
+  const configured = (process.env.STRIPE_IDENTITY_REQUIREMENTS || "document_selfie").trim().toLowerCase();
   return { type: "document", ...(configured === "document_selfie" ? { require_matching_selfie: true } : {}) };
+}
+
+// Mandatory age-verification gate for the closed beta. When
+// VERIFICATION_REQUIRED=true, core actions (like, message, purchase) require
+// verification_status === "verified". Browsing the feed and profile editing
+// stay open. The flag is server-side; clients learn it via SafeUser.
+function verificationRequired(): boolean {
+  return process.env.VERIFICATION_REQUIRED === "true";
+}
+
+function verificationGate(user: User): Response | null {
+  if (verificationRequired() && user.verification_status !== "verified") {
+    return json(
+      { error: "Verify your age to continue", code: "VERIFICATION_REQUIRED" },
+      403,
+    );
+  }
+  return null;
 }
 
 async function handleVerificationSession(req: Request): Promise<Response> {

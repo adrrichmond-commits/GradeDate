@@ -73,6 +73,8 @@ export interface SafeUser {
   badges?: { id: string; label: string; emoji: string }[];
   verification_status: "unverified" | "pending" | "verified";
   verification_verified_at: string | null;
+  /** True when the beta requires age verification (VERIFICATION_REQUIRED=true server-side). */
+  verification_required: boolean;
 }
 
 interface AuthState {

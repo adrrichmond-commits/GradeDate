@@ -4,6 +4,12 @@ import { apiFetch, safeApiError } from "~/client-api";
 import { getCsrfToken } from "~/csrf-client";
 import type { SafeUser } from "~/auth-context";
 
+/** Whether the onboarding "Skip for now" affordance may be shown: never when
+ * verification is required for the beta — the user must complete the check. */
+export function skipVerificationVisible(user: SafeUser | null): boolean {
+  return !!user && !user.verification_required;
+}
+
 export function VerifiedBadge({ className = "" }: { className?: string }) {
   return (
     <span
@@ -136,13 +142,23 @@ export function AgeVerificationCard({
     >
       <h2 className="text-lg font-semibold text-white">
         Verify your age{" "}
-        <span className="text-sm font-normal text-gray-500">(optional)</span>
+        {user.verification_required ? (
+          <span className="text-sm font-normal text-rose-300/90">(required)</span>
+        ) : (
+          <span className="text-sm font-normal text-gray-500">(optional)</span>
+        )}
       </h2>
       {!compact && (
         <p className="mt-2 text-sm leading-relaxed text-gray-400">
           Confirm you're 18+ with a government ID check via Stripe Identity. A
           Verified badge will appear on your profile. GradeDate never stores
           your ID or biometric data — Stripe processes and holds it.
+        </p>
+      )}
+      {user.verification_required && (
+        <p className="mt-2 text-sm font-medium text-amber-200/90">
+          Required for the beta — verify to like, message, and purchase. Your
+          session resumes where you left off if you close it.
         </p>
       )}
       {status === "pending" && (
@@ -170,7 +186,12 @@ export function AgeVerificationCard({
               ? "Resume verification"
               : "Verify now"}
         </button>
-        {compact && <span className="text-xs text-gray-500">Optional</span>}
+        {compact &&
+          (user.verification_required ? (
+            <span className="text-xs font-semibold text-rose-300/90">Required</span>
+          ) : (
+            <span className="text-xs text-gray-500">Optional</span>
+          ))}
       </div>
     </div>
   );

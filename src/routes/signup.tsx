@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import { useAuth } from "~/auth-context";
 import { getCsrfToken } from "~/csrf-client";
 import { getSignupDays } from "~/signup-date";
-import { AgeVerificationCard } from "~/age-verification";
+import { AgeVerificationCard, skipVerificationVisible } from "~/age-verification";
 
 export const Route = createFileRoute("/signup")({
   component: Signup,
@@ -183,13 +183,15 @@ function Signup() {
           {user && (
             <div className="mb-6">
               <AgeVerificationCard user={user} onComplete={refetch} />
-              <button
-                type="button"
-                onClick={handleContinueFree}
-                className="mt-3 w-full text-center text-sm text-gray-500 underline-offset-4 hover:text-gray-300 hover:underline"
-              >
-                Skip for now
-              </button>
+              {skipVerificationVisible(user) && (
+                <button
+                  type="button"
+                  onClick={handleContinueFree}
+                  className="mt-3 w-full text-center text-sm text-gray-500 underline-offset-4 hover:text-gray-300 hover:underline"
+                >
+                  Skip for now
+                </button>
+              )}
             </div>
           )}
 
