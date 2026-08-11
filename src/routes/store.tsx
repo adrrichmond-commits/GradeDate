@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useEffect, useRef, type ReactNode } from "react";
-import { useAuth } from "~/auth-context";
+import { isPremiumUser, useAuth } from "~/auth-context";
 import { getCsrfToken } from "~/csrf-client";
 import { parseStoreReturnState } from "~/checkout-return";
 import {
@@ -239,7 +239,7 @@ function StorePage() {
       </div>
 
       {/* Not subscribed warning */}
-      {user && user.subscription_status !== "active" && (
+      {user && !isPremiumUser(user) && (
         <div className="mb-8 rounded-xl border border-amber-500/30 bg-amber-500/10 p-5 text-center">
           <p className="text-amber-400 font-semibold text-sm">
             Free accounts can buy power ups too. Your normal free-tier limits remain in place; purchases only unlock the item shown.

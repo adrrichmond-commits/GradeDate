@@ -39,6 +39,8 @@ export interface SafeUser {
   grade: number | null;
   subscription_status: string;
   subscription_updated_at: string | null;
+  /** End of the one-time 14-day closed-beta Premium trial (null = none). */
+  trial_ends_at: string | null;
   regrades_available: number;
   boost_until: string | null;
   last_free_regrade_at: string | null;
@@ -75,6 +77,17 @@ export interface SafeUser {
   verification_verified_at: string | null;
   /** True when the beta requires age verification (VERIFICATION_REQUIRED=true server-side). */
   verification_required: boolean;
+}
+
+/**
+ * Client-side Premium check: an active subscription OR an in-flight beta
+ * trial. The server is the source of truth (all API gates derive from the
+ * same rule); this only drives what the UI renders.
+ */
+export function isPremiumUser(user: SafeUser | null | undefined): boolean {
+  if (!user) return false;
+  if (user.subscription_status === "active") return true;
+  return !!user.trial_ends_at && new Date(user.trial_ends_at).getTime() > Date.now();
 }
 
 interface AuthState {

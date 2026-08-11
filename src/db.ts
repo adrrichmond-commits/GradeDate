@@ -7,7 +7,7 @@ import {
   isNonEmptyRange,
 } from "./matching";
 import { leagueRangeScore, type LeagueValue } from "./mutual-league";
-import { PREMIUM_PRICE_ID, founderPriceLockApplies } from "./canonical-entitlements";
+import { PREMIUM_PRICE_ID, founderPriceLockApplies, hasPremiumEntitlement } from "./canonical-entitlements";
 import { deletePhoto } from "./blob-store";
 import { buildAccountDeletionQueries, collectOwnedPhotoPaths } from "./account-deletion";
 import { EVENTS, logInfo } from "./observability";
@@ -93,6 +93,7 @@ export async function initTables(): Promise<void> {
       subscription_status TEXT DEFAULT 'inactive',
       subscription_updated_at TIMESTAMPTZ,
       subscription_expires_at TIMESTAMPTZ,
+      trial_ends_at TIMESTAMPTZ, -- closed-beta 14-day Premium trial (NULL = no trial)
       stripe_customer_id TEXT,
       stripe_subscription_id TEXT,
       verification_status TEXT NOT NULL DEFAULT 'unverified',
@@ -109,6 +110,10 @@ export async function initTables(): Promise<void> {
   } catch { /* ignore */ }
   try {
     await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT`;
+  } catch { /* ignore */ }
+  // Closed-beta 14-day Premium trial - migration for existing DBs
+  try {
+    await sql()`ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMPTZ`;
   } catch { /* ignore */ }
   // Age verification (Stripe Identity) columns - migration for existing DBs
   try {
@@ -568,6 +573,7 @@ export interface User {
   subscription_status: string;
   subscription_updated_at: string | null;
   subscription_expires_at: string | null;
+  trial_ends_at: string | null;
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
   verification_status: "unverified" | "pending" | "verified";
@@ -1554,15 +1560,15 @@ function getNextMidnightUTC(): string {
 
 export async function getDailyLikesRemaining(userId: number): Promise<number> {
   const rows = await sql()`
-    SELECT daily_likes_remaining, daily_likes_reset_at, subscription_status, like_packs
+    SELECT daily_likes_remaining, daily_likes_reset_at, subscription_status, subscription_expires_at, trial_ends_at, like_packs
     FROM users WHERE id = ${userId}
   `;
   if (rows.length === 0) return 0;
 
-  const row = rows[0] as { daily_likes_remaining: number; daily_likes_reset_at: string | null; subscription_status: string; like_packs: number };
+  const row = rows[0] as { daily_likes_remaining: number; daily_likes_reset_at: string | null; subscription_status: string; subscription_expires_at: string | null; trial_ends_at: string | null; like_packs: number };
 
-  // Subscribers always have premium
-  if (row.subscription_status === "active") return -1;
+  // Subscribers and active-trial users always have premium
+  if (hasPremiumEntitlement(row.subscription_status, row.subscription_expires_at, row.trial_ends_at)) return -1;
 
   const now = new Date();
   const resetAt = row.daily_likes_reset_at ? new Date(row.daily_likes_reset_at) : null;
@@ -1582,15 +1588,15 @@ export async function getDailyLikesRemaining(userId: number): Promise<number> {
 
 export async function useDailyLike(userId: number): Promise<number> {
   const rows = await sql()`
-    SELECT daily_likes_remaining, daily_likes_reset_at, subscription_status, like_packs
+    SELECT daily_likes_remaining, daily_likes_reset_at, subscription_status, subscription_expires_at, trial_ends_at, like_packs
     FROM users WHERE id = ${userId}
   `;
   if (rows.length === 0) return 0;
 
-  const row = rows[0] as { daily_likes_remaining: number; daily_likes_reset_at: string | null; subscription_status: string; like_packs: number };
+  const row = rows[0] as { daily_likes_remaining: number; daily_likes_reset_at: string | null; subscription_status: string; subscription_expires_at: string | null; trial_ends_at: string | null; like_packs: number };
 
-  // Subscribers always have premium
-  if (row.subscription_status === "active") return -1;
+  // Subscribers and active-trial users always have premium
+  if (hasPremiumEntitlement(row.subscription_status, row.subscription_expires_at, row.trial_ends_at)) return -1;
 
   const now = new Date();
   const resetAt = row.daily_likes_reset_at ? new Date(row.daily_likes_reset_at) : null;
@@ -2468,19 +2474,22 @@ export async function applyReferralReward(rewardId: number): Promise<void> {
   const r = reward[0] as unknown as ReferralReward;
   if (r.applied || (r.expires_at && new Date(r.expires_at).getTime() <= Date.now())) return;
 
-  // Give referrer 1 month of premium — set to active and extend
+  // Give referrer 1 month of premium — set to active and extend. The base is
+  // the later of the current premium expiry (or now) and any in-flight trial
+  // end, so a user mid-trial keeps the free month AFTER the trial instead of
+  // wasting it inside it (see referralRewardExtensionBase).
   await sql()`
     UPDATE users SET
       subscription_status = 'active',
-      subscription_expires_at = COALESCE(subscription_expires_at, NOW()) + INTERVAL '1 month'
+      subscription_expires_at = GREATEST(COALESCE(subscription_expires_at, NOW()), COALESCE(trial_ends_at, NOW())) + INTERVAL '1 month'
     WHERE id = ${r.referrer_user_id}
   `;
 
-  // Give referee 1 month of premium — set to active and extend
+  // Give referee 1 month of premium — set to active and extend (same rule)
   await sql()`
     UPDATE users SET
       subscription_status = 'active',
-      subscription_expires_at = COALESCE(subscription_expires_at, NOW()) + INTERVAL '1 month'
+      subscription_expires_at = GREATEST(COALESCE(subscription_expires_at, NOW()), COALESCE(trial_ends_at, NOW())) + INTERVAL '1 month'
     WHERE id = ${r.referee_user_id}
   `;
 
@@ -2558,7 +2567,17 @@ export async function redeemBetaInviteCode(code: string, userId: number): Promis
       AND (SELECT COUNT(*) FROM beta_invite_codes WHERE redeemed_at IS NOT NULL) < ${betaCohortCap()}
     RETURNING id
   `;
-  if (rows.length > 0) return { success: true };
+  if (rows.length > 0) {
+    // Beta cohort membership starts here: grant the one-time 14-day Premium
+    // trial. COALESCE makes the grant idempotent — a second redemption attempt
+    // (which the redeemed_at guard already blocks) can never extend or renew
+    // the trial, and subscribing/referrals never touch trial_ends_at.
+    await sql()`
+      UPDATE users SET trial_ends_at = COALESCE(trial_ends_at, NOW() + INTERVAL '14 days')
+      WHERE id = ${userId}
+    `;
+    return { success: true };
+  }
   const invite = await getBetaInviteCodeByCode(code);
   if (!invite) return { success: false, error: "invalid" };
   if (invite.redeemed_at) return { success: false, error: "already_redeemed" };
