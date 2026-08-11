@@ -740,6 +740,9 @@ export async function startVerificationSession(userId: number, sessionId: string
 export async function updateVerificationOutcome(userId: number, sessionId: string, outcome: "verified" | "unverified"): Promise<void> {
   await sql()`UPDATE users SET verification_status = ${outcome}, verification_session_id = ${sessionId}, verification_verified_at = ${outcome === 'verified' ? sql()`NOW()` : sql()`NULL`} WHERE id = ${userId}`;
 }
+export async function resetVerificationSession(userId: number): Promise<void> {
+  await sql()`UPDATE users SET verification_status = 'unverified', verification_session_id = NULL, verification_session_created_at = NULL, verification_verified_at = NULL WHERE id = ${userId}`;
+}
 
 export async function updateUserProfile(
   id: number,

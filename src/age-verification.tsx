@@ -62,7 +62,10 @@ export function AgeVerificationCard({
     setStatus("starting");
     setMessage("");
     try {
-      const data = await apiFetch<{ client_secret: string }>(
+      const data = await apiFetch<{
+        client_secret: string;
+        verified?: boolean;
+      }>(
         "/api/verification/session",
         {
           method: "POST",
@@ -72,6 +75,14 @@ export function AgeVerificationCard({
           },
         },
       );
+      if (data.verified) {
+        // Stripe already finished the check (webhook not yet reflected);
+        // the server persisted it, so just show the verified state.
+        setStatus("verified");
+        setMessage("You're verified ✓");
+        await onComplete?.();
+        return;
+      }
       const key = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as
         | string
         | undefined;
@@ -150,13 +161,13 @@ export function AgeVerificationCard({
         <button
           type="button"
           onClick={begin}
-          disabled={status === "starting" || status === "pending"}
+          disabled={status === "starting"}
           className="rounded-full bg-rose-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-400 disabled:cursor-wait disabled:opacity-60"
         >
           {status === "starting"
             ? "Opening secure check…"
             : status === "pending"
-              ? "Verification in progress"
+              ? "Resume verification"
               : "Verify now"}
         </button>
         {compact && <span className="text-xs text-gray-500">Optional</span>}
