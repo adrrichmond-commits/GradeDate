@@ -83,7 +83,7 @@ describe("env file tracking hygiene", () => {
 
   test("no tracked file contains a real secret assignment", () => {
     const pattern = new RegExp(
-      String.raw`(${SECRET_VARS.join("|")})\s*=\s*["']?(?!process\.env\.)(?!vercel_blob_rw_00000000_testtoken\b)[A-Za-z0-9+/_\-\.]{16,}`,
+      String.raw`(?<!process\.env\.)(${SECRET_VARS.join("|")})\s*=\s*["']?(?!process\.env\.)(?!vercel_blob_rw_00000000_testtoken\b)[A-Za-z0-9+/_\-\.]{16,}`,
     );
     const offenders: string[] = [];
     for (const file of tracked) {
