@@ -92,7 +92,9 @@ describe("rekognition adapter wiring", () => {
       },
     );
     expect(captured.url).toBe("https://rekognition.us-east-1.amazonaws.com/");
-    expect(captured.headers?.["x-amz-target"]).toBe("AWSRekognitionService.DetectModerationLabels");
+    // Exact X-Amz-Target matters: a wrong prefix (AWSRekognitionService.*)
+    // yields 400 UnknownOperationException from the real API.
+    expect(captured.headers?.["x-amz-target"]).toBe("RekognitionService.DetectModerationLabels");
     expect(captured.headers?.["authorization"]).toContain("AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/");
     expect(captured.headers?.["authorization"]).toContain("/rekognition/aws4_request");
     expect(JSON.parse(captured.body ?? "{}").Image.Bytes).toBeTruthy();

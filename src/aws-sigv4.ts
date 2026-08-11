@@ -36,9 +36,18 @@ function sha256Hex(data: string): string {
 
 function uriEncode(input: string): string {
   // SigV4 requires every character to be percent-encoded (except unreserved
-  // A-Z a-z 0-9 - _ . ~). The paths we sign are simple ("/"), so a strict
-  // implementation is safe and correct for the general case too.
+  // A-Z a-z 0-9 - _ . ~).
   return encodeURIComponent(input).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+}
+
+/**
+ * Percent-encode a canonical URI path: encode each path segment but keep the
+ * "/" separators literal. The canonical URI for the root path is "/" — never
+ * "%2F". (Per the SigV4 spec, the canonical URI is the URI-encoded version of
+ * the absolute path component: encode the path segments, preserve separators.)
+ */
+export function uriEncodePath(path: string): string {
+  return path.split("/").map(uriEncode).join("/");
 }
 
 /**
@@ -66,7 +75,7 @@ export function signAwsSigV4(options: SigV4Options): Record<string, string> {
 
   const canonicalRequest = [
     options.method.toUpperCase(),
-    uriEncode(options.path),
+    uriEncodePath(options.path),
     "", // query string (not used)
     canonicalHeaders,
     signedHeaders,

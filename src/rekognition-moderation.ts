@@ -121,7 +121,7 @@ export async function scanPhotoWithRekognition(
     path: "/",
     headers: {
       "content-type": "application/x-amz-json-1.1",
-      "x-amz-target": "AWSRekognitionService.DetectModerationLabels",
+      "x-amz-target": "RekognitionService.DetectModerationLabels",
     },
     body,
     accessKeyId,
