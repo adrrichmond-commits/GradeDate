@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   isCheckoutBlocked,
+  isProcessingInFlight,
   isProcessingStale,
   nextSubscriptionConfirmationState,
   PROCESSING_STALE_MS,
@@ -69,5 +70,25 @@ describe("isCheckoutBlocked with staleness", () => {
   });
   test("without an updatedAt, processing blocks (backward compatible)", () => {
     expect(isCheckoutBlocked("processing")).toBe(true);
+  });
+});
+describe("isProcessingInFlight (client Subscribe-button gate)", () => {
+  test("fresh processing shows the disabled 'processing' state", () => {
+    expect(isProcessingInFlight("processing", minutesAgo(1), NOW)).toBe(true);
+  });
+  test("stale processing unblocks — the normal Subscribe button renders", () => {
+    expect(isProcessingInFlight("processing", minutesAgo(20), NOW)).toBe(false);
+  });
+  test("active never shows the processing notice", () => {
+    expect(isProcessingInFlight("active", minutesAgo(1), NOW)).toBe(false);
+  });
+  test("none and non-processing states never show the notice", () => {
+    expect(isProcessingInFlight("none", minutesAgo(1), NOW)).toBe(false);
+    expect(isProcessingInFlight(null, null, NOW)).toBe(false);
+    expect(isProcessingInFlight(undefined, undefined, NOW)).toBe(false);
+    expect(isProcessingInFlight("inactive", minutesAgo(1), NOW)).toBe(false);
+  });
+  test("without an updatedAt, processing stays in flight (fail safe toward blocking)", () => {
+    expect(isProcessingInFlight("processing")).toBe(true);
   });
 });

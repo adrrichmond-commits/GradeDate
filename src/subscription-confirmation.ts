@@ -42,3 +42,16 @@ export function isCheckoutBlocked(
   if (status === "processing") return !isProcessingStale(updatedAt, now);
   return false;
 }
+/** Client-side Subscribe-button gate: true when a checkout is genuinely still
+ * in flight (fresh "processing") and the UI should show the disabled
+ * "Subscription already processing…" state. A stale marker (see
+ * isProcessingStale) renders the normal enabled Subscribe button so the user
+ * can retry, matching the server's isCheckoutBlocked staleness behavior.
+ * Without an updatedAt, "processing" is treated as in-flight (fail safe). */
+export function isProcessingInFlight(
+  status: string | null | undefined,
+  updatedAt?: string | Date | null,
+  now: number = Date.now(),
+): boolean {
+  return status === "processing" && !isProcessingStale(updatedAt, now);
+}

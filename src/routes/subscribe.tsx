@@ -4,7 +4,7 @@ import { useAuth } from "~/auth-context";
 import { AuthUnavailable } from "~/auth-unavailable";
 import { getCsrfToken } from "~/csrf-client";
 import { parseSubscriptionReturnState } from "~/checkout-return";
-import { isCheckoutBlocked, nextSubscriptionConfirmationState, SUBSCRIPTION_CONFIRMATION_INTERVAL_MS, type SubscriptionConfirmationState } from "~/subscription-confirmation";
+import { isCheckoutBlocked, isProcessingInFlight, nextSubscriptionConfirmationState, SUBSCRIPTION_CONFIRMATION_INTERVAL_MS, type SubscriptionConfirmationState } from "~/subscription-confirmation";
 
 type Plan = "monthly";
 
@@ -267,7 +267,7 @@ function SubscribePage() {
           {/* Checkout Button */}
           <button
             onClick={handleSubscribe}
-            disabled={checkingOut || isCheckoutBlocked(user?.subscription_status)}
+            disabled={checkingOut || isCheckoutBlocked(user?.subscription_status, user?.subscription_updated_at)}
             className={`w-full rounded-full px-8 py-4 text-center text-lg font-semibold text-white shadow-lg transition ${
               "bg-rose-600 shadow-rose-600/25 hover:bg-rose-500 hover:shadow-rose-500/30"
             } disabled:cursor-wait disabled:opacity-60`}
@@ -278,7 +278,7 @@ function SubscribePage() {
                 Redirecting to Stripe...
               </span>
             ) : (
-              user?.subscription_status === "processing" ? "Subscription already processing…" : `Subscribe — $${currentPlan.price.toFixed(2)}${currentPlan.period}`
+              isProcessingInFlight(user?.subscription_status, user?.subscription_updated_at) ? "Subscription already processing…" : `Subscribe — ${currentPlan.price.toFixed(2)}${currentPlan.period}`
             )}
           </button>
           <p className="mt-3 text-xs text-gray-500">
