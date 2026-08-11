@@ -1,4 +1,5 @@
 import { logInfo, logWarn } from "./observability";
+import { REKOGNITION_PROVIDER, rekognitionConfigured, scanPhotoWithRekognition } from "./rekognition-moderation";
 
 export const PHOTO_FLAG_TYPES = ["csam_or_underage", "trafficking_or_exploitation", "impersonation", "nsfw"] as const;
 export type PhotoFlagType = (typeof PHOTO_FLAG_TYPES)[number];
@@ -29,14 +30,36 @@ export function classifyPhotoScan(payload: unknown): PhotoScanResult {
 
 export function photoModerationConfigured(env: Record<string, string | undefined> = process.env): boolean { return !!env.MODERATION_PHOTO_PROVIDER; }
 
+function isHttpUrl(value: string): boolean { return /^https?:\/\//i.test(value); }
+
+/**
+ * Scan photo bytes with the configured provider.
+ *  - MODERATION_PHOTO_PROVIDER=aws-rekognition -> AWS Rekognition
+ *    DetectModerationLabels (requires AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY;
+ *    missing keys fail closed as "error" so uploads are flagged for review).
+ *  - MODERATION_PHOTO_PROVIDER=http(s)://... -> legacy generic HTTP provider.
+ *  - Unknown provider values fail closed as "error".
+ *  - Unset provider -> disabled (returns "clean" without calling anything).
+ */
 export async function scanPhoto(bytes: Uint8Array, contentType: string, env: Record<string, string | undefined> = process.env, fetcher: typeof fetch = fetch): Promise<PhotoScanResult> {
-  const url = env.MODERATION_PHOTO_PROVIDER;
-  if (!url) { logInfo("photo_moderation.disabled", {}); return { classification: "clean", confidence: null, providerRef: null }; }
+  const provider = env.MODERATION_PHOTO_PROVIDER;
+  if (!provider) { logInfo("photo_moderation.disabled", {}); return { classification: "clean", confidence: null, providerRef: null }; }
+  if (provider === REKOGNITION_PROVIDER) {
+    if (!rekognitionConfigured(env)) {
+      logWarn("photo_moderation.unconfigured", { provider, reason: "aws_credentials_missing" });
+      return { classification: "error", confidence: null, providerRef: "aws_credentials_missing" };
+    }
+    return scanPhotoWithRekognition(bytes, contentType, env, fetcher);
+  }
+  if (!isHttpUrl(provider)) {
+    logWarn("photo_moderation.unconfigured", { provider, reason: "unknown_provider" });
+    return { classification: "error", confidence: null, providerRef: "unknown_provider" };
+  }
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), MAX_SCAN_MS);
     try {
-      const response = await fetcher(url, { method: "POST", signal: controller.signal, headers: { "content-type": "application/json", ...(env.MODERATION_PHOTO_API_KEY ? { authorization: `Bearer ${env.MODERATION_PHOTO_API_KEY}` } : {}) }, body: JSON.stringify({ image_base64: Buffer.from(bytes).toString("base64"), content_type: contentType }) });
+      const response = await fetcher(provider, { method: "POST", signal: controller.signal, headers: { "content-type": "application/json", ...(env.MODERATION_PHOTO_API_KEY ? { authorization: `Bearer ${env.MODERATION_PHOTO_API_KEY}` } : {}) }, body: JSON.stringify({ image_base64: Buffer.from(bytes).toString("base64"), content_type: contentType }) });
       if (!response.ok) throw new Error(`provider_http_${response.status}`);
       return classifyPhotoScan(await response.json());
     } finally { clearTimeout(timer); }

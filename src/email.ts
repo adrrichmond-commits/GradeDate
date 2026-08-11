@@ -25,7 +25,7 @@ function sendFailureReason(error: unknown): "provider_error" | "unknown" {
 }
 
 async function deliver(
-  purpose: "password_reset" | "waitlist" | "contact" | "beta_invite",
+  purpose: "password_reset" | "waitlist" | "contact" | "beta_invite" | "safety_reviewer",
   payload: EmailPayload,
   provider: EmailProvider | null = resend,
 ): Promise<boolean> {
@@ -145,5 +145,46 @@ export function sendContactMessage(
     subject: `[Contact] ${topic} — ${label.slice(0, 80)}`,
     reply_to: input.email,
     html: `<h2>GradeDate contact message</h2><p><strong>Topic:</strong> ${safeTopic}</p><p><strong>Name:</strong> ${safeName}</p><p><strong>Email:</strong> ${safeEmail}</p><p><strong>Message:</strong><br>${safeMessage}</p>`,
+  }, provider);
+}
+
+/**
+ * Owner safety-reviewer notification for a new flag in the review queue
+ * (photo moderation case or message moderation flag). One email per case —
+ * dedupe lives in the caller (safety-review-notify.ts).
+ */
+export function sendSafetyReviewerEmail(
+  input: {
+    to: string;
+    kind: "photo" | "message";
+    caseId: string;
+    flagType: string;
+    source: string;
+    confidence: number | null;
+    reason: string;
+    queueUrl: string;
+  },
+  provider?: EmailProvider | null,
+): Promise<boolean> {
+  const kindLabel = input.kind === "photo" ? "Photo" : "Message";
+  const safeQueueUrl = escapeHtml(input.queueUrl);
+  const confidence = input.confidence == null ? "n/a" : `${Math.round(input.confidence * 100)}%`;
+  const safeReason = escapeHtml(input.reason);
+  const safeCaseId = escapeHtml(input.caseId);
+  return deliver("safety_reviewer", {
+    from: "GradeDate <noreply@gradedate.app>",
+    to: input.to,
+    subject: `[Safety Review] ${kindLabel} flagged — ${input.flagType}`,
+    html: `<h2>GradeDate safety review</h2>
+<p>A new <strong>${kindLabel.toLowerCase()}</strong> flag landed in the review queue.</p>
+<ul>
+  <li><strong>Case:</strong> ${safeCaseId}</li>
+  <li><strong>Type:</strong> ${kindLabel}</li>
+  <li><strong>Reason:</strong> ${safeReason}</li>
+  <li><strong>Flag:</strong> ${input.flagType}</li>
+  <li><strong>Source:</strong> ${input.source}</li>
+  <li><strong>Confidence:</strong> ${confidence}</li>
+</ul>
+<p><a href="${safeQueueUrl}">Open the review queue</a></p>`,
   }, provider);
 }
