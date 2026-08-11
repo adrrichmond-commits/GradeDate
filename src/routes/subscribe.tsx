@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
-import { useAuth } from "~/auth-context";
+import { isPremiumUser, useAuth } from "~/auth-context";
 import { AuthUnavailable } from "~/auth-unavailable";
 import { getCsrfToken } from "~/csrf-client";
 import { parseSubscriptionReturnState } from "~/checkout-return";
@@ -178,6 +178,18 @@ function SubscribePage() {
           Subscribe to browse matches, connect with singles at your level, and
           start chatting. Premium includes regrades and seeing who liked you. Cancel anytime.
         </p>
+
+        {/* Beta trial users keep Premium after the trial only if they subscribe. */}
+        {isPremiumUser(user) && user.subscription_status !== "active" && user.trial_ends_at && (
+          <div className="mb-6 rounded-xl border border-green-500/30 bg-green-500/10 p-4" role="status">
+            <p className="font-semibold text-green-400">
+              You're on a 14-day Premium trial — enjoy it!
+            </p>
+            <p className="mt-1 text-sm text-green-400/70">
+              Your trial ends {new Date(user.trial_ends_at).toLocaleDateString()}. Subscribe to keep Premium (and your matches) after that.
+            </p>
+          </div>
+        )}
 
         {/* Return status is explicit; never equate Stripe redirect with fulfillment. */}
         {showSuccess && confirmation === "pending" && (

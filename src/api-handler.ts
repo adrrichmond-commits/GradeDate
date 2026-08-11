@@ -1,6 +1,6 @@
 import type { Server } from "bun";
 import { originFromUrl, resolveSiteUrl } from "./site-url";
-import { PREMIUM_PRICE_ID } from "./canonical-entitlements";
+import { PREMIUM_PRICE_ID, hasPremiumEntitlement } from "./canonical-entitlements";
 import { deriveCoachingTips } from "./coaching";
 import { topPercentLabel } from "./percentile";
 import { validateUnmatchRequest } from "./unmatch-flow";
@@ -298,7 +298,7 @@ function toSafeUser(user: User): SafeUser {
 }
 
 function requireSubscription(user: User): Response | null {
-  if (user.subscription_status !== "active") {
+  if (!hasPremiumEntitlement(user.subscription_status, user.subscription_expires_at, user.trial_ends_at)) {
     return json(
       { error: "Subscription required", code: "NO_SUBSCRIPTION" },
       402,
@@ -936,8 +936,8 @@ async function handleGrade(req: Request): Promise<Response> {
 
   if (user) {
     // Authenticated user
-    if (user.subscription_status === "active") {
-      // Subscriber: full flow — require photo, process, save grade
+    if (hasPremiumEntitlement(user.subscription_status, user.subscription_expires_at, user.trial_ends_at)) {
+      // Subscriber (or active trial): full flow — require photo, process, save grade
       if (!user.photo_path) {
         return json({ error: "You must upload a photo before getting graded" }, 400);
       }
@@ -1202,7 +1202,7 @@ async function handleGradePhotos(req: Request): Promise<Response> {
 
   // A repeat authenticated grading run consumes one paid regrade credit.
   // New free users retain one run per seven-day window.
-  const hasActivePremium = user.subscription_status === "active" && (!user.subscription_expires_at || new Date(user.subscription_expires_at).getTime() > Date.now());
+  const hasActivePremium = hasPremiumEntitlement(user.subscription_status, user.subscription_expires_at, user.trial_ends_at);
   if (user.grade !== null && hasActivePremium) {
     if (!(await useReGrade(user.id))) return json({ error: "Purchase a $0.99 re-grade credit to grade again.", code: "REGRADE_REQUIRED" }, 402);
   } else if (!hasActivePremium) {
@@ -1483,8 +1483,8 @@ async function handleLike(req: Request): Promise<Response> {
     return json({ error: "You cannot like yourself" }, 400);
   }
 
-  // Daily like cap for non-subscribers
-  if (user.subscription_status !== "active") {
+  // Daily like cap for non-subscribers (active trials are premium)
+  if (!hasPremiumEntitlement(user.subscription_status, user.subscription_expires_at, user.trial_ends_at)) {
     const remaining = await useDailyLike(user.id);
     if (remaining === 0) {
       return json(
@@ -2296,7 +2296,7 @@ async function handleLikedMe(req: Request): Promise<Response> {
     return json({ error: "Unauthorized" }, 401);
   }
 
-  const hasActivePremium = user.subscription_status === "active" && (!user.subscription_expires_at || new Date(user.subscription_expires_at).getTime() > Date.now());
+  const hasActivePremium = hasPremiumEntitlement(user.subscription_status, user.subscription_expires_at, user.trial_ends_at);
   if (!hasActivePremium) {
     // Return count only, no details
     const likers = await getLikers(user.id);

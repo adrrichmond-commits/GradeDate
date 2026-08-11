@@ -20,7 +20,7 @@ describe("canonical pricing and entitlement policy", () => {
     // canonical constant (which honors the PREMIUM_PRICE_ID env override) and
     // must not carry its own hardcoded copy of the legacy price id.
     const apiHandler = readFileSync(path.join(import.meta.dir, "api-handler.ts"), "utf8");
-    expect(apiHandler).toContain('import { PREMIUM_PRICE_ID } from "./canonical-entitlements";');
+    expect(apiHandler).toContain('import { PREMIUM_PRICE_ID, hasPremiumEntitlement } from "./canonical-entitlements";');
     expect(apiHandler).not.toContain('const PREMIUM_PRICE_ID = "price_');
     expect(apiHandler).toContain("const priceId = PREMIUM_PRICE_ID;");
   });

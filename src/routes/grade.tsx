@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useEffect, useRef } from "react";
-import { useAuth } from "~/auth-context";
+import { isPremiumUser, useAuth } from "~/auth-context";
 import { getCsrfToken } from "~/csrf-client";
 import { gradeAnonymousPhotos } from "~/anonymous-grading";
 import { EXPERIMENTS } from "~/experiment";
@@ -155,7 +155,7 @@ function GradePage() {
   const csrfFetched = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const isSubscribed = user?.subscription_status === "active";
+  const isSubscribed = isPremiumUser(user);
   const isAuthenticated = !!user;
   const maxPhotos = 5; // All users can upload up to 5 photos
 

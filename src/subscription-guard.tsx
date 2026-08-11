@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { useAuth } from "~/auth-context";
+import { isPremiumUser, useAuth } from "~/auth-context";
 
 /**
  * Hook that redirects unauthenticated users to /login.
@@ -37,7 +37,7 @@ export function useRequireSubscription(): {
     return { isSubscribed: false, checking: false, authError };
   }
 
-  const isSubscribed = user.subscription_status === "active";
+  const isSubscribed = isPremiumUser(user);
   return { isSubscribed, checking: false, authError };
 }
 
@@ -49,7 +49,7 @@ export function useRequireSubscription(): {
 export function SubscriptionBanner() {
   const { user } = useAuth();
 
-  if (!user || user.subscription_status === "active") return null;
+  if (!user || isPremiumUser(user)) return null;
 
   return (
     <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 mb-6">

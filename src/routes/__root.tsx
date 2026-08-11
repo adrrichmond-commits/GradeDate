@@ -8,7 +8,7 @@ import {
 } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { useEffect, useState, useRef } from "react";
-import { AuthProvider, useAuth } from "~/auth-context";
+import { AuthProvider, isPremiumUser, useAuth } from "~/auth-context";
 import { getCsrfToken } from "~/csrf-client";
 import { resolveCanonicalSiteUrl } from "~/site-url";
 
@@ -323,9 +323,9 @@ function AppShell() {
                   </NavLink>
                   <NavLink to="/profile">Profile</NavLink>
                   <NavLink to="/store">Store</NavLink>
-                  {user.subscription_status === "active" && (
+                  {isPremiumUser(user) && (
                     <span className="rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-semibold text-green-400">
-                      ACTIVE
+                      {user.subscription_status === "active" ? "PREMIUM" : "TRIAL"}
                     </span>
                   )}
                   <form
@@ -403,7 +403,7 @@ function AppShell() {
             else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
           }}>
           <div className="flex flex-col gap-1 px-4 py-3">
-            {user.subscription_status !== "active" && (
+            {!isPremiumUser(user) && (
               <Link
                 to="/subscribe"
                 onClick={() => setMenuOpen(false)}
@@ -445,10 +445,10 @@ function AppShell() {
             >
               Store
             </Link>
-            {user.subscription_status === "active" && (
+            {isPremiumUser(user) && (
               <div className="mx-4 my-1 flex items-center gap-2">
                 <span className="rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-semibold text-green-400">
-                  ACTIVE
+                  {user.subscription_status === "active" ? "PREMIUM" : "TRIAL"}
                 </span>
               </div>
             )}

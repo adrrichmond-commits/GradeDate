@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, useRef, useCallback } from "react";
-import { useAuth } from "~/auth-context";
+import { isPremiumUser, useAuth } from "~/auth-context";
 import { AuthUnavailable } from "~/auth-unavailable";
 import { getCsrfToken } from "~/csrf-client";
 import {
@@ -1652,7 +1652,11 @@ function ProfilePage() {
                   Subscription
                 </span>
                 <p className="mt-1 capitalize text-gray-400">
-                  {user.subscription_status}
+                  {user.subscription_status === "active"
+                    ? "Premium"
+                    : isPremiumUser(user)
+                      ? `Premium Trial — ends ${new Date(user.trial_ends_at!).toLocaleDateString()}`
+                      : user.subscription_status}
                 </p>
               </div>
             </div>
