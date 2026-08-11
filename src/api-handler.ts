@@ -102,6 +102,7 @@ import {
   getFounderCount,
   getFounderSpotsRemaining,
   assignFounderNumber,
+  revokeFounderState,
   grantPaidUpsell,
   createPendingUpsell,
   clearPendingUpsell,
@@ -2449,6 +2450,10 @@ async function handleStripeWebhook(req: Request): Promise<Response> {
         }
 
         await updateSubscriptionStatus(user.id, "inactive");
+        // Release the founder claim (number, flag, price lock, badge) so the
+        // 1,000-spot cap stays honest; idempotent on webhook retries.
+        await revokeFounderState(user.id);
+        logInfo(EVENTS.STRIPE_FOUNDER_RELEASED, { user_id: user.id });
         logInfo(EVENTS.STRIPE_SUBSCRIPTION_CANCELLED, { user_id: user.id });
         break;
       }
