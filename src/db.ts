@@ -508,6 +508,25 @@ export async function initTables(): Promise<void> {
   `;
   await sql()`ALTER TABLE referral_rewards ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ`;
 
+  // Closed-beta invite codes (Austin cohort). Each code is a one-time redeemable
+  // token tied to the inviter's account so the existing referral reward
+  // machinery fires on redemption. The cohort cap is enforced at redemption
+  // time (count of redeemed codes), not at issuance.
+  await sql()`
+    CREATE TABLE IF NOT EXISTS beta_invite_codes (
+      id SERIAL PRIMARY KEY,
+      code TEXT UNIQUE NOT NULL,
+      referrer_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      issued_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      issued_at TIMESTAMPTZ DEFAULT NOW(),
+      redeemed_at TIMESTAMPTZ,
+      redeemed_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL
+    )
+  `;
+  try {
+    await sql()`CREATE UNIQUE INDEX IF NOT EXISTS idx_beta_invite_codes_redeemed_by ON beta_invite_codes(redeemed_by_user_id) WHERE redeemed_by_user_id IS NOT NULL`;
+  } catch { /* ignore */ }
+
   await sql()`
     CREATE TABLE IF NOT EXISTS waitlist (
       id SERIAL PRIMARY KEY,
@@ -2321,7 +2340,7 @@ export interface ReferralStats {
   rewards_earned: number;
 }
 
-function generateRandomCode(length: number = 8): string {
+export function generateRandomCode(length: number = 8): string {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   let result = "";
   for (let i = 0; i < length; i++) {
@@ -2472,6 +2491,79 @@ export async function applyReferralReward(rewardId: number): Promise<void> {
 }
 
 // ── Founders Club ──────────────────────────────────────────────
+
+// ── Beta Invite Codes (Austin cohort) ─────────────────────────────
+export interface BetaInviteCode {
+  id: number;
+  code: string;
+  referrer_user_id: number;
+  issued_by: number;
+  issued_at: string;
+  redeemed_at: string | null;
+  redeemed_by_user_id: number | null;
+}
+export const DEFAULT_BETA_COHORT_CAP = 50;
+export function betaCohortCap(): number {
+  const n = Number(process.env.BETA_COHORT_CAP);
+  return Number.isInteger(n) && n > 0 ? n : DEFAULT_BETA_COHORT_CAP;
+}
+/**
+ * Issue beta invite codes. Each code is also inserted into referral_codes
+ * (max_uses=1) tied to the same referrer, so redeeming it fires the existing
+ * referral reward flow (both users get 1 month Premium when the referee
+ * subscribes). Returns the codes that were actually inserted.
+ */
+export async function issueBetaInviteCodes(input: { codes: string[]; referrerUserId: number; issuedByUserId: number }): Promise<string[]> {
+  const inserted: string[] = [];
+  for (const code of input.codes) {
+    const row = await sql()`
+      INSERT INTO beta_invite_codes (code, referrer_user_id, issued_by)
+      VALUES (${code}, ${input.referrerUserId}, ${input.issuedByUserId})
+      ON CONFLICT (code) DO NOTHING
+      RETURNING id
+    `;
+    if (row.length === 0) continue;
+    await sql()`
+      INSERT INTO referral_codes (user_id, code, max_uses)
+      VALUES (${input.referrerUserId}, ${code}, 1)
+      ON CONFLICT (code) DO NOTHING
+    `;
+    inserted.push(code);
+  }
+  return inserted;
+}
+export async function getBetaInviteCodeByCode(code: string): Promise<BetaInviteCode | null> {
+  const rows = await sql()`SELECT * FROM beta_invite_codes WHERE code = ${code}`;
+  return rows.length > 0 ? (rows[0] as unknown as BetaInviteCode) : null;
+}
+export async function getRedeemedBetaInviteCount(): Promise<number> {
+  const rows = await sql()`SELECT COUNT(*)::int AS cnt FROM beta_invite_codes WHERE redeemed_at IS NOT NULL`;
+  return rows.length > 0 ? Number((rows[0] as { cnt: number }).cnt) : 0;
+}
+export async function getBetaInviteStats(): Promise<{ cap: number; redeemed: number; issued: number }> {
+  const rows = await sql()`SELECT COUNT(*)::int AS issued, COUNT(*) FILTER (WHERE redeemed_at IS NOT NULL)::int AS redeemed FROM beta_invite_codes`;
+  const row = (rows[0] ?? { issued: 0, redeemed: 0 }) as { issued: number; redeemed: number };
+  return { cap: betaCohortCap(), redeemed: Number(row.redeemed), issued: Number(row.issued) };
+}
+/**
+ * Atomically claim a beta invite code for a user. The cohort cap is enforced
+ * inside the same UPDATE so concurrent redemptions can never exceed it.
+ */
+export async function redeemBetaInviteCode(code: string, userId: number): Promise<{ success: boolean; error?: "invalid" | "already_redeemed" | "cohort_full" }> {
+  const rows = await sql()`
+    UPDATE beta_invite_codes
+    SET redeemed_at = NOW(), redeemed_by_user_id = ${userId}
+    WHERE code = ${code}
+      AND redeemed_at IS NULL
+      AND (SELECT COUNT(*) FROM beta_invite_codes WHERE redeemed_at IS NOT NULL) < ${betaCohortCap()}
+    RETURNING id
+  `;
+  if (rows.length > 0) return { success: true };
+  const invite = await getBetaInviteCodeByCode(code);
+  if (!invite) return { success: false, error: "invalid" };
+  if (invite.redeemed_at) return { success: false, error: "already_redeemed" };
+  return { success: false, error: "cohort_full" };
+}
 
 export async function getFounderCount(): Promise<number> {
   const rows = await sql()`
