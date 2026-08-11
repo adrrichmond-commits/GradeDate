@@ -323,6 +323,9 @@ function AppShell() {
                   </NavLink>
                   <NavLink to="/profile">Profile</NavLink>
                   <NavLink to="/store">Store</NavLink>
+                  {(user.role === "owner" || user.role === "admin" || user.role === "moderator") && (
+                    <NavLink to="/admin">Admin</NavLink>
+                  )}
                   {isPremiumUser(user) && (
                     <span className="rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-semibold text-green-400">
                       {user.subscription_status === "active" ? "PREMIUM" : "TRIAL"}
@@ -445,6 +448,15 @@ function AppShell() {
             >
               Store
             </Link>
+            {(user.role === "owner" || user.role === "admin" || user.role === "moderator") && (
+              <Link
+                to="/admin"
+                onClick={() => setMenuOpen(false)}
+                className="rounded-lg px-4 py-3 text-sm text-gray-300 transition hover:bg-gray-800 hover:text-white"
+              >
+                Admin
+              </Link>
+            )}
             {isPremiumUser(user) && (
               <div className="mx-4 my-1 flex items-center gap-2">
                 <span className="rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-semibold text-green-400">
