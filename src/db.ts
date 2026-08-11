@@ -480,7 +480,7 @@ export async function initTables(): Promise<void> {
       photo_path TEXT NOT NULL, -- Local path (/uploads/...) or Vercel Blob URL (https://...)
       sort_order INTEGER NOT NULL DEFAULT 0,
       is_primary BOOLEAN NOT NULL DEFAULT false,
-      created_at TIMESTAMPTZ DEFAULT NOW(),
+      created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `;
 
