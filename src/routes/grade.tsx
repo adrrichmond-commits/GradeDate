@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { isPremiumUser, useAuth } from "~/auth-context";
 import { getCsrfToken } from "~/csrf-client";
 import { gradeAnonymousPhotos } from "~/anonymous-grading";
+import { photoFileTooLarge, PHOTO_TOO_LARGE_MESSAGE } from "~/photo-upload";
 import { EXPERIMENTS } from "~/experiment";
 import {
   getExperimentVariant,
@@ -241,6 +242,11 @@ function GradePage() {
     for (const file of files) {
       if (!allowedTypes.includes(file.type)) {
         setErrorMessage("Only JPEG, PNG, and WebP images are allowed.");
+        setState("error");
+        return;
+      }
+      if (photoFileTooLarge(file)) {
+        setErrorMessage(PHOTO_TOO_LARGE_MESSAGE);
         setState("error");
         return;
       }
@@ -598,7 +604,7 @@ function GradePage() {
                         : "Add another photo"}
                     </span>
                     <span className="text-xs text-gray-500">
-                      {`${photos.length}/${maxPhotos} photos — JPEG, PNG, WebP`}
+                      {`${photos.length}/${maxPhotos} photos — JPEG, PNG, WebP · under 4 MB`}
                     </span>
                     <input
                       ref={fileInputRef}
