@@ -266,6 +266,13 @@ function ProfilePage() {
   const [passkeyStatus, setPasskeyStatus] = useState("");
   const [passkeyError, setPasskeyError] = useState("");
   const [enrollingPasskey, setEnrollingPasskey] = useState(false);
+  // Change password
+  const [pwCurrent, setPwCurrent] = useState("");
+  const [pwNew, setPwNew] = useState("");
+  const [pwConfirm, setPwConfirm] = useState("");
+  const [pwStatus, setPwStatus] = useState("");
+  const [pwError, setPwError] = useState("");
+  const [changingPw, setChangingPw] = useState(false);
   const deleteCancelRef = useRef<HTMLButtonElement>(null);
   const closeDeleteConfirm = useCallback(() => setShowDeleteConfirm(false), []);
   const deleteConfirmA11y = useModalAccessibility<HTMLDivElement>(
@@ -576,6 +583,50 @@ function ProfilePage() {
       setEnrollingPasskey(false);
     }
   };
+  const handleChangePassword = async () => {
+    setPwError("");
+    setPwStatus("");
+    if (pwNew.length < 6) {
+      setPwError("Password must be at least 6 characters");
+      return;
+    }
+    if (pwNew !== pwConfirm) {
+      setPwError("New passwords do not match");
+      return;
+    }
+    setChangingPw(true);
+    try {
+      // Fresh CSRF token (same pattern as enrollPasskey / adminPost)
+      await fetch("/api/csrf").catch(() => {});
+      const token = getCsrfToken();
+      const res = await fetch("/api/auth/change-password", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { "X-CSRF-Token": token } : {}),
+        },
+        body: JSON.stringify({
+          current_password: pwCurrent,
+          new_password: pwNew,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setPwError(
+          data?.error || "Failed to change password. Please try again.",
+        );
+        return;
+      }
+      setPwStatus("Password changed successfully.");
+      setPwCurrent("");
+      setPwNew("");
+      setPwConfirm("");
+    } catch {
+      setPwError("Something went wrong. Please try again.");
+    } finally {
+      setChangingPw(false);
+    }
+  };
   const handleSave = async () => {
     setSaveError("");
     setSaveSuccess(false);
@@ -722,6 +773,74 @@ function ProfilePage() {
           </button>
         </section>
       )}
+      <section
+        aria-labelledby="change-password-heading"
+        className="mb-6 rounded-2xl border border-white/10 bg-gray-900/60 p-5"
+      >
+        <h2 id="change-password-heading" className="text-lg font-semibold">
+          Change password
+        </h2>
+        <p className="mt-1 text-sm text-gray-400">
+          Keep your account secure. Enter your current password, then choose a
+          new one (at least 6 characters).
+        </p>
+        {pwStatus && (
+          <p role="status" className="mt-3 text-sm text-emerald-300">
+            {pwStatus}
+          </p>
+        )}
+        {pwError && (
+          <p role="alert" className="mt-3 text-sm text-red-300">
+            {pwError}
+          </p>
+        )}
+        <div className="mt-4 grid max-w-sm gap-3">
+          <input
+            type="password"
+            value={pwCurrent}
+            onChange={(e) => {
+              setPwCurrent(e.target.value);
+              setPwError("");
+              setPwStatus("");
+            }}
+            placeholder="Current password"
+            autoComplete="current-password"
+            className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-gray-100 placeholder-gray-500 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+          />
+          <input
+            type="password"
+            value={pwNew}
+            onChange={(e) => {
+              setPwNew(e.target.value);
+              setPwError("");
+              setPwStatus("");
+            }}
+            placeholder="New password"
+            autoComplete="new-password"
+            className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-gray-100 placeholder-gray-500 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+          />
+          <input
+            type="password"
+            value={pwConfirm}
+            onChange={(e) => {
+              setPwConfirm(e.target.value);
+              setPwError("");
+              setPwStatus("");
+            }}
+            placeholder="Confirm new password"
+            autoComplete="new-password"
+            className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-gray-100 placeholder-gray-500 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={handleChangePassword}
+          disabled={changingPw}
+          className="mt-4 rounded-full bg-rose-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+        >
+          {changingPw ? "Changing…" : "Change password"}
+        </button>
+      </section>
       {/* Success Toast */}
       {saveSuccess && (
         <div className="fixed top-6 left-1/2 z-50 -translate-x-1/2 animate-[fadeInUp_0.3s_ease-out]">
