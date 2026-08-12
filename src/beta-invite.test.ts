@@ -42,6 +42,7 @@ const deletedUsers: number[] = [];
 const issuedCalls: Array<{ codes: string[]; referrerUserId: number; issuedByUserId: number }> = [];
 let mockGeo = { city: "Austin", region: "TX", isAustinMetro: true };
 let forceRedeemRace = false;
+let failWaitlistJoin = false;
 let mockCodeSeq = 0;
 
 function baseUser(id: number, email: string): Record<string, unknown> {
@@ -101,6 +102,7 @@ function resetState(): void {
   issuedCalls.length = 0;
   mockGeo = { city: "Austin", region: "TX", isAustinMetro: true };
   forceRedeemRace = false;
+  failWaitlistJoin = false;
   mockCodeSeq = 0;
   // Seed an owner (with a privileged MFA-verified session) and an inviter.
   usersById.set(ADMIN_ID, { ...baseUser(ADMIN_ID, "owner@gradedate.app"), role: "owner", verification_status: "verified" });
@@ -163,7 +165,11 @@ function makeDbMock(): Record<string, unknown> {
       return { success: true };
     },
     deleteUserAccount: async (userId: number) => { deletedUsers.push(userId); usersById.delete(userId); },
-    joinWaitlist: async (email: string) => { waitlistEnrollments.push(email); return null; },
+    joinWaitlist: async (email: string) => {
+      if (failWaitlistJoin) throw new Error("waitlist insert failed: column zip_code does not exist");
+      waitlistEnrollments.push(email);
+      return null; // ON CONFLICT DO NOTHING duplicate → idempotent success
+    },
     recordAdminAuditEvent: async (event: Record<string, unknown>) => { adminAudit.push(event); },
   };
 }
@@ -480,5 +486,30 @@ describe("waitlist remains available for everyone", () => {
     const res = await handleApiRoute(waitlistRequest({ email: "wl@gradedate.test", zip_code: "78701" }));
     expect(res!.status).toBe(200);
     expect(waitlistEnrollments).toContain("wl@gradedate.test");
+  });
+
+  test("duplicate email is still a 200 (idempotent join, no error leaked)", async () => {
+    resetState();
+    delete process.env.BETA_INVITE_REQUIRED;
+    // The mock returns null for a duplicate (ON CONFLICT DO NOTHING) — the
+    // handler must treat that as success, not as a failure.
+    const res = await handleApiRoute(waitlistRequest({ email: "dup@gradedate.test", zip_code: "78701" }));
+    expect(res!.status).toBe(200);
+    const body = await res!.json();
+    expect(body.success).toBe(true);
+    expect(waitlistEnrollments).toContain("dup@gradedate.test");
+  });
+
+  test("a real DB error returns 500 with a generic message (no internal detail leaked)", async () => {
+    resetState();
+    delete process.env.BETA_INVITE_REQUIRED;
+    failWaitlistJoin = true;
+    const res = await handleApiRoute(waitlistRequest({ email: "err@gradedate.test", zip_code: "78701" }));
+    expect(res!.status).toBe(500);
+    const body = await res!.json();
+    expect(String(body.error)).toBe("Could not join the waitlist. Please try again.");
+    expect(String(body.error)).not.toContain("zip_code");
+    expect(waitlistEnrollments).not.toContain("err@gradedate.test");
+    failWaitlistJoin = false;
   });
 });
