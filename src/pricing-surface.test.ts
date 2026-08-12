@@ -77,10 +77,19 @@ describe("canonical pricing surface (smoke-test findings)", () => {
 
   test("root head emits runtime-origin canonical and og:url without a hardcoded host", () => {
     const root = read("routes/__root.tsx");
-    expect(root).toContain('rel="canonical" href={siteUrl}');
-    expect(root).toContain('property="og:url" content={siteUrl}');
+    // canonical + og:url must stay runtime-origin resolved (never a hardcoded host)…
+    const canonicalLine = root.match(/<link rel="canonical"[^>]*>/)?.[0] ?? "";
+    const ogUrlLine = root.match(/property="og:url"[^>]*/)?.[0] ?? "";
+    expect(canonicalLine).toContain("siteUrl");
+    expect(canonicalLine).not.toMatch(/gradedate\.app/);
+    expect(ogUrlLine).toContain("siteUrl");
+    expect(ogUrlLine).not.toMatch(/gradedate\.app/);
     expect(root).toContain("resolveCanonicalSiteUrl(");
-    expect(root).not.toMatch(/gradedate\.app/);
+    // …but share-preview images must be absolute so link cards render everywhere.
+    expect(root).toContain('{ property: "og:image", content: "https://gradedate.app/og-image.png" }');
+    expect(root).toContain('{ name: "twitter:image", content: "https://gradedate.app/og-image.png" }');
+    expect(root).toContain('{ property: "og:image:width", content: "1200" }');
+    expect(root).toContain('{ property: "og:image:height", content: "630" }');
   });
 });
 
