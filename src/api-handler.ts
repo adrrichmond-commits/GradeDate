@@ -232,6 +232,16 @@ const BunPw = typeof (globalThis as any).Bun?.password?.hash === "function"
   ? (globalThis as any).Bun.password
   : { hash: hashPassword, verify: verifyPassword };
 
+// Single source of truth for new-password rules, shared by signup, password
+// reset, and change-password. Returns the app-standard error message, or null
+// when the password is acceptable.
+export function validateNewPassword(password: string): string | null {
+  if (typeof password !== "string" || password.length < 6) {
+    return "Password must be at least 6 characters";
+  }
+  return null;
+}
+
 function getUploadsDir(): string {
   // On Node/Vercel, use a temp directory; on Bun, use local uploads/
   if (typeof (globalThis as any).Bun === "undefined") {
@@ -359,8 +369,9 @@ async function handleSignup(req: Request): Promise<Response> {
   const dateOfBirth = body.date_of_birth ? String(body.date_of_birth) : null;
   const referralCode = body.referral_code ? String(body.referral_code).trim().toUpperCase() : null;
 
-  if (password.length < 6) {
-    return json({ error: "Password must be at least 6 characters" }, 400);
+  const passwordError = validateNewPassword(password);
+  if (passwordError) {
+    return json({ error: passwordError }, 400);
   }
 
   // Validate age: user must be at least 18
@@ -2667,8 +2678,9 @@ async function handleResetPassword(req: Request): Promise<Response> {
   const token = String(body.token).trim();
   const password = String(body.password);
 
-  if (password.length < 6) {
-    return json({ error: "Password must be at least 6 characters" }, 400);
+  const passwordError = validateNewPassword(password);
+  if (passwordError) {
+    return json({ error: passwordError }, 400);
   }
 
   const resetToken = await getPasswordResetToken(token);
@@ -2687,6 +2699,42 @@ async function handleResetPassword(req: Request): Promise<Response> {
   await markTokenUsed(token);
 
   return json({ message: "Password has been reset successfully. You can now log in." });
+}
+
+async function handleChangePassword(req: Request): Promise<Response> {
+  const user = await getCurrentUser(req);
+  if (!user) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+  const body = await req.json().catch(() => null);
+  if (!body || typeof body.current_password !== "string" || typeof body.new_password !== "string") {
+    return json({ error: "Current password and new password are required" }, 400);
+  }
+  const currentPassword = body.current_password;
+  const newPassword = body.new_password;
+  const passwordError = validateNewPassword(newPassword);
+  if (passwordError) {
+    return json({ error: passwordError }, 400);
+  }
+  const valid = await BunPw.verify(currentPassword, user.password_hash);
+  if (!valid) {
+    return json({ error: "Current password is incorrect" }, 401);
+  }
+  const passwordHash = await BunPw.hash(newPassword);
+  await updateUserPassword(user.id, passwordHash);
+  // Audit password changes by privileged roles (best-effort, mirrors the
+  // mfa.password_only_denied audit pattern).
+  if (["owner", "admin", "moderator"].includes(String(user.role))) {
+    await recordAdminAuditEvent({
+      actorUserId: user.id,
+      actorRole: user.role,
+      action: "password.change",
+      targetType: "user",
+      targetId: String(user.id),
+      requestId: requestIdFrom(req),
+    }).catch(() => {});
+  }
+  return json({ ok: true });
 }
 
 async function handleDeletePhoto(req: Request, photoId: number): Promise<Response> {
@@ -3490,6 +3538,12 @@ export async function handleApiRoute(
   }
   if (pathname === "/api/auth/reset-password" && method === "POST") {
     return handleResetPassword(req);
+  }
+  // Change password — CSRF required (authenticated sensitive action)
+  if (pathname === "/api/auth/change-password" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
+    return handleChangePassword(req);
   }
 
   // Profile — CSRF required
