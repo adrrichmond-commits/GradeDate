@@ -20,30 +20,36 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "GradeDate — Craft Your Confidence, Connect Authentically" },
+      { title: "GradeDate — Austin, TX Goes First. Join the Waitlist." },
       {
         name: "description",
         content:
-          "GradeDate helps you build confidence and find genuine connections. Get AI-powered photo feedback, understand your look, and connect authentically. $5.99/month.",
+          "Your dating profile, graded by AI. Honest photo feedback, your city percentile, and matches with similar people nearby. Austin, TX goes first — join the waitlist free.",
       },
-      { property: "og:title", content: "GradeDate — Craft Your Confidence, Connect Authentically" },
+      {
+        property: "og:title",
+        content: "GradeDate — Austin, TX Goes First. Join the Waitlist.",
+      },
       {
         property: "og:description",
         content:
-          "Get honest photo feedback. Build real confidence. Connect with people who match your energy.",
+          "Your dating profile, graded by AI. Honest photo feedback, your city percentile, and matches with similar people nearby. Austin, TX goes first — join the waitlist free.",
       },
       { property: "og:type", content: "website" },
-      { property: "og:image", content: "/og-image.png" },
+      { property: "og:image", content: "https://gradedate.app/og-image.png" },
       { property: "og:image:width", content: "1200" },
       { property: "og:image:height", content: "630" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:title", content: "GradeDate — Craft Your Confidence, Connect Authentically" },
+      {
+        name: "twitter:title",
+        content: "GradeDate — Austin, TX Goes First. Join the Waitlist.",
+      },
       {
         name: "twitter:description",
         content:
-          "Get honest photo feedback. Build real confidence. Connect with people who match your energy.",
+          "Your dating profile, graded by AI. Honest photo feedback, your city percentile, and matches with similar people nearby. Austin, TX goes first — join the waitlist free.",
       },
-      { name: "twitter:image", content: "/og-image.png" },
+      { name: "twitter:image", content: "https://gradedate.app/og-image.png" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
@@ -626,15 +632,15 @@ function RootDocument({ children }: { children: ReactNode }) {
     <html lang="en" className="dark">
       <head>
         <HeadContent />
-        <title>GradeDate — Craft Your Confidence, Connect Authentically</title>
-        <meta name="description" content="Craft your confidence. Connect authentically. GradeDate uses AI to help you understand your look and find compatible matches. Get started free." />
-        <meta property="og:title" content="GradeDate — Craft Your Confidence, Connect Authentically" />
-        <meta property="og:description" content="Craft your confidence. Connect authentically. AI-powered photo feedback helps you put your best self forward and find genuine connections. Free preview." />
+        <title>GradeDate — Austin, TX Goes First. Join the Waitlist.</title>
+        <meta name="description" content="Your dating profile, graded by AI. Honest photo feedback, your city percentile, and matches with similar people nearby. Austin, TX goes first — join the waitlist free." />
+        <meta property="og:title" content="GradeDate — Austin, TX Goes First. Join the Waitlist." />
+        <meta property="og:description" content="Your dating profile, graded by AI. Honest photo feedback, your city percentile, and matches with similar people nearby. Austin, TX goes first — join the waitlist free." />
         <meta property="og:type" content="website" />
         <meta property="og:url" content={siteUrl} />
         <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content="GradeDate — Craft Your Confidence, Connect Authentically" />
-        <meta name="twitter:description" content="Craft your confidence. Connect authentically. AI-powered photo feedback helps you put your best self forward and find genuine connections. Free preview." />
+        <meta name="twitter:title" content="GradeDate — Austin, TX Goes First. Join the Waitlist." />
+        <meta name="twitter:description" content="Your dating profile, graded by AI. Honest photo feedback, your city percentile, and matches with similar people nearby. Austin, TX goes first — join the waitlist free." />
         <link rel="canonical" href={siteUrl} />
       </head>
       <body class="overflow-x-hidden w-full">
