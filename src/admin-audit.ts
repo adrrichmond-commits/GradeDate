@@ -15,6 +15,10 @@ export const STALE_UNRESOLVED_CASE_RETENTION_MONTHS = 12;
 // Audit metadata is deliberately narrow: never accept arbitrary request payloads.
 export const AUDIT_METADATA_KEYS = [
   "status", "reason", "duration", "report_id", "suspension_id", "case_id", "assigned",
+  // Error context for failure-path audits (e.g. mfa.enrollment.failed): the
+  // exact verify error (expectedOrigin / expectedRPID / UV / challenge) must
+  // survive redaction so support can see why a privileged enrollment failed.
+  "name", "message",
 ] as const;
 export type AuditMetadata = Partial<Record<(typeof AUDIT_METADATA_KEYS)[number], string | boolean | null>>;
 
