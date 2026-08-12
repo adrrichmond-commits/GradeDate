@@ -1244,7 +1244,11 @@ export async function getUsersByGradeRange(
           : sql``
       }
     ORDER BY
-      CASE WHEN boost_until > NOW() THEN 0 ELSE 1 END ASC,
+      // boost_until is stored as ISO-8601 TEXT (activateBoost writes
+      // toISOString()) so it must be cast to timestamptz — a raw TEXT > NOW()
+      // comparison throws "operator does not exist: text > timestamp with time
+      // zone" and 500s the entire matches feed.
+      CASE WHEN (boost_until)::timestamptz > NOW() THEN 0 ELSE 1 END ASC,
       ABS(grade - ${grade}) ASC${
       hasLocation ? sql`, distance_miles ASC` : sql``
     }, RANDOM()
