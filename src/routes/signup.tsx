@@ -457,6 +457,16 @@ function Signup() {
                   free month.
                 </p>
               )}
+              <p className="mt-2 text-xs text-gray-500">
+                No invite code yet? The Austin beta is invite-only —{" "}
+                <a
+                  href="/#waitlist"
+                  className="text-rose-400 underline hover:text-rose-300"
+                >
+                  join the waitlist
+                </a>{" "}
+                to be notified when it opens.
+              </p>
             </div>
 
             <div>
