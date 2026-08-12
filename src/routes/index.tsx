@@ -28,6 +28,131 @@ function useGeoCheck() {
 }
 
 // ---------------------------------------------------------------------------
+// Waitlist Form Component — one field (email), shared by the hero and the
+// closing CTA. Gentle client validation, friendly server-error handling,
+// and a clear success state.
+// ---------------------------------------------------------------------------
+function WaitlistForm({ idPrefix }: { idPrefix: string }) {
+  const [email, setEmail] = useState("");
+  const [state, setState] = useState<"idle" | "submitting" | "success" | "error">("idle");
+  const [errorMsg, setErrorMsg] = useState("");
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = email.trim();
+    if (!trimmed) {
+      setErrorMsg("Please enter your email address");
+      setState("error");
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      setErrorMsg("Please enter a valid email address");
+      setState("error");
+      return;
+    }
+
+    setState("submitting");
+    setErrorMsg("");
+
+    try {
+      const res = await fetch("/api/waitlist/join", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: trimmed }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setState("success");
+        setEmail("");
+      } else {
+        setErrorMsg(data.error || "Something went wrong. Please try again.");
+        setState("error");
+      }
+    } catch {
+      setErrorMsg("Network error. Please check your connection and try again.");
+      setState("error");
+    }
+  };
+
+  if (state === "success") {
+    return (
+      <div
+        role="status"
+        aria-live="polite"
+        className="flex flex-col items-center gap-3 rounded-2xl border border-green-500/25 bg-green-500/[0.06] px-6 py-8"
+      >
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-green-500/10 ring-1 ring-green-500/30">
+          <svg className="h-7 w-7 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+        </div>
+        <p className="text-lg font-semibold text-white">You&apos;re on the list!</p>
+        <p className="text-sm text-gray-400">
+          Check your email for confirmation. We&apos;ll reach out when your city opens.
+        </p>
+        <button
+          onClick={() => setState("idle")}
+          className="mt-1 text-xs text-gray-500 underline transition hover:text-gray-300"
+        >
+          Sign up another email
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={handleSubmit} noValidate className="mx-auto w-full max-w-xl">
+      <div className="flex flex-col gap-3 sm:flex-row">
+        <label htmlFor={`waitlist-email-${idPrefix}`} className="sr-only">
+          Email address
+        </label>
+        <input
+          id={`waitlist-email-${idPrefix}`}
+          type="email"
+          inputMode="email"
+          autoComplete="email"
+          aria-describedby={state === "error" ? `waitlist-error-${idPrefix}` : undefined}
+          aria-invalid={state === "error"}
+          value={email}
+          onChange={(e) => {
+            setEmail(e.target.value);
+            if (state === "error") setState("idle");
+          }}
+          placeholder="you@email.com"
+          className="input-field flex-1 px-5 py-3.5 text-base"
+          disabled={state === "submitting"}
+        />
+        <button
+          type="submit"
+          disabled={state === "submitting"}
+          className="btn-primary justify-center whitespace-nowrap px-8 py-3.5 text-base"
+        >
+          {state === "submitting" ? (
+            <span className="flex items-center gap-2">
+              <span className="loader-pulse" />
+              Joining...
+            </span>
+          ) : (
+            "Join the Waitlist"
+          )}
+        </button>
+      </div>
+
+      {state === "error" && errorMsg && (
+        <p
+          id={`waitlist-error-${idPrefix}`}
+          role="alert"
+          aria-live="assertive"
+          className="mt-3 text-sm text-red-400"
+        >
+          {errorMsg}
+        </p>
+      )}
+    </form>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Demo Grader Component (UNCHANGED)
 // ---------------------------------------------------------------------------
 function DemoGrader() {
@@ -271,154 +396,7 @@ function PricingSection() {
 }
 
 // ---------------------------------------------------------------------------
-// Waitlist Section Component
-// ---------------------------------------------------------------------------
-function WaitlistSection() {
-  const [email, setEmail] = useState("");
-  const [zipCode, setZipCode] = useState("");
-  const [state, setState] = useState<"idle" | "submitting" | "success" | "error">("idle");
-  const [errorMsg, setErrorMsg] = useState("");
-
-  const validate = (): string | null => {
-    const trimmed = email.trim();
-    if (!trimmed) return "Please enter your email address";
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) return "Please enter a valid email address";
-    if (zipCode.trim() && !/^\d{5}(-\d{4})?$/.test(zipCode.trim())) return "Please enter a valid ZIP code";
-    return null;
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const err = validate();
-    if (err) {
-      setErrorMsg(err);
-      setState("error");
-      return;
-    }
-
-    setState("submitting");
-    setErrorMsg("");
-
-    try {
-      const res = await fetch("/api/waitlist/join", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: email.trim(),
-          zip_code: zipCode.trim() || undefined,
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setState("success");
-        setEmail("");
-        setZipCode("");
-      } else {
-        setErrorMsg(data.error || "Something went wrong. Please try again.");
-        setState("error");
-      }
-    } catch {
-      setErrorMsg("Network error. Please check your connection and try again.");
-      setState("error");
-    }
-  };
-
-  return (
-    <section className="relative overflow-hidden px-4 py-24">
-      {/* Subtle gradient background */}
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-rose-500/[0.02] to-transparent" />
-
-      <div className="relative mx-auto max-w-2xl text-center">
-        <div className="card border-rose-500/20 bg-gradient-to-br from-rose-500/5 to-violet-500/5 p-10">
-          {/* Icon */}
-          <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-rose-500/20 to-violet-500/20 ring-1 ring-rose-500/30">
-            <svg className="h-7 w-7 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
-            </svg>
-          </div>
-
-          <h2 className="mb-3 text-2xl font-bold sm:text-3xl">
-            Get notified when singles join your area
-          </h2>
-          <p className="mb-8 text-gray-400">
-            Free to join. 3 likes/day when we launch in your area. Be the first to know when new matches arrive near you.
-          </p>
-
-          {state === "success" ? (
-            <div className="flex flex-col items-center gap-3">
-              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-green-500/10 ring-1 ring-green-500/30">
-                <svg className="h-7 w-7 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-              </div>
-              <p role="status" aria-live="polite" className="text-lg font-semibold text-white">You're on the list!</p>
-              <p className="text-sm text-gray-400">Check your email for confirmation.</p>
-              <button
-                onClick={() => setState("idle")}
-                className="mt-2 text-xs text-gray-500 underline transition hover:text-gray-300"
-              >
-                Sign up another email
-              </button>
-            </div>
-          ) : (
-            <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <label htmlFor="waitlist-email" className="sr-only">Email address</label>
-                <input
-                  id="waitlist-email"
-                  type="email"
-                  aria-describedby={state === "error" ? "waitlist-error" : undefined}
-                  aria-invalid={state === "error"}
-                  value={email}
-                  onChange={(e) => { setEmail(e.target.value); if (state === "error") setState("idle"); }}
-                  placeholder="you@example.com"
-                  className="input-field flex-1"
-                  disabled={state === "submitting"}
-                  required
-                />
-                <input
-                  type="text"
-                  value={zipCode}
-                  onChange={(e) => setZipCode(e.target.value)}
-                  placeholder="ZIP code (optional)"
-                  className="input-field sm:max-w-[160px]"
-                  disabled={state === "submitting"}
-                  maxLength={10}
-                />
-              </div>
-
-              {state === "error" && errorMsg && (
-                <p id="waitlist-error" role="alert" aria-live="assertive" className="text-sm text-red-400">{errorMsg}</p>
-              )}
-
-              <button
-                type="submit"
-                disabled={state === "submitting"}
-                className="btn-primary w-full justify-center"
-              >
-                {state === "submitting" ? (
-                  <span className="flex items-center gap-2">
-                    <span className="loader-pulse" />
-                    Subscribing...
-                  </span>
-                ) : (
-                  "Notify Me"
-                )}
-              </button>
-            </form>
-          )}
-
-          <p className="mt-4 text-xs text-gray-500">
-            No spam. Unsubscribe anytime. We'll only email you when new singles join your area.
-          </p>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Founders Club Section Component
+// Founders Club Section Component — real, capped, honestly worded.
 // ---------------------------------------------------------------------------
 function FoundersClubSection() {
   const [remaining, setRemaining] = useState<number | null>(null);
@@ -492,25 +470,26 @@ function FoundersClubSection() {
 
         {/* Badge */}
         <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-amber-500/25 bg-amber-500/10 px-4 py-1.5">
-          <span className="flex h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
+          <span className="flex h-2 w-2 rounded-full bg-amber-400" />
           <span className="text-xs font-semibold uppercase tracking-widest text-amber-400">
-            Only 1,000 Spots · Forever
+            1,000 Spots · Forever
           </span>
         </div>
 
         {/* Headline */}
         <h2 className="mb-3 text-3xl font-extrabold tracking-tight sm:text-4xl md:text-5xl">
           <span className="bg-gradient-to-r from-amber-300 via-amber-400 to-yellow-400 bg-clip-text text-transparent">
-            Only 1,000 Founders. Ever.
+            The First 1,000 Founders. Ever.
           </span>
         </h2>
 
         {/* Sub-headline */}
         <p className="mx-auto mb-8 max-w-lg text-lg text-gray-300 sm:text-xl">
-          Once these spots are claimed, the Founders Club closes forever. Lock in lifetime benefits while you still can.
+          The first 1,000 Premium members become Founders: a numbered badge,
+          early access to new features, and your $5.99/month locked in forever.
         </p>
 
-        {/* Counter */}
+        {/* Counter — live, factual */}
         <div className="mb-10">
           {error ? (
             <p className="text-sm text-gray-500">Unable to load founder count. Check back soon.</p>
@@ -528,12 +507,6 @@ function FoundersClubSection() {
                     <p className="text-gray-500">Loading...</p>
                   )}
                 </div>
-                {/* Spots remaining urgency line */}
-                {remaining !== null && remaining > 0 && (
-                  <p className="mt-1 text-sm font-medium text-amber-300/80">
-                    Only <span className="tabular-nums font-bold text-amber-300">{remaining}</span> spot{remaining === 1 ? "" : "s"} remain. Once they're gone, the club closes forever.
-                  </p>
-                )}
                 {/* Progress track */}
                 <div className="h-3 w-full overflow-hidden rounded-full bg-gray-800/80 ring-1 ring-white/5">
                   <div
@@ -589,7 +562,7 @@ function FoundersClubSection() {
                   d="M5 13l4 4L19 7"
                 />
               </svg>
-              Claim Your Spot Before It's Gone
+              Join the Founders Club
             </Link>
             <p className="text-xs text-gray-500">
               $5.99/month · Lifetime price lock · Cancel anytime
@@ -654,9 +627,10 @@ function Home() {
   return (
     <>
       {/* ─────────────────────────────────────────────────────────────
-          1. HERO — "Craft your confidence."
+          1. HERO — value prop + ONE primary CTA: the waitlist form.
+          Mobile-first: short headline, big form, tiny trust row.
           ───────────────────────────────────────────────────────────── */}
-      <section className="relative flex min-h-screen items-center justify-center overflow-hidden px-4">
+      <section className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-24">
         {/* Dot grid background pattern */}
         <div
           className="pointer-events-none absolute inset-0 opacity-20"
@@ -677,136 +651,96 @@ function Home() {
         />
 
         <div className="relative z-10 mx-auto max-w-3xl text-center">
+          {/* Austin-first badge */}
+          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-rose-500/25 bg-rose-500/10 px-4 py-1.5">
+            <span className="text-sm">📍</span>
+            <span className="text-xs font-semibold uppercase tracking-widest text-rose-300">
+              Austin, TX — Launching First
+            </span>
+          </div>
 
           {/* Headline */}
-          <h1 className="text-center text-5xl font-extrabold leading-[1.1] tracking-tight sm:text-7xl md:text-8xl">
-            <span
-              className="block bg-gradient-to-r from-white via-rose-100 to-white bg-clip-text text-transparent animate-[shimmer_4s_ease-in-out_infinite]"
-              style={{ backgroundSize: "200% auto" }}
-            >
-              Craft your confidence.
+          <h1 className="text-center text-4xl font-extrabold leading-[1.1] tracking-tight sm:text-6xl md:text-7xl">
+            <span className="block text-white">
+              Your profile, graded by AI.
             </span>
             <span
-              className="block bg-gradient-to-r from-white via-rose-100 to-white bg-clip-text text-transparent animate-[shimmer_4s_ease-in-out_infinite]"
-              style={{ backgroundSize: "200% auto", animationDelay: "0.15s" }}
+              className="block bg-gradient-to-r from-rose-400 via-rose-200 to-rose-400 bg-clip-text text-transparent animate-[shimmer_4s_ease-in-out_infinite]"
+              style={{ backgroundSize: "200% auto" }}
             >
-              Connect authentically.
+              Match on your level.
             </span>
           </h1>
 
-          {/* Subhead */}
-          <p className="mx-auto mt-8 max-w-xl text-center text-lg leading-relaxed text-gray-400 sm:text-xl">
-            Optimize your profile, discover your strengths, and meet people who appreciate the real you.
+          {/* Subhead — what it is, who it's for */}
+          <p className="mx-auto mt-6 max-w-xl text-center text-lg leading-relaxed text-gray-400 sm:text-xl">
+            Dating for 18–35s that works differently: upload up to 5 photos,
+            get honest AI feedback and your best-pic pick, see your city
+            percentile — then match with people who look similar, in your area.
           </p>
 
-          {/* CTA Button — changes based on geo */}
-          {isAustinMetro ? (
-            <>
-              <Link
-                to="/grade"
-                className="btn-primary mt-10 inline-flex items-center gap-2 px-8 py-4 text-lg font-bold bg-gradient-to-r from-rose-500 to-rose-600 hover:from-rose-400 hover:to-rose-500"
-              >
-                <svg
-                  className="h-5 w-5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z"
-                  />
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z"
-                  />
-                </svg>
-                Get Your Free Grade
-              </Link>
-              {/* Austin launch banner */}
-              <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-green-500/30 bg-green-500/10 px-4 py-2">
-                <span className="text-base">📍</span>
-                <span className="text-sm text-green-400">
-                  Austin is our launch city — you're in! Start matching with singles near you.
-                </span>
-              </div>
-            </>
-          ) : (
-            <>
-              <Link
-                to="/grade"
-                className="btn-primary mt-10 inline-flex items-center gap-2 px-8 py-4 text-lg font-bold"
-              >
-                <svg
-                  className="h-5 w-5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                  />
-                </svg>
-                Get Your Grade — Free
-              </Link>
-              {/* Non-Austin note */}
-              <p className="mt-3 text-sm text-gray-500">
-                We're launching in Austin first. Join the waitlist to know when we reach your city.
-              </p>
-            </>
-          )}
+          {/* ONE primary CTA — the waitlist form */}
+          <div className="mt-10">
+            <WaitlistForm idPrefix="hero" />
+          </div>
 
-          {/* CTA Footnote */}
-          <div className="mt-4 flex flex-col items-center gap-1.5 text-sm">
+          {/* Microcopy — Austin-first, free to join */}
+          <div className="mt-4 flex flex-col items-center gap-1.5 text-sm text-gray-500">
             {isAustinMetro ? (
-              <p className="text-gray-500">
-                $5.99/month. Join Austin's confidence-first dating community.
+              <p>
+                You&apos;re in our launch city — join the waitlist and we&apos;ll
+                email you your invite. Free to join.
               </p>
             ) : (
-              <p className="text-gray-500">
-                $5.99/month after. No commitment. Cancel anytime.
+              <p>
+                Free to join. Austin, TX goes first — we&apos;ll email you when
+                your city opens.
               </p>
             )}
           </div>
 
+          {/* Trust markers — real, live features */}
+          <ul className="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-gray-400">
+            <li className="flex items-center gap-1.5">
+              <svg className="h-4 w-4 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 01-1.043 3.296 3.745 3.745 0 01-3.296 1.043A3.745 3.745 0 0112 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 01-3.296-1.043 3.745 3.745 0 01-1.043-3.296A3.745 3.745 0 013 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 011.043-3.296 3.746 3.746 0 013.296-1.043A3.746 3.746 0 0112 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 013.296 1.043 3.746 3.746 0 011.043 3.296A3.745 3.745 0 0121 12z" />
+              </svg>
+              Age-verified members
+            </li>
+            <li className="flex items-center gap-1.5">
+              <svg className="h-4 w-4 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" />
+              </svg>
+              Photo &amp; message moderation
+            </li>
+            <li className="flex items-center gap-1.5">
+              <svg className="h-4 w-4 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+              </svg>
+              Safety-first, always
+            </li>
+          </ul>
 
-          {/* Scroll indicator */}
-          <div
-            className="absolute bottom-8 left-1/2 -translate-x-1/2 animate-bounce"
-            aria-hidden="true"
-          >
-            <svg
-              className="h-6 w-6 text-gray-600"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M19 14l-7 7m0 0l-7-7m7 7V3"
-              />
-            </svg>
+          {/* Invite-holder path — for people who already have a code */}
+          <div className="mt-8 border-t border-white/5 pt-6">
+            <p className="text-sm text-gray-500">
+              Already have an invite code?{" "}
+              <Link
+                to="/signup"
+                className="font-semibold text-rose-400 underline underline-offset-4 transition hover:text-rose-300"
+              >
+                Sign up with it
+              </Link>
+              <span className="mt-1 block text-xs text-gray-600">
+                Invite holders get 14 days of Premium free on signup.
+              </span>
+            </p>
           </div>
         </div>
       </section>
 
       {/* ─────────────────────────────────────────────────────────────
-          2. FOUNDERS CLUB — hook them early
-          ───────────────────────────────────────────────────────────── */}
-      {!isAustinMetro && <WaitlistSection />}
-      <FoundersClubSection />
-
-      {/* ─────────────────────────────────────────────────────────────
-          3. HOW IT WORKS (updated copy)
+          2. HOW IT WORKS
           ───────────────────────────────────────────────────────────── */}
       <section id="how-it-works" className="px-4 py-24">
         <div className="mx-auto max-w-6xl">
@@ -923,7 +857,7 @@ function Home() {
       </section>
 
       {/* ─────────────────────────────────────────────────────────────
-          4. FREE PREVIEW GRADING (ELEVATED — above pricing)
+          3. FREE PREVIEW GRADING — a real hook that works today
           ───────────────────────────────────────────────────────────── */}
       <section className="relative overflow-hidden px-4 py-24">
         {/* Subtle gradient background to differentiate section */}
@@ -934,18 +868,18 @@ function Home() {
             {/* Left column: copy */}
             <div>
               <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-rose-500/20 bg-rose-500/10 px-4 py-1.5 text-xs font-semibold text-rose-400">
-                ✓ Free · Anonymous · AI-Powered
+                ✓ Free · Anonymous · No Sign-Up
               </div>
               <h2 className="mb-4 text-3xl font-bold sm:text-4xl">
-                See Your Best Photos —{" "}
+                See How Your Photos Score —{" "}
                 <span className="bg-gradient-to-r from-rose-400 via-amber-400 to-rose-400 bg-clip-text text-transparent">
                   Free
                 </span>
               </h2>
               <p className="mb-6 max-w-md text-lg leading-relaxed text-gray-400">
-                Curious which photos work best? Upload up to 5 selfies and get
-                an instant AI grade on each — no sign-up, no credit card, completely
-                anonymous.
+                Curious which photos work best? Upload a selfie and get an
+                instant simulated demo grade — no sign-up, no credit card,
+                completely anonymous.
               </p>
 
               {/* Grade teaser with pulsing "?" */}
@@ -960,7 +894,7 @@ function Home() {
                     Your grade is waiting
                   </div>
                   <div className="text-sm text-gray-500">
-                    1-10 score · Private · Instant
+                    1-10 score · Simulated demo · Instant
                   </div>
                 </div>
               </div>
@@ -979,11 +913,8 @@ function Home() {
                     d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
                   />
                 </svg>
-                Get Your Grade — Free
+                Try the Demo — Free
               </Link>
-              <p className="mt-3 text-sm text-gray-500">
-                $5.99/month after. No commitment.
-              </p>
             </div>
 
             {/* Right column: DemoGrader widget */}
@@ -995,61 +926,74 @@ function Home() {
       </section>
 
       {/* ─────────────────────────────────────────────────────────────
-          5. PRICING — "One Plan. Full Access."
+          4. PRICING — "One Plan. Full Access."
           ───────────────────────────────────────────────────────────── */}
       <section id="pricing" className="px-4 py-24">
         <PricingSection />
       </section>
 
+      {/* ─────────────────────────────────────────────────────────────
+          5. FOUNDERS CLUB
+          ───────────────────────────────────────────────────────────── */}
+      <FoundersClubSection />
 
       {/* ─────────────────────────────────────────────────────────────
-          7. CLOSING CTA
+          6. CLOSING CTA — the waitlist again, unmissable
           ───────────────────────────────────────────────────────────── */}
-      <section className="px-4 py-24">
+      <section id="waitlist" className="px-4 py-24">
         <div className="mx-auto max-w-2xl text-center">
-          <div className="mb-10 rounded-2xl border border-white/10 bg-white/[0.03] p-8 text-center">
+          {/* Waitlist card */}
+          <div className="card border-rose-500/20 bg-gradient-to-br from-rose-500/5 to-violet-500/5 p-10">
+            <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-rose-500/20 to-violet-500/20 ring-1 ring-rose-500/30">
+              <svg className="h-7 w-7 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+              </svg>
+            </div>
+
+            <h2 className="mb-3 text-2xl font-bold sm:text-3xl">
+              Be first when your city opens
+            </h2>
+            <p className="mb-8 text-gray-400">
+              Austin, TX goes first. Join the waitlist and we&apos;ll email you
+              the moment the beta reaches your city — free to join, no spam.
+            </p>
+
+            <WaitlistForm idPrefix="closing" />
+
+            <p className="mt-4 text-xs text-gray-500">
+              No spam. Unsubscribe anytime. We&apos;ll only email you about your
+              city&apos;s launch.
+            </p>
+          </div>
+
+          {/* Invite-holder path */}
+          <div className="mt-6 text-sm text-gray-500">
+            Already have an invite code?{" "}
+            <Link
+              to="/signup"
+              className="font-semibold text-rose-400 underline underline-offset-4 transition hover:text-rose-300"
+            >
+              Sign up with it
+            </Link>{" "}
+            — invite holders get 14 days of Premium free.
+          </div>
+
+          {/* Contact card */}
+          <div className="mb-10 mt-12 rounded-2xl border border-white/10 bg-white/[0.03] p-8 text-center">
             <h2 className="mb-2 text-2xl font-bold text-white">Contact</h2>
             <p className="mb-5 text-gray-400">Questions, feedback, or need help? Our team reads every message.</p>
             <Link to="/contact" className="btn-secondary inline-flex">Get in touch</Link>
           </div>
 
           {/* Founders Club subtle mention */}
-          <div className="mb-8 inline-flex items-center gap-2 rounded-full border border-amber-500/20 bg-amber-500/10 px-4 py-2">
+          <div className="inline-flex items-center gap-2 rounded-full border border-amber-500/20 bg-amber-500/10 px-4 py-2">
             <span>👑</span>
             <span className="text-sm text-amber-400">
               <Link to="/signup" className="font-semibold underline hover:text-amber-300">
                 Join the Founders Club
               </Link>
-              {" "}— only 1,000 spots will ever exist. Claim yours before the club closes.
+              {" "}— the first 1,000 Premium members lock in $5.99/month forever.
             </span>
-          </div>
-
-          <div className="card border-purple-500/20 bg-gradient-to-br from-purple-500/5 to-rose-500/5 p-12">
-            <h2 className="mb-4 text-3xl font-bold sm:text-4xl">
-              Ready to start your journey?
-            </h2>
-            <p className="mb-8 text-gray-400">
-              Understand your look, build your confidence, and connect with people who get you. Your best matches start here.
-            </p>
-            <Link
-              to="/grade"
-              className="btn-primary text-lg inline-flex items-center gap-2"
-            >
-              Get Your Grade — Free
-              <svg
-                className="h-5 w-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M13 7l5 5m0 0l-5 5m5-5H6"
-                />
-              </svg>
-            </Link>
           </div>
         </div>
       </section>
