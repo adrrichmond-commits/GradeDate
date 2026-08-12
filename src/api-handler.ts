@@ -3188,9 +3188,15 @@ async function handleWaitlistJoin(req: Request): Promise<Response> {
     return json({ error: "Please enter a valid ZIP code" }, 400);
   }
 
-  // Insert into waitlist (duplicates are silently ignored)
-  await joinWaitlist(email, zipCode);
-
+  // Insert into waitlist. A duplicate email yields null from ON CONFLICT DO
+  // NOTHING and is still a success (idempotent join); a real DB error throws
+  // and must surface as a 500 so signups are never silently eaten.
+  try {
+    await joinWaitlist(email, zipCode);
+  } catch (err) {
+    console.error("waitlist join failed:", err);
+    return json({ error: "Could not join the waitlist. Please try again." }, 500);
+  }
   // Send confirmation email (best-effort, don't fail if email fails). The CTA
   // link is built from the request origin so it points at the site the visitor
   // actually signed up on.

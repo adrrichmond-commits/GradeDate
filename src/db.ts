@@ -570,7 +570,16 @@ export async function initTables(): Promise<void> {
       confirmed_at TIMESTAMPTZ
     )
   `;
-
+  // Migration for databases whose waitlist table predates these columns:
+  // CREATE TABLE IF NOT EXISTS never alters an existing table, so an old
+  // waitlist without zip_code/confirmed_at would fail every INSERT that
+  // references them. Same idempotent pattern as the users.role migration.
+  try {
+    await sql()`ALTER TABLE waitlist ADD COLUMN IF NOT EXISTS zip_code TEXT`;
+  } catch { /* ignore */ }
+  try {
+    await sql()`ALTER TABLE waitlist ADD COLUMN IF NOT EXISTS confirmed_at TIMESTAMPTZ`;
+  } catch { /* ignore */ }
   await sql()`
     CREATE TABLE IF NOT EXISTS user_badges (
       id SERIAL PRIMARY KEY,
@@ -2726,22 +2735,19 @@ export async function joinWaitlist(
   email: string,
   zipCode?: string,
 ): Promise<WaitlistEntry | null> {
-  try {
-    const rows = await sql()`
-      INSERT INTO waitlist (email, zip_code)
-      VALUES (${email}, ${zipCode || null})
-      ON CONFLICT (email) DO NOTHING
-      RETURNING *
-    `;
-    if (rows.length > 0) {
-      return rows[0] as unknown as WaitlistEntry;
-    }
-    // Email already exists — return null (but not an error, to avoid leaking data)
-    return null;
-  } catch {
-    // Gracefully handle any DB errors
-    return null;
+  const rows = await sql()`
+    INSERT INTO waitlist (email, zip_code)
+    VALUES (${email}, ${zipCode || null})
+    ON CONFLICT (email) DO NOTHING
+    RETURNING *
+  `;
+  if (rows.length > 0) {
+    return rows[0] as unknown as WaitlistEntry;
   }
+  // Email already exists — return null (but not an error, to avoid leaking data).
+  // Note: no try/catch here on purpose — real DB errors must propagate so the
+  // caller can distinguish a duplicate (null) from a failure (throw).
+  return null;
 }
 
 export async function confirmWaitlistEntry(email: string): Promise<void> {
