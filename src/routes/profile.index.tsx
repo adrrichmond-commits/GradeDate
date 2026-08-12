@@ -519,36 +519,51 @@ function ProfilePage() {
     setPasskeyError("");
     setPasskeyStatus("");
     try {
-      // Refresh the CSRF token, then send it on both POSTs (same pattern as
-      // adminPost in admin.index.tsx).
-      await fetch("/api/csrf").catch(() => {});
-      const token = getCsrfToken();
-      const optionsRes = await fetch("/api/auth/mfa/enroll/options", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { "X-CSRF-Token": token } : {}),
-        },
-        body: "{}",
-      });
-      const optionsData = await optionsRes.json().catch(() => null);
-      if (!optionsRes.ok) {
-        throw new Error(optionsData?.error || "Failed to start passkey enrollment");
+      // One full enrollment attempt: fresh CSRF token (same pattern as
+      // adminPost in admin.index.tsx), fresh options, then verify.
+      const runEnrollment = async (): Promise<{ ok: boolean; error?: string }> => {
+        await fetch("/api/csrf").catch(() => {});
+        const token = getCsrfToken();
+        const optionsRes = await fetch("/api/auth/mfa/enroll/options", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { "X-CSRF-Token": token } : {}),
+          },
+          body: "{}",
+        });
+        const optionsData = await optionsRes.json().catch(() => null);
+        if (!optionsRes.ok) {
+          return { ok: false, error: optionsData?.error || "Failed to start passkey enrollment" };
+        }
+        const response = await startRegistration(
+          optionsData?.options as Parameters<typeof startRegistration>[0],
+        );
+        const verifyRes = await fetch("/api/auth/mfa/enroll/verify", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { "X-CSRF-Token": token } : {}),
+          },
+          body: JSON.stringify({ challenge_id: optionsData?.challenge_id, response }),
+        });
+        const verifyData = await verifyRes.json().catch(() => null);
+        if (!verifyRes.ok) {
+          return { ok: false, error: verifyData?.error || "Failed to verify passkey" };
+        }
+        return { ok: true };
+      };
+      // One automatic retry of the WHOLE flow when the first verify failed with
+      // "Invalid or expired challenge" (transient consume-race: challenge was
+      // consumed/expired between options and verify). Guard against
+      // double-enrollment: only the FIRST verify failure triggers a retry, and
+      // the retry's outcome is final — never a second retry.
+      let result = await runEnrollment();
+      if (!result.ok && result.error === "Invalid or expired challenge") {
+        result = await runEnrollment();
       }
-      const response = await startRegistration(
-        optionsData?.options as Parameters<typeof startRegistration>[0],
-      );
-      const verifyRes = await fetch("/api/auth/mfa/enroll/verify", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { "X-CSRF-Token": token } : {}),
-        },
-        body: JSON.stringify({ challenge_id: optionsData?.challenge_id, response }),
-      });
-      const verifyData = await verifyRes.json().catch(() => null);
-      if (!verifyRes.ok) {
-        throw new Error(verifyData?.error || "Failed to verify passkey");
+      if (!result.ok) {
+        throw new Error(result.error || "Failed to verify passkey");
       }
       setPasskeyStatus("Passkey enrolled successfully.");
     } catch (err) {

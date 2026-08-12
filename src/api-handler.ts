@@ -3404,9 +3404,31 @@ async function handleMfaEnrollOptions(req: Request): Promise<Response> {
 }
 async function handleMfaEnrollVerify(req: Request): Promise<Response> {
   const user = await getCurrentUser(req); if (!user || !["owner","admin","moderator"].includes(String(user.role)) || isSuspended(user)) return json({error:"Forbidden"},403);
-  const body=await req.json().catch(()=>null); const consumed=body?.challenge_id ? await consumeWebAuthnChallenge(String(body.challenge_id),"registration") : null;
-  if (!consumed || consumed.userId!==user.id || !body?.response) return json({error:"Invalid or expired challenge"},400);
-  try { const result=await verifyRegistration(body.response,consumed.challenge); if(!result.verified||!result.registrationInfo)return json({error:"Invalid assertion"},401); const info=result.registrationInfo; await saveWebAuthnCredential({id:info.credential.id,userId:user.id,publicKey:info.credential.publicKey,counter:info.credential.counter,transports:(info.credential.transports??[]) as string[]}); await recordAdminAuditEvent({actorUserId:user.id,actorRole:user.role,action:"mfa.enrollment.completed",targetType:"user",targetId:String(user.id),requestId:requestIdFrom(req)}); return json({ok:true}); } catch { return json({error:"Invalid assertion"},401); }
+  // Failure-path audit so a failed enrollment leaves a trail with the exact
+  // reason. Best-effort: a logging failure must never mask the real error.
+  const logFail = (reason: string, extra: Record<string, unknown> = {}): Promise<void> =>
+    recordAdminAuditEvent({actorUserId:user.id,actorRole:user.role,action:"mfa.enrollment.failed",targetType:"user",targetId:String(user.id),requestId:requestIdFrom(req),metadata:{reason,...extra}}).catch(() => {});
+  const body = await req.json().catch(() => null);
+  if (body === null || typeof body !== "object") { await logFail("no_body"); return json({error:"Invalid or expired challenge"},400); }
+  if (!body?.challenge_id) { await logFail("no_challenge_id"); return json({error:"Invalid or expired challenge"},400); }
+  const consumed = await consumeWebAuthnChallenge(String(body.challenge_id),"registration");
+  if (!consumed) { await logFail("challenge_unavailable"); return json({error:"Invalid or expired challenge"},400); }
+  if (consumed.userId !== user.id) { await logFail("user_mismatch",{challenge_user_id:consumed.userId}); return json({error:"Invalid or expired challenge"},400); }
+  if (!body?.response) { await logFail("no_response"); return json({error:"Invalid or expired challenge"},400); }
+  try {
+    const result = await verifyRegistration(body.response, consumed.challenge);
+    if (!result.verified || !result.registrationInfo) { await logFail("assertion_failed",{name:"VerificationResultFailed",message:"assertion did not verify"}); return json({error:"Invalid assertion"},401); }
+    const info = result.registrationInfo;
+    try {
+      await saveWebAuthnCredential({id:info.credential.id,userId:user.id,publicKey:info.credential.publicKey,counter:info.credential.counter,transports:(info.credential.transports??[]) as string[]});
+    } catch (e) {
+      await logFail("save_failed",{name:e instanceof Error?e.name:"UnknownError",message:e instanceof Error?e.message:"unknown save error"}); return json({error:"Invalid assertion"},401);
+    }
+    await recordAdminAuditEvent({actorUserId:user.id,actorRole:user.role,action:"mfa.enrollment.completed",targetType:"user",targetId:String(user.id),requestId:requestIdFrom(req),metadata:{reason:"ok"}});
+    return json({ok:true});
+  } catch (e) {
+    await logFail("assertion_failed",{name:e instanceof Error?e.name:"UnknownError",message:e instanceof Error?e.message:"unknown verify error"}); return json({error:"Invalid assertion"},401);
+  }
 }
 async function handlePrivilegedMfaStart(req: Request): Promise<Response> {
   const limited=checkStrictRateLimit(req); if(limited)return limited; const user=await privilegedCandidate(req); if(!user)return json({error:"Invalid credentials or privileged access unavailable",code:"PRIVILEGED_LOGIN_DENIED"},401);
