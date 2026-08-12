@@ -1071,7 +1071,9 @@ export async function createWebAuthnChallenge(input: { userId: number; challenge
 }
 export async function consumeWebAuthnChallenge(id: string, purpose: 'registration' | 'authentication'): Promise<{ userId: number; challenge: string } | null> {
   const rows = await sql() `UPDATE webauthn_challenges SET consumed_at=NOW() WHERE id=${id} AND purpose=${purpose} AND consumed_at IS NULL AND expires_at>NOW() RETURNING user_id,challenge`;
-  return rows.length ? rows[0] as { userId: number; challenge: string } : null;
+  if (!rows.length) return null;
+  const r = rows[0];
+  return { userId: Number(r.user_id), challenge: r.challenge };
 }
 export async function getWebAuthnCredentials(userId: number): Promise<any[]> { return await sql() `SELECT id,public_key,counter,transports FROM webauthn_credentials WHERE user_id=${userId}` as any; }
 export async function saveWebAuthnCredential(input: { id: string; userId: number; publicKey: Uint8Array; counter: number; transports: string[] }): Promise<void> { await sql() `INSERT INTO webauthn_credentials (id,user_id,public_key,counter,transports) VALUES (${input.id},${input.userId},${Buffer.from(input.publicKey)},${input.counter},${input.transports}) ON CONFLICT (id) DO NOTHING`; }
