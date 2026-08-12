@@ -16,8 +16,10 @@ export function generateCsrfToken(): string {
  * This cookie is NOT HttpOnly so JavaScript can read it for fetch requests.
  */
 export function setCsrfCookie(response: Response, token: string): Response {
+  // Append (not set) so a response that already carries a session cookie keeps
+  // both cookies — composition order must never drop one of them.
   const headers = new Headers(response.headers);
-  headers.set(
+  headers.append(
     "Set-Cookie",
     `${CSRF_COOKIE}=${token}; Secure; SameSite=Lax; Path=/; Max-Age=604800`,
   );
