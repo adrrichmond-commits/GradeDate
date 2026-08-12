@@ -1124,6 +1124,9 @@ export async function recordAdminAuditEvent(event: { actorUserId: number | null;
   await sql()`INSERT INTO admin_audit_events (actor_user_id, actor_role, action, target_type, target_id, request_id, metadata) VALUES (${safe.actorUserId}, ${safe.actorRole}, ${safe.action}, ${safe.targetType}, ${safe.targetId}, ${safe.requestId}, ${JSON.stringify(safe.metadata)}::jsonb)`;
 }
 export async function revokeSession(sessionId: string): Promise<void> { await sql()`UPDATE sessions SET revoked_at = NOW() WHERE id = ${sessionId}`; }
+export async function revokeOtherSessions(userId: number, keepSessionId: string): Promise<void> {
+  await sql()`UPDATE sessions SET revoked_at = NOW() WHERE user_id = ${userId} AND id <> ${keepSessionId} AND revoked_at IS NULL`;
+}
 
 // ── Grade ────────────────────────────────────────────────────
 

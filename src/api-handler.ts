@@ -33,6 +33,7 @@ import {
   createSession,
   createPrivilegedSession,
   getSessionById,
+  revokeOtherSessions,
   createWebAuthnChallenge, consumeWebAuthnChallenge, getWebAuthnCredentials, saveWebAuthnCredential, updateWebAuthnCounter, recordAdminAuditEvent,
   deleteSession,
   createMatch,
@@ -2722,6 +2723,10 @@ async function handleChangePassword(req: Request): Promise<Response> {
   }
   const passwordHash = await BunPw.hash(newPassword);
   await updateUserPassword(user.id, passwordHash);
+  // Revoke every other active session so a password change invalidates any
+  // session that may have been taken over; keep the current session alive.
+  const sessionId = getSessionId(req);
+  if (sessionId) await revokeOtherSessions(user.id, sessionId);
   // Audit password changes by privileged roles (best-effort, mirrors the
   // mfa.password_only_denied audit pattern).
   if (["owner", "admin", "moderator"].includes(String(user.role))) {
@@ -3545,10 +3550,14 @@ export async function handleApiRoute(
   if (pathname === "/api/auth/reset-password" && method === "POST") {
     return handleResetPassword(req);
   }
-  // Change password — CSRF required (authenticated sensitive action)
+  // Change password — CSRF required (authenticated sensitive action); rate
+  // limited per client so a compromised session cannot be used to brute-force
+  // the current password or hammer password changes.
   if (pathname === "/api/auth/change-password" && method === "POST") {
     const csrfErr = checkCsrf(req);
     if (csrfErr) return csrfErr;
+    const rateLimitResponse = checkRateLimit(req, "change-password", { maxRequests: 5, windowMs: 15 * 60 * 1000 });
+    if (rateLimitResponse) return rateLimitResponse;
     return handleChangePassword(req);
   }
 
