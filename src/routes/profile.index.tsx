@@ -7,7 +7,7 @@ import {
   useRequireSubscription,
   SubscriptionBanner,
 } from "~/subscription-guard";
-import { photoFromUploadResponse } from "~/photo-upload";
+import { photoFromUploadResponse, photoFileTooLarge, PHOTO_TOO_LARGE_MESSAGE } from "~/photo-upload";
 import { useModalAccessibility } from "~/modal-accessibility";
 import { startRegistration } from "@simplewebauthn/browser";
 import { apiFetch, safeApiError } from "~/client-api";
@@ -937,7 +937,11 @@ function ProfilePage() {
                           onChange={(e) => {
                             const file = e.target.files?.[0];
                             if (file) {
-                              handleUploadToSlot(i, file);
+                              if (photoFileTooLarge(file)) {
+                                setSaveError(PHOTO_TOO_LARGE_MESSAGE);
+                              } else {
+                                handleUploadToSlot(i, file);
+                              }
                             }
                             e.target.value = "";
                           }}

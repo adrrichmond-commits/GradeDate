@@ -4,7 +4,7 @@ import { useAuth } from "~/auth-context";
 import { AuthUnavailable } from "~/auth-unavailable";
 import { getCsrfToken } from "~/csrf-client";
 import { useRequireSubscription } from "~/subscription-guard";
-import { photoFromUploadResponse } from "~/photo-upload";
+import { photoFromUploadResponse, photoFileTooLarge, PHOTO_TOO_LARGE_MESSAGE } from "~/photo-upload";
 
 export const Route = createFileRoute("/profile/setup")({
   component: ProfileSetup,
@@ -345,7 +345,11 @@ function ProfileSetup() {
                           onChange={(e) => {
                             const file = e.target.files?.[0];
                             if (file) {
-                              handleUploadToSlot(i, file);
+                              if (photoFileTooLarge(file)) {
+                                setError(PHOTO_TOO_LARGE_MESSAGE);
+                              } else {
+                                handleUploadToSlot(i, file);
+                              }
                             }
                             // Reset so the same file can be re-selected
                             e.target.value = "";

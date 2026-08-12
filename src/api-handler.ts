@@ -357,7 +357,11 @@ async function handleSuspensionAdmin(req: Request, id?: string): Promise<Respons
 async function handleSignup(req: Request): Promise<Response> {
   const request_id = requestIdFrom(req);
   logInfo(EVENTS.SIGNUP_STARTED, { request_id, channel: "api" });
-  const rateLimitResponse = checkStrictRateLimit(req);
+  // Dedicated signup bucket (20/15 min per client) — generous enough for
+  // shared-IP cohort onboarding (office/ISP NAT), still bounded to blunt
+  // mass account creation. Never shared with waitlist/auth endpoints so
+  // one funnel can’t starve another. Generic 429, no information leak.
+  const rateLimitResponse = checkRateLimit(req, "signup", { maxRequests: 20, windowMs: 15 * 60 * 1000 });
   if (rateLimitResponse) return rateLimitResponse;
 
   const body = await req.json().catch(() => null);
@@ -606,24 +610,32 @@ async function handleUpload(req: Request): Promise<Response> {
     }
   }
 
-  const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+  const MAX_FILE_SIZE = 4 * 1024 * 1024; // 4 MB — must stay under Vercel's ~4.5 MB function-payload ceiling (uploads beyond it 413 before app code runs)
   for (const file of files) {
     if (file.size > MAX_FILE_SIZE) {
       logInfo(EVENTS.UPLOAD_REJECTED, { reason: "file_too_large" });
       logWarn(EVENTS.PHOTO_UPLOAD_FAILED, { request_id, reason: "file_too_large" });
-      return json({ error: "Photo must be under 10 MB" }, 400);
+      return json({ error: "Photo must be under 4 MB" }, 400);
     }
   }
 
+  // Snapshot the pre-batch photo count once (authenticated users only) so the
+  // sort_order / primary / photo_path logic below never drifts as rows are
+  // inserted inside the loop. sort_order must be sequential within a batch
+  // (0..4 for a fresh 5-photo batch) and append after pre-existing photos.
+  const basePhotoCount = user ? await getUserPhotoCount(user.id) : 0;
+  if (user && basePhotoCount >= 6) {
+    return json({ error: "Maximum 6 photos allowed. Please delete one first." }, 400);
+  }
   const uploadResults: { id?: number; photo_path: string; sort_order?: number; is_primary?: boolean }[] = [];
 
-  for (const file of files) {
+  for (const [index, file] of files.entries()) {
     const ext = file.name.split(".").pop() || "jpg";
     const buffer = await file.arrayBuffer();
 
     if (user) {
-      // Authenticated user — check photo count
-      const photoCount = await getUserPhotoCount(user.id);
+      // Authenticated user — enforce the 6-photo cap as the batch grows.
+      const photoCount = basePhotoCount + index;
       if (photoCount >= 6) {
         return json({ error: "Maximum 6 photos allowed. Please delete one first." }, 400);
       }
@@ -632,25 +644,21 @@ async function handleUpload(req: Request): Promise<Response> {
       // Store photo (uses Vercel Blob on Vercel, local filesystem otherwise)
       const storedPath = await storePhoto(storageFilename, buffer, file.type);
 
-      const sortOrder = photoCount + uploadResults.length;
+      // Sequential sort_order within the batch: append after pre-existing photos.
+      const sortOrder = basePhotoCount + index;
       const photo = await addUserPhoto(user.id, storedPath, sortOrder);
 
-      if (photoCount === 0 && uploadResults.length === 0) {
-        await setPrimaryPhoto(user.id, photo.id);
+      // The first photo of a batch that starts a photo-less profile becomes the
+      // primary. setPrimaryPhoto also syncs users.photo_path to it, and its
+      // return value carries the fresh is_primary flag for the response (the
+      // row from addUserPhoto is always is_primary=false).
+      let isPrimary = Boolean(photo.is_primary);
+      if (basePhotoCount === 0 && index === 0) {
+        const primary = await setPrimaryPhoto(user.id, photo.id);
+        isPrimary = Boolean(primary?.is_primary);
       }
 
-      if (!user.photo_path) {
-        await updateUserProfile(user.id, {
-          display_name: user.display_name || "",
-          age: user.age || 0,
-          gender: user.gender || "",
-          looking_for: user.looking_for || "everyone",
-          bio: user.bio || "",
-          photo_path: storedPath,
-        });
-      }
-
-      uploadResults.push({ id: photo.id, photo_path: photo.photo_path, sort_order: photo.sort_order, is_primary: photo.is_primary });
+      uploadResults.push({ id: photo.id, photo_path: photo.photo_path, sort_order: photo.sort_order, is_primary: isPrimary });
       // Scanner is deliberately asynchronous: provider failures never fail uploads.
       void moderateUploadedPhoto(photo.id, user.id, storedPath, buffer, file.type).catch((error) => logError(EVENTS.PHOTO_UPLOAD_FAILED, { request_id, reason: "moderation_failed", error: error instanceof Error ? error.message : "unknown" }));
     } else {
@@ -3171,7 +3179,9 @@ async function enrollInWaitlistOnFull(email: string): Promise<void> {
 }
 
 async function handleWaitlistJoin(req: Request): Promise<Response> {
-  const rateLimitResponse = checkStrictRateLimit(req);
+  // Dedicated waitlist bucket (5/15 min) — separate from signup so waitlist
+  // joins can never exhaust the signup budget (and vice versa). Generic 429.
+  const rateLimitResponse = checkRateLimit(req, "waitlist", { maxRequests: 5, windowMs: 15 * 60 * 1000 });
   if (rateLimitResponse) return rateLimitResponse;
 
   const body = await req.json().catch(() => null);
