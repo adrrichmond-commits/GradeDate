@@ -6,7 +6,10 @@ import {
 } from "@simplewebauthn/server";
 import type { AuthenticationResponseJSON, RegistrationResponseJSON } from "@simplewebauthn/types";
 
-export const MFA_CHALLENGE_TTL_MS = 5 * 60 * 1000;
+// Generous single-use enrollment/authentication window; consumption is one-shot
+// (consumeWebAuthnChallenge marks the row consumed), so a long TTL only widens
+// the human window — it cannot be replayed.
+export const MFA_CHALLENGE_TTL_MS = 15 * 60 * 1000;
 export const PRIVILEGED_MFA_REAUTH_MS = 5 * 60 * 1000;
 export function webAuthnConfig(env: Record<string, string | undefined> = process.env) {
   const rpID = env.WEBAUTHN_RP_ID?.trim();
