@@ -68,7 +68,13 @@ async function streamResponse(
   requestId: string,
 ): Promise<void> {
   res.statusCode = webRes.status;
-  webRes.headers.forEach((value, key) => res.setHeader(key, value));
+  // Set-Cookie headers must each reach the wire individually: setHeader()
+  // collapses duplicates, so a login response carrying both csrf_token and
+  // session_id would lose the first cookie.
+  webRes.headers.forEach((value, key) => {
+    if (key.toLowerCase() === "set-cookie") res.appendHeader("Set-Cookie", value);
+    else res.setHeader(key, value);
+  });
   if (shouldNoIndex(pathname)) res.setHeader("X-Robots-Tag", "noindex, nofollow");
   // Apply security headers (won't override existing)
   for (const [key, value] of Object.entries(SECURITY_HEADERS)) {

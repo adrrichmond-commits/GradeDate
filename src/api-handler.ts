@@ -273,9 +273,12 @@ function json(data: unknown, status = 200): Response {
   });
 }
 
-function setSessionCookie(response: Response, sessionId: string): Response {
+export function setSessionCookie(response: Response, sessionId: string): Response {
+  // Append, never set: the response may already carry a CSRF Set-Cookie (login
+  // composes setCsrfCookie() then setSessionCookie()) and set() would replace
+  // it, dropping the csrf_token cookie the client needs for the next request.
   const headers = new Headers(response.headers);
-  headers.set(
+  headers.append(
     "Set-Cookie",
     `${SESSION_COOKIE}=${sessionId}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=604800`,
   );
