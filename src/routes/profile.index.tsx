@@ -514,6 +514,53 @@ function ProfilePage() {
     }
   };
 
+  const enrollPasskey = async () => {
+    setEnrollingPasskey(true);
+    setPasskeyError("");
+    setPasskeyStatus("");
+    try {
+      // Refresh the CSRF token, then send it on both POSTs (same pattern as
+      // adminPost in admin.index.tsx).
+      await fetch("/api/csrf").catch(() => {});
+      const token = getCsrfToken();
+      const optionsRes = await fetch("/api/auth/mfa/enroll/options", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { "X-CSRF-Token": token } : {}),
+        },
+        body: "{}",
+      });
+      const optionsData = await optionsRes.json().catch(() => null);
+      if (!optionsRes.ok) {
+        throw new Error(optionsData?.error || "Failed to start passkey enrollment");
+      }
+      const response = await startRegistration(
+        optionsData?.options as Parameters<typeof startRegistration>[0],
+      );
+      const verifyRes = await fetch("/api/auth/mfa/enroll/verify", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { "X-CSRF-Token": token } : {}),
+        },
+        body: JSON.stringify({ challenge_id: optionsData?.challenge_id, response }),
+      });
+      const verifyData = await verifyRes.json().catch(() => null);
+      if (!verifyRes.ok) {
+        throw new Error(verifyData?.error || "Failed to verify passkey");
+      }
+      setPasskeyStatus("Passkey enrolled successfully.");
+    } catch (err) {
+      setPasskeyError(
+        err instanceof Error && err.message
+          ? err.message
+          : "Something went wrong while enrolling the passkey. Please try again.",
+      );
+    } finally {
+      setEnrollingPasskey(false);
+    }
+  };
   const handleSave = async () => {
     setSaveError("");
     setSaveSuccess(false);
