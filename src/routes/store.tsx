@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useEffect, useRef, type ReactNode } from "react";
 import { isPremiumUser, useAuth } from "~/auth-context";
+import { BOOST_PRICE_DISPLAY } from "~/canonical-entitlements";
 import { getCsrfToken } from "~/csrf-client";
 import { parseStoreReturnState } from "~/checkout-return";
 import {
@@ -46,7 +47,7 @@ const products: Product[] = [
   {
     id: "boost",
     name: "Profile Boost",
-    price: "$2.99",
+    price: BOOST_PRICE_DISPLAY,
     description:
       "Get 7 days of increased visibility — your profile appears at the top of match results for users in your grade range.",
     paymentLink: BOOST_LINK,
@@ -357,8 +358,8 @@ function StorePage() {
                 <div className="flex items-start gap-2 text-sm">
                   <span className="mt-0.5 text-amber-400">✓</span>
                   <div>
-                    <span className="font-medium text-white">Founder Badge</span>
-                    <p className="text-xs text-gray-500">Numbered badge and lifetime $5.99/month price lock</p>
+                    <span className="font-medium text-white">Early Access</span>
+                    <p className="text-xs text-gray-500">Test new features before anyone else</p>
                   </div>
                 </div>
               </div>

@@ -175,8 +175,8 @@ function SubscribePage() {
           Unlock GradeDate
         </h1>
         <p className="mb-8 text-gray-400">
-          Subscribe to browse matches, connect with singles at your level, and
-          start chatting. Premium includes regrades and seeing who liked you. Cancel anytime.
+          Get unlimited likes, see who liked you, premium regrades, and a
+          profile boost. $5.99/mo — cancel anytime.
         </p>
 
         {/* Beta trial users keep Premium after the trial only if they subscribe. */}

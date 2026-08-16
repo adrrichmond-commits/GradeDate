@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { apiFetch, safeApiError } from "~/client-api";
 import { useState, useMemo } from "react";
 import { useAuth } from "~/auth-context";
+import { isTrialActive } from "~/canonical-entitlements";
 import { getCsrfToken } from "~/csrf-client";
 import { getSignupDays } from "~/signup-date";
 import { AgeVerificationCard, skipVerificationVisible } from "~/age-verification";
@@ -195,6 +196,23 @@ function Signup() {
             </div>
           )}
 
+          {/* Active 14-day trial banner — the invite reward is invisible to
+              new users, so surface it here with the exact end date. */}
+          {user && isTrialActive(user.trial_ends_at) && (
+            <div
+              role="status"
+              className="mb-6 rounded-xl border border-green-500/30 bg-green-500/10 p-4 text-center"
+            >
+              <p className="font-semibold text-green-400">
+                Your 14-day Premium trial is active 🎉
+              </p>
+              <p className="mt-1 text-sm text-green-400/80">
+                Enjoy unlimited likes, premium regrades, and see-who-liked-you
+                until {new Date(user.trial_ends_at!).toLocaleDateString()}.
+              </p>
+            </div>
+          )}
+
           {error && (
             <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-center text-sm text-red-400">
               {error}
@@ -218,7 +236,8 @@ function Signup() {
               </p>
             </button>
 
-            {/* Become Founder */}
+            {/* Become Founder — relabeled while a 14-day trial is active so
+                the card sells the trial, not a second purchase */}
             <button
               onClick={handleBecomeFounder}
               disabled={checkoutLoading}
@@ -231,10 +250,16 @@ function Signup() {
                   ⭐ FOUNDERS CLUB · ONLY 1,000 SPOTS
                 </div>
                 <p className="mt-2 text-lg font-bold text-amber-300">
-                  Become a Founder{" "}
-                  <span className="text-base font-semibold text-amber-400">
-                    $5.99
-                  </span>
+                  {isTrialActive(user?.trial_ends_at) ? (
+                    "Start your 14-day Premium trial"
+                  ) : (
+                    <>
+                      Become a Founder{" "}
+                      <span className="text-base font-semibold text-amber-400">
+                        $5.99
+                      </span>
+                    </>
+                  )}
                 </p>
                 <ul className="mt-3 space-y-1.5 text-sm text-amber-200/80">
                   <li className="flex items-start gap-2">
@@ -263,7 +288,7 @@ function Signup() {
             </button>
           </div>
 
-          <p className="mt-6 text-center text-xs text-gray-600">
+          <p className="mt-6 text-center text-xs text-gray-400">
             Only 1,000 Founder spots will ever exist. Once they're claimed, the
             Founders Club closes forever. Cancel anytime — but your price lock
             is yours forever as long as you stay subscribed.
@@ -432,7 +457,7 @@ function Signup() {
                 htmlFor="referralCode"
                 className="mb-1.5 block text-sm font-medium text-gray-300"
               >
-                Referral Code{" "}
+                Invite / Referral Code{" "}
                 <span className="text-xs font-normal text-gray-500">
                   (optional)
                 </span>
@@ -443,18 +468,19 @@ function Signup() {
                 value={referralCode}
                 onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
                 className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-gray-100 placeholder-gray-500 focus:border-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
-                placeholder="e.g. GRD8XK2P"
+                placeholder="Enter your invite or referral code"
               />
               {referralCode && (
                 <p className="mt-1 text-xs text-amber-400">
-                  🎁 You and your friend will both get 1 month free when you
-                  subscribe!
+                  Invite codes start a 14-day Premium trial. Referral codes
+                  give you and a friend a free month of Premium when you
+                  subscribe.
                 </p>
               )}
               {search.ref && !referralCode && (
                 <p className="mt-1 text-xs text-green-400">
                   🎉 You've been invited! Enter the code above to claim your
-                  free month.
+                  invite or referral reward.
                 </p>
               )}
               <p className="mt-2 text-xs text-gray-500">
@@ -528,7 +554,7 @@ function Signup() {
               Log in
             </Link>
           </p>
-          <p className="mt-4 text-center text-xs text-gray-600">
+          <p className="mt-4 text-center text-xs text-gray-400">
             By signing up, you agree to our AI-powered facial grading, which is
             experimental and subjective.
           </p>

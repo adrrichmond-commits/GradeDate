@@ -18,6 +18,8 @@ export const PREMIUM_PRICE_ID = resolvePremiumPriceId();
 export const PREMIUM_MONTHLY_PRICE = 5.99;
 export const FOUNDER_CAP = 1000;
 export const BOOST_DURATION_DAYS = 7;
+/** Canonical display price for the one-time 7-day Profile Boost upsell ($2.99). */
+export const BOOST_PRICE_DISPLAY = "$2.99";
 
 export function isReferralRewardActive(expiresAt: Date | string | null, now = new Date()): boolean {
   return expiresAt === null || new Date(expiresAt).getTime() > now.getTime();

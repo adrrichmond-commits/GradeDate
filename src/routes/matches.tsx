@@ -8,6 +8,7 @@ import {
 } from "react";
 import { useModalAccessibility } from "~/modal-accessibility";
 import { useAuth } from "~/auth-context";
+import { topPercentLabel } from "~/percentile";
 import { UserPhoto } from "~/user-photo";
 import { AuthUnavailable } from "~/auth-unavailable";
 import {
@@ -467,7 +468,7 @@ function MatchesPage() {
           <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-rose-500/10 px-3 py-1 text-xs text-rose-400">
             Top{" "}
             {user.percentile != null
-              ? `${Math.round(100 - user.percentile)}%`
+              ? topPercentLabel(user.percentile)
               : `${user.grade}/10`}{" "}
             in your area
           </div>
@@ -929,7 +930,7 @@ function MatchesPage() {
 
           {/* Report & Counter */}
           <div className="mt-6 space-y-2">
-            <p className="text-center text-xs text-gray-600">
+            <p className="text-center text-xs text-gray-400">
               {currentIdx + 1} of {matches.length} compatible matches
             </p>
             <button
