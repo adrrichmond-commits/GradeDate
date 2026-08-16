@@ -1,6 +1,8 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { isPremiumUser, useAuth } from "~/auth-context";
+import { BOOST_DURATION_DAYS, BOOST_PRICE_DISPLAY } from "~/canonical-entitlements";
+import { topPercentLabel } from "~/percentile";
 import { AuthUnavailable } from "~/auth-unavailable";
 import { UserPhoto } from "~/user-photo";
 import { getCsrfToken } from "~/csrf-client";
@@ -732,7 +734,7 @@ function ProfilePage() {
   // Current photo to display (view mode)
   const displayPhoto = user.photo_path;
   const photoCount = user.photos?.length || (user.photo_path ? 1 : 0);
-  const totalSlots = 6;
+  const totalSlots = 5;
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-12">
@@ -902,7 +904,7 @@ function ProfilePage() {
           {editing && (
             <div className="w-full">
               <label className="mb-3 block text-sm font-medium text-gray-300">
-                Photos ({editPhotos.length}/6)
+                Photos ({editPhotos.length}/5)
               </label>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {Array.from({ length: totalSlots }).map((_, i) => {
@@ -1002,24 +1004,46 @@ function ProfilePage() {
                 })}
               </div>
               <p className="mt-1.5 text-xs text-gray-500">
-                Upload up to 6 photos. Tap the ★ to set your primary photo.
+                Upload up to 5 photos. Tap the ★ to set your primary photo.
               </p>
             </div>
           )}
         </div>
 
-        {/* Grade Display — hero element (only in view mode) */}
+        {/* Grade Display — hero element (only in view mode). The city
+            percentile leads (owner direction 2026-08-16: all marketing sells
+            the percentile, so it must be the headline); the raw 1–10 grade
+            stays as secondary coaching detail. */}
         {!editing && user.grade !== null && (
           <div className="mb-8 text-center">
             <div className="inline-flex flex-col items-center rounded-2xl border border-rose-500/20 bg-gradient-to-b from-rose-500/5 to-transparent px-6 sm:px-10 py-6">
-              <span className="text-xs font-semibold uppercase tracking-wider text-rose-400">
-                Your Grade
-              </span>
-              <span className="mt-1 animate-[scaleIn_0.5s_ease-out] text-6xl font-black text-rose-400">
-                {user.grade}
-              </span>
-              <span className="text-xs text-gray-500">/ 10</span>
-              {/* Grade bar */}
+              {user.percentile != null ? (
+                <>
+                  <span className="text-xs font-semibold uppercase tracking-wider text-rose-400">
+                    Your City Percentile
+                  </span>
+                  <span className="mt-1 animate-[scaleIn_0.5s_ease-out] text-6xl font-black text-rose-400">
+                    {topPercentLabel(user.percentile)}
+                  </span>
+                  <span className="text-xs text-gray-500">
+                    {user.percentile_city
+                      ? `in ${user.percentile_city}`
+                      : "in your city"}{" "}
+                    — private, only you see it
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="text-xs font-semibold uppercase tracking-wider text-rose-400">
+                    Your Grade
+                  </span>
+                  <span className="mt-1 animate-[scaleIn_0.5s_ease-out] text-6xl font-black text-rose-400">
+                    {user.grade}
+                  </span>
+                  <span className="text-xs text-gray-500">/ 10</span>
+                </>
+              )}
+              {/* Grade bar — private coaching detail */}
               <div className="mt-3 flex w-full max-w-[160px] gap-0.5">
                 {Array.from({ length: 10 }).map((_, i) => (
                   <div
@@ -1032,6 +1056,11 @@ function ProfilePage() {
                   />
                 ))}
               </div>
+              {user.percentile != null && (
+                <span className="mt-2 text-xs text-gray-500">
+                  Grade {user.grade}/10 — your private coaching level
+                </span>
+              )}
             </div>
             <div className="mt-3">
               <Link to="/matches" className="btn-primary">
@@ -1057,7 +1086,7 @@ function ProfilePage() {
                     d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"
                   />
                 </svg>
-                Boost Profile — $3.99
+                Boost Profile — {BOOST_PRICE_DISPLAY} · {BOOST_DURATION_DAYS} days of top placement
               </Link>
             </div>
           </div>

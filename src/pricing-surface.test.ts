@@ -39,8 +39,13 @@ describe("canonical pricing surface (smoke-test findings)", () => {
     expect(store).not.toContain("See Who Liked You");
     // The re-grade product object (id on line N, price on line N+2) must be $0.99.
     expect(store).toMatch(/id: "re-grade"[\s\S]{0,120}price: "\$0\.99"/);
-    // Boost remains the canonical $2.99/7-day offer.
-    expect(store).toMatch(/id: "boost"[\s\S]{0,120}price: "\$2\.99"/);
+    // Boost remains the canonical $2.99/7-day offer. The store now sources
+    // the price from the shared constant (same source the profile page uses)
+    // so both surfaces can't drift — assert the constant and its value.
+    expect(store).toMatch(/id: "boost"[\s\S]{0,120}price: BOOST_PRICE_DISPLAY/);
+    const entitlements = read("canonical-entitlements.ts");
+    expect(entitlements).toMatch(/BOOST_PRICE_DISPLAY = "\$2\.99"/);
+    expect(entitlements).toMatch(/BOOST_DURATION_DAYS = 7/);
   });
 
   test("Founders Club CTA uses the canonical Premium subscription route", () => {
@@ -73,6 +78,74 @@ describe("canonical pricing surface (smoke-test findings)", () => {
     expect(terms).toContain("A paid subscription is not required to use the Service.");
     expect(terms).not.toMatch(/required to access the Service/);
     expect(terms).toContain("$5.99 per month");
+  });
+
+  test("profile boost upsell price matches the canonical store price", () => {
+    const profile = read("routes/profile.index.tsx");
+    // The profile page must render the canonical $2.99/7-day boost (PR fix
+    // for the stale $3.99) — sourced from the same constants the store uses
+    // so the two surfaces can't drift again.
+    expect(profile).toContain("BOOST_PRICE_DISPLAY");
+    expect(profile).toContain("BOOST_DURATION_DAYS");
+    expect(profile).toContain("Boost Profile — {BOOST_PRICE_DISPLAY} · {BOOST_DURATION_DAYS} days of top placement");
+    expect(profile).not.toMatch(/\$3\.99/);
+    const store = read("routes/store.tsx");
+    expect(store).toMatch(/id: "boost"[\s\S]{0,120}price: BOOST_PRICE_DISPLAY/);
+  });
+
+  test("landing page gates paid CTAs for anonymous visitors", () => {
+    const index = read("routes/index.tsx");
+    expect(index).toContain('import { useAuth } from "~/auth-context";');
+    expect(index).toContain("const signedIn = !!user;");
+    // Anonymous path points at /signup, not the auth-required /subscribe page.
+    expect(index).toContain('to={signedIn ? "/subscribe" : "/signup"}');
+    expect(index).toContain("Create a free account");
+  });
+
+  test("honest premium CTA copy: real hooks, no false browsing claims", () => {
+    const grade = read("routes/grade.tsx");
+    expect(grade).not.toContain("Subscribe to browse matches at your grade level");
+    expect(grade).toContain("Get unlimited likes, premium regrades, a profile boost, and see who liked you");
+    const subscribe = read("routes/subscribe.tsx");
+    expect(subscribe).toContain("Get unlimited likes, see who liked you, premium regrades, and a\n          profile boost. $5.99/mo — cancel anytime.");
+    const banner = read("subscription-guard.tsx");
+    expect(banner).not.toContain("access full features");
+    expect(banner).toContain("Unlimited likes, see who liked you, premium regrades, and a");
+  });
+
+  test("signup surfaces the 14-day trial and disambiguates invite/referral copy", () => {
+    const signup = read("routes/signup.tsx");
+    expect(signup).toContain("Your 14-day Premium trial is active");
+    expect(signup).toContain("Start your 14-day Premium trial");
+    expect(signup).toContain("Enter your invite or referral code");
+    expect(signup).toContain("Invite / Referral Code");
+    // Referral reward copy must match server behavior (14-day trial for
+    // invites, one month for referrals) — never a blanket "free month".
+    expect(signup).not.toContain("claim your free month");
+    expect(signup).not.toContain("both get 1 month free");
+    expect(signup).toContain("Invite codes start a 14-day Premium trial. Referral codes");
+  });
+
+  test("demo labels are honest AND consistent with the real grader", () => {
+    const index = read("routes/index.tsx");
+    // The homepage widget is a simulated preview of the real AI grader — never
+    // claim the demo output is real analysis, never imply the product is fake.
+    expect(index).toContain("Simulated demo — a preview of our real AI grading");
+    expect(index).not.toContain("not real AI analysis");
+    expect(index).not.toContain("demo only, no real analysis");
+    expect(index).toContain("simulated preview of the real AI grader");
+    // The real /grade flow keeps its honest AI-assisted label.
+    const grade = read("routes/grade.tsx");
+    expect(grade).toContain("AI-assisted grade");
+  });
+
+  test("photo count is 5 everywhere on the profile page", () => {
+    const profile = read("routes/profile.index.tsx");
+    expect(profile).toContain("const totalSlots = 5;");
+    expect(profile).toContain("Photos ({editPhotos.length}/5)");
+    expect(profile).toContain("Upload up to 5 photos. Tap the ★ to set your primary photo.");
+    expect(profile).not.toContain("totalSlots = 6");
+    expect(profile).not.toContain("Upload up to 6 photos");
   });
 
   test("root head emits runtime-origin canonical and og:url without a hardcoded host", () => {

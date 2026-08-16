@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useEffect, useCallback } from "react";
+import { useAuth } from "~/auth-context";
 
 export const Route = createFileRoute("/")({
   component: Home,
@@ -184,7 +185,9 @@ function DemoGrader() {
       <div className="card border-rose-500/20 p-6">
         <div className="mb-4 flex items-center gap-2">
           <span className="badge">DEMO</span>
-          <span className="text-sm text-gray-400">Simulated — not real AI analysis</span>
+          <span className="text-sm text-gray-400">
+            Simulated demo — a preview of our real AI grading
+          </span>
         </div>
 
         {state === "idle" && (
@@ -205,7 +208,9 @@ function DemoGrader() {
             <span className="text-sm font-medium text-gray-300">
               Upload a selfie to see a simulated demo grade
             </span>
-            <span className="text-xs text-gray-500">PNG, JPG — demo only, no real analysis</span>
+            <span className="text-xs text-gray-500">
+              PNG, JPG — simulated preview of the real AI grader
+            </span>
             <input
               type="file"
               aria-label="Upload a selfie for the demo"
@@ -244,8 +249,8 @@ function DemoGrader() {
                 {grade}
               </div>
               <div className="mt-1 text-sm font-medium text-gray-300">/ 10</div>
-              <p className="mt-1 text-[10px] uppercase tracking-widest text-gray-600">
-                Demo grade — simulated, not real AI analysis
+              <p className="mt-1 text-[10px] uppercase tracking-widest text-gray-400">
+                Demo grade — simulated preview of real AI grading
               </p>
             </div>
             <p className="text-center text-sm text-gray-400">
@@ -273,9 +278,14 @@ function DemoGrader() {
 }
 
 // ---------------------------------------------------------------------------
-// Pricing Section Component — Free + Paid side by side
+// Pricing Section Component — Free + Paid side by side. Paid CTAs are gated:
+// anonymous visitors have no account (checkout requires auth + verification),
+// so they are pointed to /signup instead of a dead-end /subscribe page.
 // ---------------------------------------------------------------------------
 function PricingSection() {
+  const { user } = useAuth();
+  const signedIn = !!user;
+
   return (
     <div className="mx-auto max-w-4xl text-center">
       <h2 className="mb-4 text-3xl font-bold sm:text-4xl">
@@ -380,14 +390,25 @@ function PricingSection() {
             ))}
           </ul>
 
-          <Link
-            to="/subscribe"
-            className="btn-primary w-full justify-center text-base"
-          >
-            Subscribe — $5.99/month
-          </Link>
+          {signedIn ? (
+            <Link
+              to="/subscribe"
+              className="btn-primary w-full justify-center text-base"
+            >
+              Subscribe — $5.99/month
+            </Link>
+          ) : (
+            <Link
+              to="/signup"
+              className="btn-primary w-full justify-center text-base"
+            >
+              Create a free account
+            </Link>
+          )}
           <p className="mt-3 text-center text-xs text-gray-500">
-            Secure payment via Stripe.
+            {signedIn
+              ? "Secure payment via Stripe."
+              : "Free to join — Austin, TX goes first."}
           </p>
         </div>
       </div>
@@ -401,6 +422,8 @@ function PricingSection() {
 function FoundersClubSection() {
   const [remaining, setRemaining] = useState<number | null>(null);
   const [error, setError] = useState(false);
+  const { user } = useAuth();
+  const signedIn = !!user;
 
   const fetchSpots = useCallback(() => {
     let cancelled = false;
@@ -517,7 +540,7 @@ function FoundersClubSection() {
                   />
                 </div>
                 {/* Tick marks */}
-                <div className="mt-1.5 flex justify-between px-0.5 text-[10px] text-gray-600">
+                <div className="mt-1.5 flex justify-between px-0.5 text-[10px] text-gray-400">
                   <span>0</span>
                   <span>250</span>
                   <span>500</span>
@@ -529,7 +552,8 @@ function FoundersClubSection() {
           )}
         </div>
 
-        {/* CTA — changes if spots are gone */}
+        {/* CTA — changes if spots are gone. Paid CTAs are auth-gated:
+            anonymous visitors go to /signup (checkout needs an account). */}
         {spotsGone ? (
           <div className="flex flex-col items-center gap-3">
             <div className="rounded-full border border-gray-700 bg-gray-800/50 px-6 py-4 text-gray-400">
@@ -537,7 +561,7 @@ function FoundersClubSection() {
               {" — "}Subscribe to join the waitlist for the next wave
             </div>
             <Link
-              to="/subscribe"
+              to={signedIn ? "/subscribe" : "/signup"}
               className="btn-secondary inline-flex items-center gap-2 px-8 py-4 text-base"
             >
               Join Waitlist
@@ -546,7 +570,7 @@ function FoundersClubSection() {
         ) : (
           <div className="flex flex-col items-center gap-4">
             <Link
-              to="/subscribe"
+              to={signedIn ? "/subscribe" : "/signup"}
               className="inline-flex items-center gap-3 rounded-full bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-500 px-8 py-4 text-base font-bold text-gray-950 shadow-xl shadow-amber-500/25 transition-all duration-300 hover:scale-105 hover:shadow-amber-500/40 active:scale-95"
             >
               <svg
@@ -699,13 +723,14 @@ function Home() {
             )}
           </div>
 
-          {/* Trust markers — real, live features */}
+          {/* Trust markers — real, live features, matched to the live
+              /acceptable-use and /safety zero-tolerance facts */}
           <ul className="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-gray-400">
             <li className="flex items-center gap-1.5">
               <svg className="h-4 w-4 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 01-1.043 3.296 3.745 3.745 0 01-3.296 1.043A3.745 3.745 0 0112 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 01-3.296-1.043 3.745 3.745 0 01-1.043-3.296A3.745 3.745 0 013 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 011.043-3.296 3.746 3.746 0 013.296-1.043A3.746 3.746 0 0112 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 013.296 1.043 3.746 3.746 0 011.043 3.296A3.745 3.745 0 0121 12z" />
               </svg>
-              Age-verified members
+              Government-ID age verification
             </li>
             <li className="flex items-center gap-1.5">
               <svg className="h-4 w-4 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -717,7 +742,13 @@ function Home() {
               <svg className="h-4 w-4 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
               </svg>
-              Safety-first, always
+              CSAM, underage &amp; trafficking: immediately hidden, accounts locked, reported to authorities
+            </li>
+            <li className="flex items-center gap-1.5">
+              <svg className="h-4 w-4 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
+              </svg>
+              One appeal within 14 days
             </li>
           </ul>
 
@@ -731,7 +762,7 @@ function Home() {
               >
                 Sign up with it
               </Link>
-              <span className="mt-1 block text-xs text-gray-600">
+              <span className="mt-1 block text-xs text-gray-400">
                 Invite holders get 14 days of Premium free on signup.
               </span>
             </p>
@@ -857,6 +888,25 @@ function Home() {
       </section>
 
       {/* ─────────────────────────────────────────────────────────────
+          2b. WHY 80/20 — honest strip. Copy placeholder (plan wording);
+          the owner may supply paste-ready copy later — swap the two
+          paragraphs below when they do.
+          ───────────────────────────────────────────────────────────── */}
+      <section className="border-y border-white/5 bg-white/[0.02] px-4 py-10">
+        <div className="mx-auto max-w-3xl text-center">
+          <p className="text-lg font-semibold text-white">
+            80/20 feed: 80% in your range, 20% new perspectives — because
+            &ldquo;your type&rdquo; is a spectrum.
+          </p>
+          <p className="mt-2 text-sm text-gray-500">
+            Most of your matches sit close to your level; the rest give you a
+            chance to be surprised. Matching stays appearance-based and
+            location-aware either way.
+          </p>
+        </div>
+      </section>
+
+      {/* ─────────────────────────────────────────────────────────────
           3. FREE PREVIEW GRADING — a real hook that works today
           ───────────────────────────────────────────────────────────── */}
       <section className="relative overflow-hidden px-4 py-24">
@@ -878,8 +928,8 @@ function Home() {
               </h2>
               <p className="mb-6 max-w-md text-lg leading-relaxed text-gray-400">
                 Curious which photos work best? Upload a selfie and get an
-                instant simulated demo grade — no sign-up, no credit card,
-                completely anonymous.
+                instant simulated demo grade — a preview of our real AI
+                grading. No sign-up, no credit card, completely anonymous.
               </p>
 
               {/* Grade teaser with pulsing "?" */}
@@ -893,8 +943,8 @@ function Home() {
                   <div className="text-sm font-semibold text-white">
                     Your grade is waiting
                   </div>
-                  <div className="text-sm text-gray-500">
-                    1-10 score · Simulated demo · Instant
+                  <div className="text-sm text-gray-400">
+                    1-10 score · Simulated demo of real AI grading · Instant
                   </div>
                 </div>
               </div>

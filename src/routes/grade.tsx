@@ -750,7 +750,36 @@ function GradePage() {
             {/* ── Done: Multi-Photo Results ───────────────────── */}
             {state === "done" && photoGrades && photoGrades.length > 0 && (
               <div className="flex flex-col gap-6 py-4">
-                {/* Per-photo grade cards */}
+                {/* Percentile card (authenticated only — anonymous previews
+                    have no city or percentile yet) */}
+                {isAuthenticated && (
+                  <div className="rounded-xl border border-rose-500/20 bg-gradient-to-r from-rose-500/5 to-purple-500/5 p-4 text-center">
+                    <div className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+                      Your Percentile
+                    </div>
+                    {percentileLabel ? (
+                      <>
+                        <div className="mt-1 text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-rose-400 to-rose-600">
+                          {percentileLabel}
+                        </div>
+                        <p className="mt-1 text-xs text-gray-500">
+                          Based on other users in your city
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <div className="mt-1 text-lg font-semibold text-gray-400">
+                          Not enough data yet
+                        </div>
+                        <p className="mt-1 text-xs text-gray-500">
+                          More users in your city needed for percentile ranking
+                        </p>
+                      </>
+                    )}
+                  </div>
+                )}
+
+
                 <div className="space-y-3">
                   {photoGrades.map((pg, i) => (
                     <div
@@ -831,38 +860,9 @@ function GradePage() {
                         </li>
                       ))}
                     </ul>
-                    <p className="mt-2 text-[10px] text-gray-600">
+                    <p className="mt-2 text-[10px] text-gray-400">
                       Suggestions to try — not a judgment of your photos.
                     </p>
-                  </div>
-                )}
-
-                {/* Percentile card (authenticated only — anonymous previews
-                    have no city or percentile yet) */}
-                {isAuthenticated && (
-                  <div className="rounded-xl border border-rose-500/20 bg-gradient-to-r from-rose-500/5 to-purple-500/5 p-4 text-center">
-                    <div className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-                      Your Percentile
-                    </div>
-                    {percentileLabel ? (
-                      <>
-                        <div className="mt-1 text-2xl font-extrabold text-white">
-                          {percentileLabel}
-                        </div>
-                        <p className="mt-1 text-xs text-gray-500">
-                          Based on other users in your city
-                        </p>
-                      </>
-                    ) : (
-                      <>
-                        <div className="mt-1 text-lg font-semibold text-gray-400">
-                          Not enough data yet
-                        </div>
-                        <p className="mt-1 text-xs text-gray-500">
-                          More users in your city needed for percentile ranking
-                        </p>
-                      </>
-                    )}
                   </div>
                 )}
 
@@ -938,8 +938,8 @@ function GradePage() {
                     </p>
                     <p className="mb-5 text-sm text-gray-400">
                       {showTreatmentCta
-                        ? "Subscribe to browse matches at your grade level, chat, and connect with real people. $5.99/mo — cancel anytime."
-                        : "Subscribe to browse matches at your grade level, chat, and connect with real people."}
+                        ? "Get unlimited likes, premium regrades, a profile boost, and see who liked you. $5.99/mo — cancel anytime."
+                        : "Get unlimited likes, premium regrades, a profile boost, and see who liked you."}
                     </p>
                     <Link
                       to="/subscribe"
@@ -948,7 +948,7 @@ function GradePage() {
                     >
                       {showTreatmentCta
                         ? "Subscribe — $5.99/mo"
-                        : "Subscribe to See Your Matches — $5.99/mo"}
+                        : "Subscribe to Premium — $5.99/mo"}
                     </Link>
                     <button
                       onClick={reset}
@@ -973,7 +973,7 @@ function GradePage() {
                 )}
                 <div className="text-center">
                   <div className="text-xs font-semibold uppercase tracking-widest text-gray-500">
-                    Your Match Level
+                    Your Grade
                   </div>
                   <div className="animate-[scaleIn_0.6s_ease-out] text-7xl font-black tracking-tighter text-rose-400">
                     {grade}
@@ -992,7 +992,7 @@ function GradePage() {
                   <p className="mt-2 text-xs text-gray-500">
                     Your grade helps us find your best matches. It is never shown to other users.
                   </p>
-                  <p className="mt-1 text-[10px] text-gray-700">
+                  <p className="mt-1 text-[10px] text-gray-400">
                     {gradingMethod === "mock"
                       ? "AI grading was unavailable, so this grade is simulated. Try again later for an AI-assisted grade."
                       : "AI-generated estimate. Results may vary."}
@@ -1085,8 +1085,8 @@ function GradePage() {
                     </p>
                     <p className="mb-5 text-sm text-gray-400">
                       {showTreatmentCta
-                        ? "Subscribe to browse matches at your grade level, chat, and connect with real people. $5.99/mo — cancel anytime."
-                        : "Subscribe to browse matches at your grade level, chat, and connect with real people."}
+                        ? "Get unlimited likes, premium regrades, a profile boost, and see who liked you. $5.99/mo — cancel anytime."
+                        : "Get unlimited likes, premium regrades, a profile boost, and see who liked you."}
                     </p>
                     <Link
                       to="/subscribe"
@@ -1095,7 +1095,7 @@ function GradePage() {
                     >
                       {showTreatmentCta
                         ? "Subscribe — $5.99/mo"
-                        : "Subscribe to See Your Matches — $5.99/mo"}
+                        : "Subscribe to Premium — $5.99/mo"}
                     </Link>
                     <button
                       onClick={reset}
@@ -1110,7 +1110,7 @@ function GradePage() {
           </div>
 
           {/* Footer note */}
-          <p className="mt-6 text-center text-xs text-gray-600">
+          <p className="mt-6 text-center text-xs text-gray-400">
             Photos are screened for inappropriate content before grading.
             Your match level is kept private — only you see it.
           </p>

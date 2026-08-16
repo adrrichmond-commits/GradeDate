@@ -283,7 +283,11 @@ describe("grade-result CTA surfaces (honest copy, no dark patterns)", () => {
     expect(gradeSrc).toContain('"Like your grade?"');
     expect(gradeSrc).toContain('"See Your Best Matches"');
     expect(gradeSrc).toContain('"Sign Up to Find Your Matches"');
-    expect(gradeSrc).toContain('"Subscribe to See Your Matches — $5.99/mo"');
+    // Control button relabeled to sell the real Premium hooks (P0 copy fix:
+    // browsing/chat are already free — the old "See Your Matches" label
+    // implied they weren't). Price must stay in the label.
+    expect(gradeSrc).toContain('"Subscribe to Premium — $5.99/mo"');
+    expect(gradeSrc).not.toContain('"Subscribe to See Your Matches — $5.99/mo"');
   });
 });
 

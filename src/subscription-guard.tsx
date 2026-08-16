@@ -56,17 +56,18 @@ export function SubscriptionBanner() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <p className="text-amber-400 font-semibold text-sm">
-            ⚠️ Subscription Required
+            Go Premium
           </p>
           <p className="text-amber-300/80 text-sm mt-0.5">
-            Subscribe for $5.99/month to access full features.
+            Unlimited likes, see who liked you, premium regrades, and a
+            profile boost. $5.99/mo — cancel anytime.
           </p>
         </div>
         <a
           href="/subscribe"
           className="rounded-full bg-amber-500 px-4 py-2 text-sm font-semibold text-black transition hover:bg-amber-400"
         >
-          Subscribe Now
+          Upgrade
         </a>
       </div>
     </div>
