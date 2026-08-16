@@ -176,7 +176,11 @@ function SubscribePage() {
         </h1>
         <p className="mb-8 text-gray-400">
           Get unlimited likes, see who liked you, premium regrades, and a
-          profile boost. $5.99/mo — cancel anytime.
+          profile boost. $5.99/mo —{" "}
+          <Link to="/contact" className="underline hover:text-gray-300">
+            contact us to cancel
+          </Link>
+          .
         </p>
 
         {/* Beta trial users keep Premium after the trial only if they subscribe. */}
@@ -255,7 +259,7 @@ function SubscribePage() {
               "Chat with your matches",
               "Premium regrades",
               "No ads, ever",
-              "Cancel anytime",
+              "Contact us to cancel",
             ].map((item) => (
               <li key={item} className="flex items-center gap-3">
                 <svg
@@ -307,7 +311,14 @@ function SubscribePage() {
             Secure checkout
           </span>
           <span>Powered by Stripe</span>
-          <span>Cancel anytime</span>
+          <span>
+            <Link
+              to="/contact"
+              className="underline transition hover:text-gray-300"
+            >
+              Contact us to cancel
+            </Link>
+          </span>
         </div>
       </div>
     </div>

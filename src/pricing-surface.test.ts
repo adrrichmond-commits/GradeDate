@@ -107,7 +107,13 @@ describe("canonical pricing surface (smoke-test findings)", () => {
     expect(grade).not.toContain("Subscribe to browse matches at your grade level");
     expect(grade).toContain("Get unlimited likes, premium regrades, a profile boost, and see who liked you");
     const subscribe = read("routes/subscribe.tsx");
-    expect(subscribe).toContain("Get unlimited likes, see who liked you, premium regrades, and a\n          profile boost. $5.99/mo — cancel anytime.");
+    // Honest cancellation copy (M2): there is no self-serve cancel / billing
+    // portal, so the page must point at /contact instead of promising
+    // "cancel anytime".
+    expect(subscribe).toContain("profile boost. $5.99/mo");
+    expect(subscribe).toContain('to="/contact"');
+    expect(subscribe).toContain("contact us to cancel");
+    expect(subscribe).not.toMatch(/cancel anytime/i);
     const banner = read("subscription-guard.tsx");
     expect(banner).not.toContain("access full features");
     expect(banner).toContain("Unlimited likes, see who liked you, premium regrades, and a");

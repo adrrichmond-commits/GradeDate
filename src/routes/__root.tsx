@@ -308,7 +308,7 @@ function AppShell() {
               <>
                 {/* ── Desktop nav (md+) ── */}
                 <div className="hidden md:flex items-center gap-4">
-                  {user.subscription_status !== "active" && (
+                  {!isPremiumUser(user) && (
                     <Link
                       to="/subscribe"
                       className="rounded-full bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-rose-500 hover:scale-105 active:scale-95"
@@ -562,6 +562,9 @@ function AppShell() {
             </Link>
             <Link to="/rules" className="transition hover:text-gray-300">
               Community Rules
+            </Link>
+            <Link to="/appeal" className="transition hover:text-gray-300">
+              Appeal a Suspension
             </Link>
             <Link to="/contact" className="transition hover:text-gray-300">
               Contact

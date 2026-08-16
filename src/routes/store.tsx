@@ -10,16 +10,12 @@ import {
   type StoreConfirmationState,
 } from "~/store-confirmation";
 
-const RE_GRADE_LINK = "https://buy.stripe.com/5kQ7sL3gq0CW4edfxt7Re02";
-const BOOST_LINK = "https://buy.stripe.com/14A9AT2cm3P8265etp7Re03";
-const LIKE_PACK_LINK = "https://buy.stripe.com/28E5kD8AK2L4fWVfxt7Re06";
 
 interface Product {
   id: string;
   name: string;
   price: string;
   description: string;
-  paymentLink: string;
   icon: ReactNode;
   endpoint: string;
 }
@@ -31,7 +27,6 @@ const products: Product[] = [
     price: "$0.99",
     description:
       "Think your first grade didn't do you justice? Buy a $0.99 regrade credit, then re-run the multi-photo grading flow in the Grade page for fresh AI feedback on your photos.",
-    paymentLink: RE_GRADE_LINK,
     endpoint: "/api/store/activate-re-grade",
     icon: (
       <svg className="h-7 w-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -50,7 +45,6 @@ const products: Product[] = [
     price: BOOST_PRICE_DISPLAY,
     description:
       "Get 7 days of increased visibility — your profile appears at the top of match results for users in your grade range.",
-    paymentLink: BOOST_LINK,
     endpoint: "/api/store/activate-boost",
     icon: (
       <svg className="h-7 w-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -69,7 +63,6 @@ const products: Product[] = [
     price: "$0.99",
     description:
       "Ran out of daily likes? Get 5 extra likes to keep swiping. Perfect for free users who want more action.",
-    paymentLink: LIKE_PACK_LINK,
     endpoint: "/api/store/activate-like-pack",
     icon: (
       <svg className="h-7 w-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">

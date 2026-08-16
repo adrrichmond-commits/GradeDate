@@ -101,6 +101,18 @@ function MatchesPage() {
   const [failedAction, setFailedAction] = useState<"like" | "pass" | null>(
     null,
   );
+  // Refs for race guards (read + set synchronously, never via state):
+  // - actionBusyRef prevents like/pass double-fire between renders (M3).
+  // - celebrationTimerRef holds the auto-advance timer so closing the
+  //   celebration modal can cancel it (H1) — a stale timer would otherwise
+  //   advance the deck again (or clear it) if the user acts within 3s.
+  const actionBusyRef = useRef(false);
+  const celebrationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  // True when a like/pass or feed request comes back 423 ACCOUNT_SUSPENDED —
+  // surfaces the appeal path instead of a raw error string (M1).
+  const [suspended, setSuspended] = useState(false);
   const [matchCelebration, setMatchCelebration] = useState<{
     match_id: number;
     other_user: {
@@ -127,7 +139,15 @@ function MatchesPage() {
   const [reporting, setReporting] = useState(false);
   const [reportDone, setReportDone] = useState(false);
   const [reportError, setReportError] = useState("");
-  const closeCelebration = useCallback(() => setMatchCelebration(null), []);
+  const closeCelebration = useCallback(() => {
+    // Cancel the pending auto-advance so a stale timer can never move the
+    // deck after the user has already acted (H1).
+    if (celebrationTimerRef.current) {
+      clearTimeout(celebrationTimerRef.current);
+      celebrationTimerRef.current = null;
+    }
+    setMatchCelebration(null);
+  }, []);
   const closeLikesLimit = useCallback(
     () => setShowLikesLimitOverlay(false),
     [],
@@ -178,7 +198,13 @@ function MatchesPage() {
       setCurrentIdx(0);
       setPhotoIndex(0);
     } catch (error) {
-      setError(safeApiError(error, "Failed to load matches."));
+      // A 423 ACCOUNT_SUSPENDED means the account is under review — surface
+      // the appeal path instead of a raw server error string (M1).
+      if (error instanceof ApiRequestError && error.code === "ACCOUNT_SUSPENDED") {
+        setSuspended(true);
+      } else {
+        setError(safeApiError(error, "Failed to load matches."));
+      }
     } finally {
       setFetching(false);
     }
@@ -189,6 +215,18 @@ function MatchesPage() {
       fetchMatches();
     }
   }, [user]);
+
+  // Clear any pending celebration auto-advance timer on unmount so it can
+  // never fire into a stale/unmounted component (H1).
+  useEffect(
+    () => () => {
+      if (celebrationTimerRef.current) {
+        clearTimeout(celebrationTimerRef.current);
+        celebrationTimerRef.current = null;
+      }
+    },
+    [],
+  );
 
   const fetchLikesRemaining = useCallback(async () => {
     try {
@@ -206,6 +244,17 @@ function MatchesPage() {
       fetchLikesRemaining();
     }
   }, [user]);
+
+  // Refresh the likes badge whenever the tab regains focus — the count can
+  // drift while the user is away (e.g. midnight reset, purchased like packs
+  // from another tab) (M4).
+  useEffect(() => {
+    const onFocus = () => {
+      void fetchLikesRemaining();
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [fetchLikesRemaining]);
 
   if (loading || checking) {
     return (
@@ -240,7 +289,10 @@ function MatchesPage() {
 
   const handleLike = async () => {
     const current = matches[currentIdx];
-    if (!current || animState !== null) return;
+    // actionBusyRef is checked AND set in the same tick, so two rapid taps
+    // before the re-render cannot both pass the gate (M3).
+    if (!current || animState !== null || actionBusyRef.current) return;
+    actionBusyRef.current = true;
 
     setError("");
     setFailedAction(null);
@@ -263,6 +315,12 @@ function MatchesPage() {
         setLikesRemaining(0);
         return;
       }
+      if (actionError === "ACCOUNT_SUSPENDED") {
+        setAnimState(null);
+        setFailedAction(null);
+        setSuspended(true);
+        return;
+      }
       if (actionError) {
         handleActionFailure("like");
         return;
@@ -275,7 +333,13 @@ function MatchesPage() {
           other_user: data.other_user,
           league_score: data.league_score ?? null,
         });
-        setTimeout(() => {
+        // Hold the auto-advance timer in a ref so closeCelebration (or the
+        // celebration buttons / unmount) can cancel it before it fires (H1).
+        if (celebrationTimerRef.current) {
+          clearTimeout(celebrationTimerRef.current);
+        }
+        celebrationTimerRef.current = setTimeout(() => {
+          celebrationTimerRef.current = null;
           setMatchCelebration(null);
           advanceAfterAction();
         }, 3000);
@@ -284,6 +348,8 @@ function MatchesPage() {
     } catch {
       handleActionFailure("like");
       return;
+    } finally {
+      actionBusyRef.current = false;
     }
 
     setTimeout(advanceAfterAction, 400);
@@ -291,7 +357,8 @@ function MatchesPage() {
 
   const handlePass = async () => {
     const current = matches[currentIdx];
-    if (!current || animState !== null) return;
+    if (!current || animState !== null || actionBusyRef.current) return;
+    actionBusyRef.current = true;
 
     setError("");
     setFailedAction(null);
@@ -307,6 +374,12 @@ function MatchesPage() {
       });
       const data = await res.json().catch(() => null);
       const actionError = getMatchActionError(res.ok, data, "pass");
+      if (actionError === "ACCOUNT_SUSPENDED") {
+        setAnimState(null);
+        setFailedAction(null);
+        setSuspended(true);
+        return;
+      }
       if (actionError) {
         handleActionFailure("pass");
         return;
@@ -314,6 +387,8 @@ function MatchesPage() {
     } catch {
       handleActionFailure("pass");
       return;
+    } finally {
+      actionBusyRef.current = false;
     }
 
     setTimeout(advanceAfterAction, 400);
@@ -500,6 +575,24 @@ function MatchesPage() {
               Try again
             </button>
           )}
+        </div>
+      )}
+
+      {/* Suspended banner — 423 ACCOUNT_SUSPENDED surfaces the appeal path
+          instead of a dead-end raw error (M1). */}
+      {suspended && (
+        <div
+          role="alert"
+          aria-live="polite"
+          className="mb-6 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-center text-sm text-amber-400"
+        >
+          <p>Your account has been suspended while we review it.</p>
+          <Link
+            to="/appeal"
+            className="mt-2 inline-block text-xs font-medium underline hover:text-amber-300"
+          >
+            Submit an appeal
+          </Link>
         </div>
       )}
 
@@ -1019,12 +1112,12 @@ function MatchesPage() {
                 to="/chat/$matchId"
                 params={{ matchId: String(matchCelebration.match_id) }}
                 className="btn-primary justify-center"
-                onClick={() => setMatchCelebration(null)}
+                onClick={closeCelebration}
               >
                 Send a message
               </Link>
               <button
-                onClick={() => setMatchCelebration(null)}
+                onClick={closeCelebration}
                 className="btn-secondary justify-center"
               >
                 Keep swiping
@@ -1149,6 +1242,25 @@ function MatchesPage() {
                   <button
                     onClick={async () => {
                       if (!reportReason || !current) return;
+                      // "Inappropriate Photo" reports must carry the photo so
+                      // the server can create a moderation case and quarantine
+                      // evidence (H3). The server handler reads `photo_id`
+                      // (api-handler.ts handleReport). Reference the photo the
+                      // user is currently viewing, mirroring the carousel sort.
+                      const reportPhotos =
+                        current.photos && current.photos.length > 0
+                          ? [...current.photos].sort((a, b) => {
+                              if (a.is_primary) return -1;
+                              if (b.is_primary) return 1;
+                              return a.sort_order - b.sort_order;
+                            })
+                          : null;
+                      const reportPhotoId =
+                        reportReason === "inappropriate_photo" && reportPhotos
+                          ? reportPhotos[
+                              Math.min(photoIndex, reportPhotos.length - 1)
+                            ]?.id
+                          : undefined;
                       setReporting(true);
                       try {
                         const reportRes = await fetch("/api/users/report", {
@@ -1160,6 +1272,9 @@ function MatchesPage() {
                           body: JSON.stringify({
                             user_id: current.id,
                             reason: reportReason,
+                            ...(reportPhotoId != null
+                              ? { photo_id: reportPhotoId }
+                              : {}),
                           }),
                         });
                         if (!reportRes.ok) {
