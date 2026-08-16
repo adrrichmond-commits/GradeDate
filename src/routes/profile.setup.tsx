@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "~/auth-context";
 import { AuthUnavailable } from "~/auth-unavailable";
+import { UserPhoto } from "~/user-photo";
 import { getCsrfToken } from "~/csrf-client";
 import { useRequireSubscription } from "~/subscription-guard";
 import { photoFromUploadResponse, photoFileTooLarge, PHOTO_TOO_LARGE_MESSAGE } from "~/photo-upload";
@@ -383,10 +384,10 @@ function ProfileSetup() {
                           <div className="loader-pulse" />
                         </div>
                       ) : (
-                        <img
+                        <UserPhoto
                           src={photo!.photo_path}
                           alt={`Photo ${i + 1}`}
-                          className="h-full w-full object-cover"
+                          className="h-full w-full"
                         />
                       )}
 

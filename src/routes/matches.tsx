@@ -8,6 +8,7 @@ import {
 } from "react";
 import { useModalAccessibility } from "~/modal-accessibility";
 import { useAuth } from "~/auth-context";
+import { UserPhoto } from "~/user-photo";
 import { AuthUnavailable } from "~/auth-unavailable";
 import {
   useRequireSubscription,
@@ -644,11 +645,11 @@ function MatchesPage() {
 
                 return (
                   <>
-                    <img
+                    <UserPhoto
                       src={photoUrls[idx]}
                       alt={current.display_name || "Match"}
                       draggable={false}
-                      className="h-full w-full object-cover"
+                      className="h-full w-full"
                     />
 
                     {/* Left/Right navigation arrows */}

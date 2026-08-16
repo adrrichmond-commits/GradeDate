@@ -4,6 +4,7 @@ import { useModalAccessibility } from "~/modal-accessibility";
 import { useAuth } from "~/auth-context";
 import { VerifiedBadge } from "~/age-verification";
 import { AuthUnavailable } from "~/auth-unavailable";
+import { UserPhoto } from "~/user-photo";
 import { getCsrfToken } from "~/csrf-client";
 import { resolveLikeBackResult } from "~/like-back";
 import {
@@ -372,10 +373,10 @@ function ConnectionsPage() {
                   >
                     <div className="h-14 w-14 flex-shrink-0 overflow-hidden rounded-full bg-gray-800 ring-2 ring-rose-500/10 ring-offset-2 ring-offset-gray-950">
                       {conn.photo_path ? (
-                        <img
+                        <UserPhoto
                           src={conn.photo_path}
                           alt={conn.display_name || "User"}
-                          className="h-full w-full object-cover"
+                          className="h-full w-full"
                         />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center text-gray-600">
@@ -671,10 +672,10 @@ function ConnectionsPage() {
                   >
                     <div className="h-14 w-14 flex-shrink-0 overflow-hidden rounded-full bg-gray-800 ring-2 ring-rose-500/10 ring-offset-2 ring-offset-gray-950">
                       {liker.photo_path ? (
-                        <img
+                        <UserPhoto
                           src={liker.photo_path}
                           alt={liker.display_name || "User"}
-                          className="h-full w-full object-cover"
+                          className="h-full w-full"
                         />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center text-gray-600">
