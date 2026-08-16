@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "~/auth-context";
+import { XIcon, TikTokIcon } from "~/social-icons";
 
 export const Route = createFileRoute("/")({
   component: Home,
@@ -418,23 +419,297 @@ function PricingSection() {
 
 // ---------------------------------------------------------------------------
 // Founders Club Section Component — real, capped, honestly worded.
+// Live count is unified: one endpoint (/api/founders/count) returns
+// { founders_count, waitlist_count, remaining, total } for every surface
+// (landing + store card), so the two can never drift apart.
 // ---------------------------------------------------------------------------
+interface FounderClubStats {
+  founders_count: number;
+  waitlist_count: number;
+  remaining: number;
+  total: number;
+}
+
+// Below 100 founders the section renders clean text instead of a progress
+// bar + 250/500/750 tick marks (those only show once the count is ≥100).
+const FOUNDER_BAR_THRESHOLD = 100;
+// "Only N spots left" is factual (the 1,000 cap is real, enforced
+// server-side) — shown once remaining is at or below this and above zero.
+const FOUNDER_LOW_SPOTS = 100;
+
+function FounderCounter({ stats }: { stats: FounderClubStats | null }) {
+  if (!stats) {
+    return <p className="text-gray-500">Loading...</p>;
+  }
+  const { founders_count, waitlist_count, remaining, total } = stats;
+  if (founders_count >= FOUNDER_BAR_THRESHOLD) {
+    const showLowSpots = remaining > 0 && remaining <= FOUNDER_LOW_SPOTS;
+    return (
+      <div className="flex flex-col items-center gap-2">
+        <div className="w-full max-w-sm">
+          <div className="mb-3 text-center">
+            <p className="tabular-nums text-lg font-semibold text-gray-300">
+              <span className="text-3xl font-extrabold text-amber-400">
+                {founders_count.toLocaleString()}
+              </span>
+              <span className="text-gray-500"> / {total.toLocaleString()} claimed</span>
+            </p>
+            {showLowSpots && (
+              <p className="mt-1 text-sm font-semibold text-amber-400">
+                Only {remaining.toLocaleString()} spot{remaining === 1 ? "" : "s"} left
+              </p>
+            )}
+          </div>
+          {/* Progress track */}
+          <div className="h-3 w-full overflow-hidden rounded-full bg-gray-800/80 ring-1 ring-white/5">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-400 shadow-[0_0_12px_rgba(245,158,11,0.3)] transition-all duration-700 ease-out"
+              style={{
+                width: `${Math.max(1, (founders_count / total) * 100)}%`,
+              }}
+            />
+          </div>
+          {/* Tick marks */}
+          <div className="mt-1.5 flex justify-between px-0.5 text-[10px] text-gray-400">
+            <span>0</span>
+            <span>250</span>
+            <span>500</span>
+            <span>750</span>
+            <span>{total.toLocaleString()}</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  // Below 100 founders: clean text, no bar, no tick marks. If nobody has
+  // claimed a spot yet but people are on the waitlist, say so honestly
+  // instead of the awkward "First 0 of 1,000 claimed".
+  if (founders_count === 0 && waitlist_count > 0) {
+    return (
+      <p className="text-lg font-semibold text-gray-300">
+        <span className="text-3xl font-extrabold text-amber-400">
+          {waitlist_count.toLocaleString()}
+        </span>
+        <span className="text-gray-500"> on the waitlist</span>
+      </p>
+    );
+  }
+  return (
+    <p className="text-lg font-semibold text-gray-300">
+      <span className="text-3xl font-extrabold text-amber-400">
+        First {founders_count.toLocaleString()}
+      </span>
+      <span className="text-gray-500"> of {total.toLocaleString()} claimed</span>
+    </p>
+  );
+}
+
+// ── Illustrative founder avatars ─────────────────────────────────
+// OWNER DECISION (2026-08-16): these are ILLUSTRATIVE EXAMPLES only — NOT
+// real members, NOT tied to the live count, never implied to be real users.
+// They are flat, stylized SVG faces (never photorealistic, never photos) so
+// they can't be mistaken for pictures of real people. No member photos.
+type AvatarHairStyle =
+  | "short"
+  | "buzz"
+  | "curly"
+  | "afro"
+  | "long"
+  | "bun"
+  | "beanie"
+  | "pompadour"
+  | "waves"
+  | "braids"
+  | "side-part";
+interface AvatarStyle {
+  skin: string;
+  hair: string;
+  hairStyle: AvatarHairStyle;
+  glasses?: boolean;
+  beard?: boolean;
+  blush?: boolean;
+  earrings?: boolean;
+}
+
+const FOUNDER_AVATAR_STYLES: AvatarStyle[] = [
+  { skin: "#F2C8A0", hair: "#1C1917", hairStyle: "short", blush: true },
+  { skin: "#C68B59", hair: "#3B2A20", hairStyle: "curly", earrings: true },
+  { skin: "#7A4632", hair: "#0F0E0C", hairStyle: "afro", glasses: true },
+  { skin: "#E8B48C", hair: "#8B5A2B", hairStyle: "bun", blush: true },
+  { skin: "#9C6239", hair: "#6B4423", hairStyle: "waves", beard: true },
+  { skin: "#D9A066", hair: "#E3C88F", hairStyle: "long", earrings: true },
+  { skin: "#5D3627", hair: "#1C1917", hairStyle: "pompadour", glasses: true },
+  { skin: "#F2C8A0", hair: "#F59E0B", hairStyle: "beanie" },
+  { skin: "#B0734A", hair: "#7C2D3A", hairStyle: "short", beard: true },
+  { skin: "#5D3627", hair: "#9CA3AF", hairStyle: "waves", glasses: true },
+  { skin: "#E8B48C", hair: "#C89B5A", hairStyle: "side-part", blush: true, earrings: true },
+  { skin: "#9C6239", hair: "#1C1917", hairStyle: "braids", blush: true },
+  { skin: "#C68B59", hair: "#3B2A20", hairStyle: "buzz", glasses: true },
+  { skin: "#D9A066", hair: "#6B4423", hairStyle: "bun", earrings: true },
+  { skin: "#F2C8A0", hair: "#FB7185", hairStyle: "beanie", earrings: true },
+];
+
+function FounderHair({ style, color }: { style: AvatarHairStyle; color: string }) {
+  switch (style) {
+    case "curly":
+      return (
+        <g fill={color}>
+          <circle cx="19.5" cy="31" r="6.5" />
+          <circle cx="24.5" cy="25.5" r="9" />
+          <circle cx="32" cy="21.5" r="10.5" />
+          <circle cx="39.5" cy="25.5" r="9" />
+          <circle cx="44.5" cy="31" r="6.5" />
+          <circle cx="32" cy="30" r="8.5" />
+        </g>
+      );
+    case "bun":
+      return (
+        <g fill={color}>
+          <path d="M12 34 A20 20 0 0 1 52 34 Z" />
+          <circle cx="32" cy="13" r="6.5" />
+        </g>
+      );
+    case "beanie":
+      return (
+        <g fill={color}>
+          <path d="M12 34 A20 20 0 0 1 52 34 Z" />
+          <rect x="11.5" y="29" width="41" height="6.5" rx="3.25" opacity="0.85" />
+        </g>
+      );
+    case "pompadour":
+      return <path d="M12 34 A20 26 0 0 1 52 34 Z" fill={color} />;
+    case "waves":
+      return (
+        <g>
+          <path d="M12 34 A20 20 0 0 1 52 34 Z" fill={color} />
+          <path
+            d="M20 23 q4 -3 8 0 M33 21 q4 -3 8 0"
+            stroke="rgba(0,0,0,0.28)"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            fill="none"
+          />
+        </g>
+      );
+    case "side-part":
+      return (
+        <g>
+          <path d="M12 34 A20 20 0 0 1 52 34 Z" fill={color} />
+          <path d="M31 14.5 L31 34" stroke="rgba(0,0,0,0.28)" strokeWidth="2" />
+        </g>
+      );
+    case "braids":
+      return (
+        <g>
+          <path d="M12 34 A20 20 0 0 1 52 34 Z" fill={color} />
+          <g stroke={color} strokeWidth="5" strokeLinecap="round" fill="none">
+            <path d="M16 35 v14" />
+            <path d="M48 35 v14" />
+          </g>
+        </g>
+      );
+    case "buzz":
+      return <path d="M14.5 31 A17.5 17.5 0 0 1 49.5 31 Z" fill={color} />;
+    case "short":
+    default:
+      return (
+        <g fill={color}>
+          <path d="M12 34 A20 20 0 0 1 52 34 Z" />
+          <rect x="12" y="33" width="4" height="5" rx="2" />
+          <rect x="48" y="33" width="4" height="5" rx="2" />
+        </g>
+      );
+  }
+}
+
+function FaceAvatar({ style }: { style: AvatarStyle }) {
+  const { skin, hair, hairStyle, glasses, beard, blush, earrings } = style;
+  const ink = "#23272F";
+  return (
+    <svg viewBox="0 0 64 64" aria-hidden="true" className="h-11 w-11">
+      {/* Afro sits behind the head */}
+      {hairStyle === "afro" && <circle cx="32" cy="29" r="20.5" fill={hair} />}
+      {/* Head + ears */}
+      <circle cx="32" cy="34" r="19" fill={skin} />
+      <circle cx="12.5" cy="36" r="4" fill={skin} />
+      <circle cx="51.5" cy="36" r="4" fill={skin} />
+      {/* Long hair frames the sides (over the ears) */}
+      {hairStyle === "long" && (
+        <g fill={hair}>
+          <rect x="10.5" y="30" width="6.5" height="22" rx="3.25" />
+          <rect x="47" y="30" width="6.5" height="22" rx="3.25" />
+        </g>
+      )}
+      {/* Top hair */}
+      <FounderHair style={hairStyle} color={hair} />
+      {/* Eyebrows */}
+      <g
+        stroke={ink}
+        strokeWidth="2"
+        strokeLinecap="round"
+        fill="none"
+        opacity="0.5"
+      >
+        <path d="M21 29.5 q3 -2.6 6 -1.2" />
+        <path d="M37 28.3 q3 -1.4 6 1.2" />
+      </g>
+      {/* Eyes */}
+      <circle cx="24" cy="35" r="2.6" fill={ink} />
+      <circle cx="40" cy="35" r="2.6" fill={ink} />
+      {/* Blush */}
+      {blush && (
+        <g fill="#FB7185" opacity="0.35">
+          <circle cx="19.5" cy="39.5" r="3" />
+          <circle cx="44.5" cy="39.5" r="3" />
+        </g>
+      )}
+      {/* Glasses */}
+      {glasses && (
+        <g stroke={ink} strokeWidth="1.8" fill="none" opacity="0.85">
+          <circle cx="24" cy="35" r="6.2" />
+          <circle cx="40" cy="35" r="6.2" />
+          <path d="M30.2 35 h3.6" />
+        </g>
+      )}
+      {/* Smile */}
+      <path
+        d="M27 42.5 q5 4 10 0"
+        stroke={ink}
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        fill="none"
+      />
+      {/* Beard */}
+      {beard && (
+        <path d="M23.5 44.5 q8.5 6.5 17 0 v2 q-8.5 5.5 -17 0 z" fill={hair} opacity="0.9" />
+      )}
+      {/* Earrings */}
+      {earrings && (
+        <g fill="#F59E0B">
+          <circle cx="12.5" cy="41.5" r="1.8" />
+          <circle cx="51.5" cy="41.5" r="1.8" />
+        </g>
+      )}
+    </svg>
+  );
+}
+
 function FoundersClubSection() {
-  const [remaining, setRemaining] = useState<number | null>(null);
+  const [stats, setStats] = useState<FounderClubStats | null>(null);
   const [error, setError] = useState(false);
   const { user } = useAuth();
   const signedIn = !!user;
 
-  const fetchSpots = useCallback(() => {
+  const fetchStats = useCallback(() => {
     let cancelled = false;
-    fetch("/api/founder-spots-remaining")
+    fetch("/api/founders/count")
       .then((res) => {
         if (!res.ok) throw new Error("Failed to fetch");
         return res.json();
       })
-      .then((data: { remaining: number; total: number }) => {
+      .then((data: FounderClubStats) => {
         if (!cancelled) {
-          setRemaining(data.remaining);
+          setStats(data);
           setError(false);
         }
       })
@@ -445,15 +720,15 @@ function FoundersClubSection() {
   }, []);
 
   useEffect(() => {
-    const cleanup = fetchSpots();
-    const interval = setInterval(fetchSpots, 30_000);
+    const cleanup = fetchStats();
+    const interval = setInterval(fetchStats, 30_000);
     return () => {
       cleanup();
       clearInterval(interval);
     };
-  }, [fetchSpots]);
+  }, [fetchStats]);
 
-  const used = remaining !== null ? 1000 - remaining : null;
+  const remaining = stats?.remaining ?? null;
   const spotsGone = remaining !== null && remaining <= 0;
 
   return (
@@ -512,44 +787,30 @@ function FoundersClubSection() {
           early access to new features, and your $5.99/month locked in forever.
         </p>
 
-        {/* Counter — live, factual */}
+        {/* Counter — live, factual, unified with the store card */}
         <div className="mb-10">
           {error ? (
             <p className="text-sm text-gray-500">Unable to load founder count. Check back soon.</p>
           ) : (
-            <div className="flex flex-col items-center gap-2">
-              {/* Progress bar */}
-              <div className="w-full max-w-sm">
-                <div className="mb-3 text-center">
-                  {used !== null ? (
-                    <p className="tabular-nums text-lg font-semibold text-gray-300">
-                      <span className="text-3xl font-extrabold text-amber-400">{used}</span>
-                      <span className="text-gray-500"> / 1,000 Spots Claimed</span>
-                    </p>
-                  ) : (
-                    <p className="text-gray-500">Loading...</p>
-                  )}
-                </div>
-                {/* Progress track */}
-                <div className="h-3 w-full overflow-hidden rounded-full bg-gray-800/80 ring-1 ring-white/5">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-400 shadow-[0_0_12px_rgba(245,158,11,0.3)] transition-all duration-700 ease-out"
-                    style={{
-                      width: used !== null ? `${Math.max(1, (used / 1000) * 100)}%` : "0%",
-                    }}
-                  />
-                </div>
-                {/* Tick marks */}
-                <div className="mt-1.5 flex justify-between px-0.5 text-[10px] text-gray-400">
-                  <span>0</span>
-                  <span>250</span>
-                  <span>500</span>
-                  <span>750</span>
-                  <span>1,000</span>
-                </div>
-              </div>
-            </div>
+            <FounderCounter stats={stats} />
           )}
+        </div>
+
+        {/* Illustrative community preview — stylized faces, NOT real members */}
+        <div className="mx-auto mb-10 max-w-md">
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            {FOUNDER_AVATAR_STYLES.map((style, i) => (
+              <div
+                key={i}
+                className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-amber-500/15 via-gray-800/40 to-rose-500/10 ring-1 ring-white/10 shadow-lg shadow-black/20"
+              >
+                <FaceAvatar style={style} />
+              </div>
+            ))}
+          </div>
+          <p className="mt-4 text-center text-xs text-gray-500">
+            Illustrative examples — stylized illustrations, not photos of real members
+          </p>
         </div>
 
         {/* CTA — changes if spots are gone. Paid CTAs are auth-gated:
@@ -1045,6 +1306,39 @@ function Home() {
               {" "}— the first 1,000 Premium members lock in $5.99/month forever.
             </span>
           </div>
+        </div>
+      </section>
+      {/* ─────────────────────────────────────────────────────────────
+          7. SOCIALS — real GradeDate profiles (X + TikTok)
+          ───────────────────────────────────────────────────────────── */}
+      <section className="px-4 pb-24">
+        <div className="mx-auto flex max-w-2xl flex-col items-center gap-5 text-center">
+          <span className="text-xs font-semibold uppercase tracking-widest text-gray-500">
+            Follow us
+          </span>
+          <div className="flex items-center gap-3">
+            <a
+              href="https://x.com/gradedate"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="GradeDate on X"
+              className="flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-gray-300 transition hover:scale-105 hover:border-rose-500/40 hover:text-rose-400"
+            >
+              <XIcon className="h-5 w-5" />
+            </a>
+            <a
+              href="https://www.tiktok.com/@gradedate"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="GradeDate on TikTok"
+              className="flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-gray-300 transition hover:scale-105 hover:border-amber-500/40 hover:text-amber-400"
+            >
+              <TikTokIcon className="h-5 w-5" />
+            </a>
+          </div>
+          <p className="text-xs text-gray-600">
+            Launch news, features, and community — straight from GradeDate.
+          </p>
         </div>
       </section>
     </>
