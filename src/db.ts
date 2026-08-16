@@ -324,8 +324,7 @@ export async function initTables(): Promise<void> {
   try { await sql()`ALTER TABLE admin_audit_events ADD COLUMN IF NOT EXISTS actor_role TEXT`; } catch {}
   await sql()`CREATE INDEX IF NOT EXISTS admin_audit_events_created_idx ON admin_audit_events(created_at)`;
   await sql()`CREATE OR REPLACE FUNCTION deny_admin_audit_mutation() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'admin audit events are append-only'; END; $$`;
-  await sql()`DROP TRIGGER IF EXISTS admin_audit_events_immutable ON admin_audit_events`;
-  await sql()`CREATE TRIGGER admin_audit_events_immutable BEFORE UPDATE OR DELETE ON admin_audit_events FOR EACH ROW EXECUTE FUNCTION deny_admin_audit_mutation()`;
+  await ensureAdminAuditImmutableTrigger(sql());
 
   await sql()`
     CREATE TABLE IF NOT EXISTS likes (
@@ -593,6 +592,30 @@ export async function initTables(): Promise<void> {
   try {
     await sql()`CREATE INDEX IF NOT EXISTS idx_user_badges_user_id ON user_badges(user_id)`;
   } catch { /* ignore */ }
+}
+
+/**
+ * (Re)create the append-only trigger on admin_audit_events.
+ *
+ * Race-safe: when 2+ serverless instances cold-start concurrently they can both
+ * reach CREATE TRIGGER after the DROP above (A drops, B drops no-op, A creates,
+ * B creates) → Postgres error 42710 "trigger ... already exists". That error
+ * used to abort initTables and silently skip every later migration (likes,
+ * matches, messages, reports, moderation tables, beta invites, waitlist, ...),
+ * leaving prod columns missing. We swallow ONLY code 42710 — the DROP above
+ * still gives DROP+CREATE semantics so an older trigger body is replaced — and
+ * rethrow every other error. The executor is injected so tests can drive the
+ * failure without a database.
+ */
+export async function ensureAdminAuditImmutableTrigger(
+  exec: NeonQueryFunction<false, false>,
+): Promise<void> {
+  await exec`DROP TRIGGER IF EXISTS admin_audit_events_immutable ON admin_audit_events`;
+  try {
+    await exec`CREATE TRIGGER admin_audit_events_immutable BEFORE UPDATE OR DELETE ON admin_audit_events FOR EACH ROW EXECUTE FUNCTION deny_admin_audit_mutation()`;
+  } catch (err) {
+    if ((err as { code?: string })?.code !== "42710") throw err;
+  }
 }
 
 // ── Types ──────────────────────────────────────────────────────
@@ -1186,6 +1209,11 @@ export async function getUsersByGradeRange(
   const hasLocation = latitude !== undefined && longitude !== undefined && maxDistance !== undefined;
   const maxDistanceKm = maxDistance ? maxDistance * 1.60934 : undefined;
 
+  // boost_until is stored as ISO-8601 TEXT (activateBoost writes toISOString())
+  // so the ORDER BY below casts it to timestamptz — a raw TEXT > NOW() comparison
+  // throws "operator does not exist: text > timestamp with time zone" and 500s
+  // the entire matches feed. Keep the comment OUT of the SQL template literal:
+  // `//` is not a valid PostgreSQL comment and breaks the query (PR #154).
   const rows = await sql()`
     SELECT
       id, display_name, age, gender, bio, photo_path, grade,
@@ -1244,10 +1272,6 @@ export async function getUsersByGradeRange(
           : sql``
       }
     ORDER BY
-      // boost_until is stored as ISO-8601 TEXT (activateBoost writes
-      // toISOString()) so it must be cast to timestamptz — a raw TEXT > NOW()
-      // comparison throws "operator does not exist: text > timestamp with time
-      // zone" and 500s the entire matches feed.
       CASE WHEN (boost_until)::timestamptz > NOW() THEN 0 ELSE 1 END ASC,
       ABS(grade - ${grade}) ASC${
       hasLocation ? sql`, distance_miles ASC` : sql``
@@ -2037,7 +2061,7 @@ export async function quarantineUserPhotosForUnderage(userId: number, reportId: 
   void reportId;
 }
 export async function getReportQueue(status?: string) {
-  return await sql()`SELECT id, reported_id, reason, target_photo_id, target_message_id, status, priority, assignee_id, created_at, triaged_at, actioned_at, resolved_at FROM reports WHERE (${status ?? null} IS NULL OR status = ${status ?? null}) ORDER BY CASE priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END, created_at ASC LIMIT 200`;
+  return await sql()`SELECT id, reported_id, reason, target_photo_id, target_message_id, status, priority, assignee_id, created_at, triaged_at, actioned_at, resolved_at FROM reports WHERE status = COALESCE(${status ?? null}, status) ORDER BY CASE priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END, created_at ASC LIMIT 200`;
 }
 export async function getReportById(id: string) { const rows = await sql()`SELECT id, reported_id, reason, target_photo_id, target_message_id, details, status, priority, assignee_id, created_at, triaged_at, actioned_at, resolved_at, resolution_notes FROM reports WHERE id = ${id}`; return rows[0] ?? null; }
 export async function assignReport(id: string, assigneeId: number | null) { await sql()`UPDATE reports SET assignee_id = ${assigneeId} WHERE id = ${id}`; }
@@ -2054,13 +2078,13 @@ export async function upsertModerationFlag(photoId: number, userId: number, flag
   const rows = await sql()`INSERT INTO moderation_flags (photo_id,user_id,flag_type,confidence,provider_ref,status) VALUES (${photoId},${userId},${flagType},${confidence},${providerRef},${status}) ON CONFLICT (photo_id,flag_type) DO UPDATE SET confidence=EXCLUDED.confidence, provider_ref=EXCLUDED.provider_ref WHERE moderation_flags.status='new' RETURNING id, photo_id, user_id, flag_type, confidence, provider_ref, status, created_at`;
   return rows[0] ?? null;
 }
-export async function getModerationFlagQueue(status?: string) { return sql()`SELECT id, photo_id, user_id, flag_type, confidence, provider_ref, status, created_at, reviewed_at, reviewed_by FROM moderation_flags WHERE (${status ?? null} IS NULL OR status=${status ?? null}) ORDER BY created_at ASC LIMIT 200`; }
+export async function getModerationFlagQueue(status?: string) { return sql()`SELECT id, photo_id, user_id, flag_type, confidence, provider_ref, status, created_at, reviewed_at, reviewed_by FROM moderation_flags WHERE status = COALESCE(${status ?? null}, status) ORDER BY created_at ASC LIMIT 200`; }
 export async function reviewModerationFlag(id: string, status: string, reviewerId: number) { const rows = await sql()`UPDATE moderation_flags SET status=${status}, reviewed_at=NOW(), reviewed_by=${reviewerId} WHERE id=${id} RETURNING id, status`; return rows[0] ?? null; }
 export async function createPhotoModerationCase(photoId: number, userId: number, source: string, result = "unknown", reason?: string | null) {
   const rows = await sql()`INSERT INTO photo_moderation_cases (photo_id,user_id,source,result,reason,status) VALUES (${photoId},${userId},${source},${result},${reason ?? null},${result === "unsafe" ? "quarantined" : "pending"}) RETURNING id, photo_id, user_id, status, source, result, reason, created_at, updated_at, reviewed_at, retention_until`;
   return rows[0] ?? null;
 }
-export async function getPhotoModerationQueue(status?: string) { return sql()`SELECT id, photo_id, user_id, status, source, result, reason, actor_user_id, created_at, updated_at, reviewed_at, retention_until, private_content_type, legal_hold FROM photo_moderation_cases WHERE (${status ?? null} IS NULL OR status=${status ?? null}) ORDER BY created_at ASC LIMIT 200`; }
+export async function getPhotoModerationQueue(status?: string) { return sql()`SELECT id, photo_id, user_id, status, source, result, reason, actor_user_id, created_at, updated_at, reviewed_at, retention_until, private_content_type, legal_hold FROM photo_moderation_cases WHERE status = COALESCE(${status ?? null}, status) ORDER BY created_at ASC LIMIT 200`; }
 export async function getPhotoModerationCase(id: string) { const rows = await sql()`SELECT id, photo_id, user_id, status, source, result, reason, actor_user_id, created_at, updated_at, reviewed_at, retention_until, private_object_key, private_content_type, private_deleted_at, legal_hold FROM photo_moderation_cases WHERE id=${id}`; return rows[0] ?? null; }
 export async function getUserPhotoById(photoId: number, userId: number) { const rows = await sql()`SELECT id, user_id, photo_path FROM user_photos WHERE id=${photoId} AND user_id=${userId}`; return rows[0] ?? null; }
 export async function getPhotoModerationCaseForPhoto(photoId: number, userId: number) { const rows = await sql()`SELECT id, photo_id, user_id, status, source, result, reason, private_object_key, private_content_type FROM photo_moderation_cases WHERE photo_id=${photoId} AND user_id=${userId} AND status IN ('pending','quarantined') ORDER BY created_at DESC LIMIT 1`; return rows[0] ?? null; }
@@ -2815,7 +2839,7 @@ export async function consumeAttributionClaim(nonce: string): Promise<boolean> {
 }
 
 export async function upsertMessageModerationFlag(messageId:number,userId:number,matchId:number,flagType:string,source:string,confidence:number|null,providerRef:string|null,matchedRules:string[]=[],action:string|null=null){const rows=await sql()`INSERT INTO message_moderation_flags(message_id,user_id,match_id,flag_type,source,confidence,provider_ref,matched_rules,action) VALUES(${messageId},${userId},${matchId},${flagType},${source},${confidence},${providerRef},${JSON.stringify(matchedRules)},${action}) ON CONFLICT(message_id,flag_type,source) DO UPDATE SET confidence=EXCLUDED.confidence,provider_ref=EXCLUDED.provider_ref,matched_rules=EXCLUDED.matched_rules WHERE message_moderation_flags.status='new' RETURNING *`;return rows[0]??null;}
-export async function getMessageModerationFlagQueue(status?:string){return sql()`SELECT f.id,f.message_id,f.flag_type,f.source,f.confidence,f.status,f.action,f.created_at,f.matched_rules,f.match_id,u.display_name AS sender_display FROM message_moderation_flags f JOIN users u ON u.id=f.user_id WHERE(${status??null} IS NULL OR f.status=${status??null}) ORDER BY f.created_at ASC LIMIT 200`;}
+export async function getMessageModerationFlagQueue(status?:string){return sql()`SELECT f.id,f.message_id,f.flag_type,f.source,f.confidence,f.status,f.action,f.created_at,f.matched_rules,f.match_id,u.display_name AS sender_display FROM message_moderation_flags f JOIN users u ON u.id=f.user_id WHERE f.status = COALESCE(${status??null}, f.status) ORDER BY f.created_at ASC LIMIT 200`;}
 export async function getMessageModerationFlag(id:string){const rows=await sql()`SELECT * FROM message_moderation_flags WHERE id=${id}`;return rows[0]??null;}
 export async function hideMessage(messageId:number,reason:string){const rows=await sql()`UPDATE messages SET moderation_state='hidden',hidden_at=NOW(),hidden_reason=${reason} WHERE id=${messageId} RETURNING id`;return rows[0]??null;}
 export async function releaseMessage(messageId:number,reviewerId:number){const rows=await sql()`UPDATE messages SET moderation_state='released',hidden_at=NULL WHERE id=${messageId} RETURNING id`;return rows[0]??null;}
