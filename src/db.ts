@@ -1258,6 +1258,11 @@ export async function getUsersByGradeRange(
           ? sql()`AND id NOT IN (SELECT UNNEST(${blockedByIds}::int[]))`
           : sql()``
       }
+      AND NOT EXISTS (
+        SELECT 1 FROM matches m
+        WHERE (m.user1_id = users.id AND m.user2_id = ${excludeUserId})
+           OR (m.user2_id = users.id AND m.user1_id = ${excludeUserId})
+      )
       ${
         hasLocation
           ? sql`AND (
