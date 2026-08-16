@@ -31,3 +31,33 @@ describe("matches feed boost ORDER BY", () => {
     }
   });
 });
+
+describe("matches feed SQL template hygiene", () => {
+  // Live prod regression (2026-08-16 22:04:11): GET /api/matches → 500,
+  // `NeonDbError: syntax error at or near "$1"` — PR #154 shipped the
+  // boost_until explanation as `//` comment lines INSIDE the sql template
+  // literal. `//` is not a valid PostgreSQL comment, so the literal text sent
+  // to Postgres was a syntax error and the whole feed 500'd. The comment now
+  // lives above the template as a JS comment; this test guards the invariant.
+  test("no JS // comment lines inside the getUsersByGradeRange SQL template", () => {
+    const funcStart = dbSource.indexOf(
+      "export async function getUsersByGradeRange",
+    );
+    expect(funcStart).toBeGreaterThan(-1);
+    const templateStart = dbSource.indexOf("const rows = await sql()", funcStart);
+    const templateEnd = dbSource.indexOf("return (rows as any[])", funcStart);
+    expect(templateStart).toBeGreaterThan(-1);
+    expect(templateEnd).toBeGreaterThan(templateStart);
+    const insideTemplate = dbSource.slice(templateStart, templateEnd);
+    const commentLines = insideTemplate
+      .split("\n")
+      .filter((line) => line.trim().startsWith("//"));
+    expect(commentLines).toEqual([]);
+  });
+
+  test("the boost_until explanation still exists as a JS comment above the query", () => {
+    expect(dbSource).toContain(
+      "// `//` is not a valid PostgreSQL comment and breaks the query (PR #154).",
+    );
+  });
+});
