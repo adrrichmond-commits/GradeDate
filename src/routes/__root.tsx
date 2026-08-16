@@ -11,6 +11,7 @@ import { useEffect, useState, useRef } from "react";
 import { AuthProvider, isPremiumUser, useAuth } from "~/auth-context";
 import { getCsrfToken } from "~/csrf-client";
 import { resolveCanonicalSiteUrl } from "~/site-url";
+import { XIcon, TikTokIcon } from "~/social-icons";
 
 import { Analytics } from "@vercel/analytics/react";
 import appCss from "~/styles/app.css?url";
@@ -587,6 +588,24 @@ function AppShell() {
             <Link to="/takedown" className="transition hover:text-gray-300">
               Takedown Process
             </Link>
+            <a
+              href="https://x.com/gradedate"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="GradeDate on X"
+              className="transition hover:text-gray-300"
+            >
+              <XIcon className="h-4 w-4" />
+            </a>
+            <a
+              href="https://www.tiktok.com/@gradedate"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="GradeDate on TikTok"
+              className="transition hover:text-gray-300"
+            >
+              <TikTokIcon className="h-4 w-4" />
+            </a>
           </div>
         </div>
       </footer>

@@ -2698,6 +2698,26 @@ export async function getFounderSpotsRemaining(): Promise<{ remaining: number; t
 }
 
 /**
+ * Single live source of truth for both public Founder-count surfaces (landing
+ * page + store card). One fetch returns everything both surfaces render:
+ * the live founder count, the waitlist count (so the landing page can show an
+ * honest "{Y} on the waitlist" line at 0 founders), and the derived
+ * remaining/total for the progress bar.
+ */
+export interface FounderClubStats {
+  founders_count: number;
+  waitlist_count: number;
+  remaining: number;
+  total: number;
+}
+
+export async function getFounderClubStats(): Promise<FounderClubStats> {
+  const [count, waitlistCount] = await Promise.all([getFounderCount(), getWaitlistCount()]);
+  const remaining = Math.max(0, 1000 - count);
+  return { founders_count: count, waitlist_count: waitlistCount, remaining, total: 1000 };
+}
+
+/**
  * Assign the next sequential founder_number to a user.
  * Returns the assigned number, or null if all 1000 spots are taken.
  */

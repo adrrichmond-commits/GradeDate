@@ -85,7 +85,12 @@ function StorePage() {
   const { user, loading, refetch } = useAuth();
   const [activated, setActivated] = useState<string | null>(null);
   const [error, setError] = useState("");
-  const [foundersCount, setFoundersCount] = useState<{ count: number; remaining: number } | null>(null);
+  const [foundersCount, setFoundersCount] = useState<{
+    founders_count: number;
+    waitlist_count: number;
+    remaining: number;
+    total: number;
+  } | null>(null);
   const [checkoutProduct, setCheckoutProduct] = useState<string | null>(null);
   const [showCanceled, setShowCanceled] = useState(false);
   const [genericPending, setGenericPending] = useState(false);
@@ -357,26 +362,48 @@ function StorePage() {
                 </div>
               </div>
 
-              {/* Claimed count */}
+              {/* Claimed count — mirrors the landing page display logic
+                  (low-count text below 100 founders, bar + honest low-spots
+                  line once the count is ≥100, waitlist line at 0 founders). */}
               <div className="mt-5 flex items-center gap-4">
                 <div className="flex-1">
-                  <div className="h-2 rounded-full bg-gray-700">
-                    <div
-                      className="h-2 rounded-full bg-gradient-to-r from-amber-500 to-amber-400"
-                      style={{ width: `${foundersCount ? Math.min(100, (foundersCount.count / 1000) * 100) : 0}%` }}
-                    />
-                  </div>
-                  <p className="mt-1 text-xs text-gray-500">
-                    {foundersCount ? `${foundersCount.count} / 1000 claimed` : "Loading..."}
-                    {foundersCount ? ` — ${foundersCount.remaining} spots remaining` : ""}
-                  </p>
+                  {foundersCount && foundersCount.founders_count >= 100 ? (
+                    <>
+                      <div className="h-2 rounded-full bg-gray-700">
+                        <div
+                          className="h-2 rounded-full bg-gradient-to-r from-amber-500 to-amber-400"
+                          style={{
+                            width: `${Math.min(100, (foundersCount.founders_count / foundersCount.total) * 100)}%`,
+                          }}
+                        />
+                      </div>
+                      <p className="mt-1 text-xs text-gray-500">
+                        {foundersCount.founders_count} / {foundersCount.total} claimed
+                        {foundersCount.remaining > 0 && foundersCount.remaining <= 100
+                          ? ` — Only ${foundersCount.remaining} spots left`
+                          : ""}
+                      </p>
+                    </>
+                  ) : foundersCount ? (
+                    foundersCount.founders_count === 0 && foundersCount.waitlist_count > 0 ? (
+                      <p className="mt-1 text-xs text-gray-500">
+                        {foundersCount.waitlist_count} on the waitlist
+                      </p>
+                    ) : (
+                      <p className="mt-1 text-xs text-gray-500">
+                        First {foundersCount.founders_count} of {foundersCount.total} claimed
+                      </p>
+                    )
+                  ) : (
+                    <p className="mt-1 text-xs text-gray-500">Loading...</p>
+                  )}
                 </div>
 
                 {user.is_founder ? (
                   <div className="rounded-lg border border-green-500/20 bg-green-500/10 px-4 py-2 text-center">
                     <span className="text-sm font-semibold text-green-400">👑 You're a Founder!</span>
                   </div>
-                ) : foundersCount !== null && foundersCount.count >= 1000 ? (
+                ) : foundersCount !== null && foundersCount.founders_count >= foundersCount.total ? (
                   <span className="rounded-lg border border-gray-700 bg-gray-800/60 px-6 py-2.5 text-sm font-semibold text-gray-400">
                     Founders Club Full
                   </span>

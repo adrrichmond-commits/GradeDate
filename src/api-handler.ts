@@ -102,6 +102,7 @@ import {
   checkAndAwardBadges,
   getFounderCount,
   getFounderSpotsRemaining,
+  getFounderClubStats,
   assignFounderNumber,
   revokeFounderState,
   generateRandomCode,
@@ -2991,13 +2992,14 @@ async function handleFoundersCheckout(_req: Request): Promise<Response> {
 }
 
 async function handleFoundersCount(_req: Request): Promise<Response> {
-  const count = await getFounderCount();
-  return json({ count, remaining: Math.max(0, 1000 - count) });
+  return json(await getFounderClubStats());
 }
 
+// Thin alias of /api/founders/count — kept for any existing consumers of the
+// old /api/founder-spots-remaining path. Returns the same unified shape
+// (a superset of the legacy { remaining, total } response).
 async function handleFounderSpotsRemaining(_req: Request): Promise<Response> {
-  const { remaining, total } = await getFounderSpotsRemaining();
-  return json({ remaining, total });
+  return json(await getFounderClubStats());
 }
 
 // ── Beta Invite Admin (Austin cohort issuance) ────────────────
