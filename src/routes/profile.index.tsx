@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { isPremiumUser, useAuth } from "~/auth-context";
 import { AuthUnavailable } from "~/auth-unavailable";
+import { UserPhoto } from "~/user-photo";
 import { getCsrfToken } from "~/csrf-client";
 import {
   useRequireSubscription,
@@ -881,29 +882,14 @@ function ProfilePage() {
           {/* View mode: main photo + count badge */}
           {!editing && (
             <div className="relative">
-              {displayPhoto ? (
-                <img
-                  src={displayPhoto}
-                  alt={user.display_name || "Profile"}
-                  className="h-40 w-40 rounded-full object-cover ring-3 ring-rose-500/15 ring-offset-4 ring-offset-gray-950"
-                />
-              ) : (
-                <div className="flex h-40 w-40 items-center justify-center rounded-full bg-gray-800 ring-3 ring-rose-500/15 ring-offset-4 ring-offset-gray-950 text-gray-500">
-                  <svg
-                    className="h-16 w-16"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={1.5}
-                      d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"
-                    />
-                  </svg>
-                </div>
-              )}
+              <UserPhoto
+                src={displayPhoto}
+                alt={user.display_name || "Profile"}
+                className="h-40 w-40 rounded-full ring-3 ring-rose-500/15 ring-offset-4 ring-offset-gray-950"
+                imgClassName="h-full w-full rounded-full object-cover"
+                placeholderClassName="flex h-full w-full items-center justify-center rounded-full bg-gray-800 text-gray-500"
+                placeholderIconClassName="h-16 w-16"
+              />
               {photoCount > 0 && (
                 <span className="absolute -bottom-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full bg-rose-500 text-xs font-bold text-white ring-2 ring-gray-950">
                   {photoCount}
@@ -974,10 +960,10 @@ function ProfilePage() {
                           <div className="loader-pulse" />
                         </div>
                       ) : (
-                        <img
+                        <UserPhoto
                           src={photo!.photo_path}
                           alt={`Photo ${i + 1}`}
-                          className="h-full w-full object-cover"
+                          className="h-full w-full"
                         />
                       )}
 
