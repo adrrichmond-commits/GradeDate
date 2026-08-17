@@ -51,6 +51,16 @@ describe("Content-Security-Policy allows Stripe", () => {
   });
 });
 
+describe("Content-Security-Policy allows HeyCatch analytics", () => {
+  test("script-src allows in.heycatch.ai (runtime helper script)", () => {
+    expect(cspDirectives().get("script-src")).toContain("https://in.heycatch.ai");
+  });
+
+  test("connect-src allows in.heycatch.ai (event ingest)", () => {
+    expect(cspDirectives().get("connect-src")).toContain("https://in.heycatch.ai");
+  });
+});
+
 describe("Content-Security-Policy stays tight", () => {
   test("hardening directives are still present", () => {
     const d = cspDirectives();

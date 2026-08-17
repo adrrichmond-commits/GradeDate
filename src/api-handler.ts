@@ -131,6 +131,7 @@ import {
   type Badge,
   type PersistedBadge,
 } from "../src/db.ts";
+import { trackServerEvent } from "./analytics-server";
 import { sendPasswordResetEmail } from "../src/email.ts";
 import { isGradeCardOwner } from "./grade-card-access";
 import { sendWaitlistConfirmation, sendContactMessage, sendBetaInviteEmail } from "../src/email.ts";
@@ -462,6 +463,15 @@ async function handleSignup(req: Request): Promise<Response> {
       }
       return json({ error: "This invite code is no longer valid — join the waitlist for the next cohort.", code: "BETA_INVITE_INVALID" }, 409);
     }
+    // HeyCatch: a redeemed beta invite grants the 14-day Premium trial
+    // (redeemBetaInviteCode sets trial_ends_at via COALESCE — one grant).
+    // This is the user's own request, so pass `req` to join their live
+    // session. Never throws; no-op under test.
+    await trackServerEvent(
+      "trial_started",
+      { plan: "premium", source: "trial" },
+      { userId: String(user.id), request: req },
+    );
   }
 
   // Process referral code if provided
@@ -2314,6 +2324,17 @@ async function handleActivateUpsell(req: Request): Promise<Response> {
     return json({ error: "Payment is not verified yet", code: "PAYMENT_PENDING" }, 409);
   }
   const granted = await grantPaidUpsell(user.id, product, session.id);
+  // HeyCatch: fire only when THIS call flipped the entitlement (granted=true)
+  // — if the webhook already granted it, granted is false and the event was
+  // already sent there, so a purchase is never double-counted. This is the
+  // user's own request: pass `req` so the event joins their live session.
+  if (granted) {
+    await trackServerEvent(
+      "upsell_purchased",
+      { product, source: "paid" },
+      { userId: String(user.id), request: req },
+    );
+  }
   return json({ ok: true, granted, message: granted ? "Purchase activated!" : "Purchase was already activated." });
 }
 
@@ -2563,8 +2584,19 @@ async function handleStripeWebhook(req: Request): Promise<Response> {
         // entitlement table makes webhook retries and manual activation idempotent.
         const upsellProduct = session.metadata?.product as PaidUpsellProduct | undefined;
         if (session.mode === "payment" && upsellProduct && session.payment_status === "paid" && session.metadata?.user_id === String(user.id) && upsellPriceId(upsellProduct)) {
-          await grantPaidUpsell(user.id, upsellProduct, session.id);
+          const granted = await grantPaidUpsell(user.id, upsellProduct, session.id);
           logInfo(EVENTS.STRIPE_UPSELL_GRANTED, { user_id: user.id, product: upsellProduct });
+          // HeyCatch: count the purchase only on the grant that actually
+          // flipped the entitlement (granted=true). Webhook retries and the
+          // client's activate fallback both see granted=false, so a purchase
+          // is never double-counted. Webhook events have no request to pass.
+          if (granted) {
+            await trackServerEvent(
+              "upsell_purchased",
+              { product: upsellProduct, source: "paid" },
+              { userId: String(user.id) },
+            );
+          }
           break;
         }
 
@@ -2580,9 +2612,11 @@ async function handleStripeWebhook(req: Request): Promise<Response> {
 
         // Founders Club: assign sequential founder_number if spots remain
         const spotsRemaining = await getFounderSpotsRemaining();
+        let founderAssigned = false;
         if (spotsRemaining.remaining > 0) {
           const founderNum = await assignFounderNumber(user.id);
           if (founderNum !== null) {
+            founderAssigned = true;
             logInfo(EVENTS.STRIPE_FOUNDERS_ASSIGNED, {
               user_id: user.id,
               founder_number: founderNum,
@@ -2602,6 +2636,14 @@ async function handleStripeWebhook(req: Request): Promise<Response> {
             referee_user_id: user.id,
           });
         }
+        // HeyCatch: the subscription checkout completed — this branch only
+        // runs for non-upsell sessions. Webhook events have no request to
+        // pass (no browser session to join), so userId only. Never throws.
+        await trackServerEvent(
+          "subscription_started",
+          { plan: "premium", source: "paid", founder: founderAssigned },
+          { userId: String(user.id) },
+        );
         break;
       }
 
