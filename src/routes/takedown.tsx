@@ -70,7 +70,7 @@ function TakedownProcess() {
           <h2 className="mb-3 text-xl font-semibold text-white">Review queue</h2>
           <p>
             All reports and automated flags enter a prioritized, fully audited review queue. Access
-            is role-limited (moderator/admin/owner), protected with multi-factor authentication, and
+            is role-limited (owner/admin), protected with multi-factor authentication, and
             least-privilege. Flagged photos are held in a private quarantine store, viewable only
             through short-lived, case-bound signed links, with a default 30-day retention.
           </p>

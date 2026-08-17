@@ -442,7 +442,7 @@ describe("admin issuance (owner/admin only)", () => {
     usersById.set(ADMIN_ID, { ...baseUser(ADMIN_ID, "owner@gradedate.app"), role: "moderator", verification_status: "verified" });
     const res = await handleApiRoute(adminIssueRequest({ count: 1 }));
     expect(res!.status).toBe(403);
-    expect(((await res!.json()) as Record<string, unknown>).error).toBe("Forbidden");
+    expect(((await res!.json()) as Record<string, unknown>).code).toBe("PRIVILEGED_MFA_REQUIRED");
     expect(issuedCalls).toHaveLength(0);
   });
 

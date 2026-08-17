@@ -10,6 +10,7 @@ import type { ReactNode } from "react";
 import { useEffect, useState, useRef } from "react";
 import { AuthProvider, isPremiumUser, useAuth } from "~/auth-context";
 import { getCsrfToken } from "~/csrf-client";
+import { isPrivilegedRole } from "~/admin-ui";
 import { HOME_ANCHORS, HomeAnchorLinks, homeAnchorHref } from "~/nav-anchors";
 import { resolveCanonicalSiteUrl } from "~/site-url";
 import { XIcon, TikTokIcon } from "~/social-icons";
@@ -340,7 +341,7 @@ function AppShell() {
                   </NavLink>
                   <NavLink to="/profile">Profile</NavLink>
                   <NavLink to="/store">Store</NavLink>
-                  {(user.role === "owner" || user.role === "admin" || user.role === "moderator") && (
+                  {isPrivilegedRole(user.role) && (
                     <NavLink to="/admin">Admin</NavLink>
                   )}
                   {isPremiumUser(user) && (
@@ -491,7 +492,7 @@ function AppShell() {
             >
               Store
             </Link>
-            {(user.role === "owner" || user.role === "admin" || user.role === "moderator") && (
+            {isPrivilegedRole(user.role) && (
               <Link
                 to="/admin"
                 onClick={() => setMenuOpen(false)}

@@ -155,7 +155,7 @@ function SectionHeader({ title, subtitle }: { title: string; subtitle: string })
   );
 }
 
-/* ── Privileged MFA step-up (owner/admin/moderator) ─────────────── */
+/* ── Privileged MFA step-up (owner/admin) ─────────────────────── */
 
 function MfaStepUp({ defaultEmail, reason, onDone }: { defaultEmail: string; reason: string; onDone: () => Promise<void> }) {
   const [email, setEmail] = useState(defaultEmail);
@@ -1041,7 +1041,7 @@ function AdminDashboard({ role, email }: { role: string; email: string }) {
   const [sessionNote, setSessionNote] = useState("");
   const { refetch } = useAuth();
 
-  // Probe the privilege gate: any moderator-accessible admin GET works.
+  // Probe the privilege gate: any owner/admin-accessible admin GET works.
   const probe = async () => {
     setMfaState("probing");
     setProbeError("");
@@ -1179,7 +1179,7 @@ function AdminPage() {
         <div className="card mx-auto max-w-md p-6 text-center">
           <h1 className="text-xl font-bold">Privileged access required</h1>
           <p className="mt-2 text-sm text-gray-400">
-            This page is restricted to owner, admin, and moderator roles. Your account role is{" "}
+            This page is restricted to owner and admin roles. Your account role is{" "}
             <span className="text-gray-200">{user.role || "none"}</span>.
           </p>
           <Link to="/profile" className="btn-secondary mt-4">Back to profile</Link>

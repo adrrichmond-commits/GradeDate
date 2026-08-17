@@ -211,7 +211,7 @@ describe("GET /api/admin/waitlist — owner/admin waitlist listing", () => {
       headers: { cookie: "csrf_token=a; session_id=s_mod" },
     }));
     expect(res!.status).toBe(403);
-    expect(((await res!.json()) as Record<string, unknown>).error).toBe("Forbidden");
+    expect(((await res!.json()) as Record<string, unknown>).code).toBe("PRIVILEGED_MFA_REQUIRED");
   });
   test("unauthenticated access is blocked by the privileged-MFA gate", async () => {
     const res = await handleApiRoute(new Request("https://gradedate.app/api/admin/waitlist", { method: "GET" }));

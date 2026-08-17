@@ -7,7 +7,7 @@ import { hasPermission, isSuspended, isSuspensionException, privilegedMfaReady }
 import { verifyCsrfToken } from "./csrf";
 import { redactPhotoCase } from "./photo-quarantine";
 
-const privileged = ["owner", "admin", "moderator"] as const;
+const privileged = ["owner", "admin"] as const;
 
 describe("suspension and appeal lifecycle authorization", () => {
   test("normal users are denied privileged suspension and appeal queue actions", () => {
@@ -16,8 +16,8 @@ describe("suspension and appeal lifecycle authorization", () => {
     expect(canOverrideSuspension("user")).toBe(false);
   });
 
-  test("moderator may review but cannot override suspension or grant appeals", () => {
-    expect(canReviewAppeal("moderator")).toBe(true);
+  test("legacy moderators are denied review and override alike - owner/admin only", () => {
+    expect(canReviewAppeal("moderator")).toBe(false);
     expect(canOverrideSuspension("moderator")).toBe(false);
     expect(canOverrideSuspension("admin")).toBe(true);
     expect(canOverrideSuspension("owner")).toBe(true);
