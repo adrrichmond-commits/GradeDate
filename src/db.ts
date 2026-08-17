@@ -10,7 +10,7 @@ import { leagueRangeScore, type LeagueValue } from "./mutual-league";
 import { PREMIUM_PRICE_ID, founderPriceLockApplies, hasPremiumEntitlement } from "./canonical-entitlements";
 import { deletePhoto } from "./blob-store";
 import { buildAccountDeletionQueries, collectOwnedPhotoPaths } from "./account-deletion";
-import { EVENTS, logInfo } from "./observability";
+import { EVENTS, logInfo, logWarn } from "./observability";
 import { auditRecordShape } from "./admin-audit";
 import type { CronRunState, CronRunOutcome } from "./retention-cron-state";
 
@@ -384,6 +384,7 @@ export async function initTables(): Promise<void> {
       reported_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       reason TEXT NOT NULL,
       target_photo_id INTEGER REFERENCES user_photos(id) ON DELETE SET NULL,
+      target_message_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,
       details TEXT,
       status TEXT NOT NULL DEFAULT 'open',
       priority TEXT NOT NULL DEFAULT 'normal',
@@ -394,19 +395,30 @@ export async function initTables(): Promise<void> {
     )
   `;
   // Safe migrations for existing Phase 1 deployments.
-  try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS id UUID DEFAULT gen_random_uuid()`; } catch {}
-  try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS target_photo_id INTEGER`; } catch {}
-  try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS details TEXT`; } catch {}
-  try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'open'`; } catch {}
-  try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS priority TEXT NOT NULL DEFAULT 'normal'`; } catch {}
-  try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS assignee_id INTEGER`; } catch {}
-  try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS triaged_at TIMESTAMPTZ`; } catch {}
-  try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS actioned_at TIMESTAMPTZ`; } catch {}
-  try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ`; } catch {}
-  try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS resolution_notes TEXT`; } catch {}
-  try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS target_message_id INTEGER REFERENCES messages(id) ON DELETE SET NULL`; } catch {}
-  try { await sql()`CREATE UNIQUE INDEX IF NOT EXISTS reports_id_unique ON reports(id)`; } catch {}
-  try { await sql()`CREATE INDEX IF NOT EXISTS reports_queue_idx ON reports(status, priority, created_at)`; } catch {}
+  // Report-queue migrations MUST NOT fail silently: a skipped ALTER leaves the
+  // SELECT in getReportQueue() referencing a missing column, which 500s the
+  // admin Reports tab with a generic "admin service returned an error" (live
+  // incident 2026-08-17). Every ALTER is idempotent (IF NOT EXISTS), so a
+  // failure here means something is genuinely wrong — log it, keep serving.
+  const reportsAlters: Array<[string, string]> = [
+    ["reports.id", "ALTER TABLE reports ADD COLUMN IF NOT EXISTS id UUID DEFAULT gen_random_uuid()"],
+    ["reports.target_photo_id", "ALTER TABLE reports ADD COLUMN IF NOT EXISTS target_photo_id INTEGER"],
+    ["reports.details", "ALTER TABLE reports ADD COLUMN IF NOT EXISTS details TEXT"],
+    ["reports.status", "ALTER TABLE reports ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'open'"],
+    ["reports.priority", "ALTER TABLE reports ADD COLUMN IF NOT EXISTS priority TEXT NOT NULL DEFAULT 'normal'"],
+    ["reports.assignee_id", "ALTER TABLE reports ADD COLUMN IF NOT EXISTS assignee_id INTEGER"],
+    ["reports.triaged_at", "ALTER TABLE reports ADD COLUMN IF NOT EXISTS triaged_at TIMESTAMPTZ"],
+    ["reports.actioned_at", "ALTER TABLE reports ADD COLUMN IF NOT EXISTS actioned_at TIMESTAMPTZ"],
+    ["reports.resolved_at", "ALTER TABLE reports ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ"],
+    ["reports.resolution_notes", "ALTER TABLE reports ADD COLUMN IF NOT EXISTS resolution_notes TEXT"],
+    ["reports.target_message_id", "ALTER TABLE reports ADD COLUMN IF NOT EXISTS target_message_id INTEGER REFERENCES messages(id) ON DELETE SET NULL"],
+    ["reports.id_unique", "CREATE UNIQUE INDEX IF NOT EXISTS reports_id_unique ON reports(id)"],
+    ["reports.queue_idx", "CREATE INDEX IF NOT EXISTS reports_queue_idx ON reports(status, priority, created_at)"],
+  ];
+  for (const [name, ddl] of reportsAlters) {
+    try { await sql()(ddl); }
+    catch (err) { logWarn("db.migration_skipped", { migration: name, err }); }
+  }
   await sql()`CREATE TABLE IF NOT EXISTS photo_moderation_cases (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(), photo_id INTEGER REFERENCES user_photos(id) ON DELETE SET NULL,
     user_id INTEGER REFERENCES users(id) ON DELETE SET NULL, status TEXT NOT NULL DEFAULT 'pending',
@@ -437,7 +449,7 @@ export async function initTables(): Promise<void> {
   try { await sql()`ALTER TABLE photo_moderation_cases DROP CONSTRAINT IF EXISTS photo_moderation_cases_user_id_fkey`; } catch {}
   try { await sql()`ALTER TABLE photo_moderation_cases ADD CONSTRAINT photo_moderation_cases_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL`; } catch {}
   try { await sql()`CREATE INDEX IF NOT EXISTS photo_moderation_retention_idx ON photo_moderation_cases(status, retention_until, private_deleted_at)`; } catch {}
-  try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS legal_hold BOOLEAN NOT NULL DEFAULT false`; } catch {}
+  try { await sql()`ALTER TABLE reports ADD COLUMN IF NOT EXISTS legal_hold BOOLEAN NOT NULL DEFAULT false`; } catch (err) { logWarn("db.migration_skipped", { migration: "reports.legal_hold", err }); }
   await sql()`CREATE TABLE IF NOT EXISTS retention_cron_state (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     last_run_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
