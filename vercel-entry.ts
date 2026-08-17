@@ -12,7 +12,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import handler from "./dist/server/server.js";
 import { initTables } from "./src/db.ts";
-import { handleApiRoute } from "./src/api-handler.ts";
+import { getCurrentUser, handleApiRoute } from "./src/api-handler.ts";
 import { seoResponse, shouldNoIndex } from "./src/seo.ts";
 import {
   EVENTS,
@@ -23,6 +23,11 @@ import {
 } from "./src/observability.ts";
 import { unexpectedErrorHtml } from "./src/server-error-page.ts";
 import { SECURITY_HEADERS } from "./src/csp.ts";
+import {
+  adminBlockResponse,
+  adminPageAccessStatus,
+  isAdminPath,
+} from "./src/admin-page-gate.ts";
 
 const fetchHandler = handler as {
   fetch: (request: Request) => Response | Promise<Response>;
@@ -121,6 +126,26 @@ export default async function vercelHandler(
         return streamResponse(apiRes, res, pathname, requestId);
       }
       // If the API handler returns null (unknown route), fall through to SSR
+    }
+
+    // 1b. Server-side hard gate for the /admin console (owner/admin only).
+    // Runs before TanStack SSR so no console markup is ever served to
+    // anonymous visitors, legacy moderators, or regular users. MFA state is
+    // deliberately NOT checked here — the client-side passkey step-up UI
+    // handles that for authenticated owner/admin accounts.
+    if (isAdminPath(pathname)) {
+      const user = await getCurrentUser(webReq);
+      const access = adminPageAccessStatus(user?.role);
+      if (access !== 200) {
+        route = "admin-page-gate";
+        status = access;
+        return streamResponse(
+          adminBlockResponse(access, requestId),
+          res,
+          pathname,
+          requestId,
+        );
+      }
     }
 
     // 2. SSR handler for everything else

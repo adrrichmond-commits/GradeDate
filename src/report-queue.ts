@@ -9,7 +9,7 @@ export function isReportReason(v: unknown): v is ReportReason { return typeof v 
 export function isReportStatus(v: unknown): v is ReportStatus { return typeof v === "string" && (REPORT_STATUSES as readonly string[]).includes(v); }
 export function isReportPriority(v: unknown): v is ReportPriority { return typeof v === "string" && (REPORT_PRIORITIES as readonly string[]).includes(v); }
 export function canTransition(from: ReportStatus, to: ReportStatus): boolean { return transitions[from]?.includes(to) ?? false; }
-export function canManageReport(role: unknown): boolean { return role === "owner" || role === "admin" || role === "moderator"; }
+export function canManageReport(role: unknown): boolean { return role === "owner" || role === "admin"; }
 export function canUseOwnerAction(role: unknown): boolean { return role === "owner" || role === "admin"; }
 export const REPORT_DETAILS_MAX = 2000;
 export const REPORT_RATE_LIMIT = 10;

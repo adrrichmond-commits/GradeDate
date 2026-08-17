@@ -14,7 +14,7 @@ export function isModerationSource(v: unknown): v is ModerationSource { return t
 export function isModerationResult(v: unknown): v is ModerationResult { return typeof v === "string" && (MODERATION_RESULTS as readonly string[]).includes(v); }
 export function canTransitionQuarantine(from: QuarantineStatus, to: QuarantineStatus): boolean { return transitions[from]?.includes(to) ?? false; }
 export function quarantineHidesPhoto(status: QuarantineStatus): boolean { return status === "pending" || status === "quarantined" || status === "removed"; }
-export function canReviewPhoto(role: unknown): boolean { return role === "owner" || role === "admin" || role === "moderator"; }
+export function canReviewPhoto(role: unknown): boolean { return role === "owner" || role === "admin"; }
 /** Public reviewer bytes are forbidden unless a private/signed provider is explicitly configured. */
 export function privateReviewStorageReady(env: Record<string, string | undefined> = process.env): boolean {
   return env.GRADEDATE_PRIVATE_REVIEW_STORAGE === "true" && !!env.GRADEDATE_REVIEW_SIGNING_KEY && !!env.PRIVATE_BLOB_READ_WRITE_TOKEN;

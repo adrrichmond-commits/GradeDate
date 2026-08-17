@@ -19,10 +19,10 @@ import {
 } from "./admin-ui";
 
 describe("admin-ui role guard", () => {
-  test("admits only owner/admin/moderator", () => {
+  test("admits only owner/admin — legacy moderators are denied", () => {
     expect(isPrivilegedRole("owner")).toBe(true);
     expect(isPrivilegedRole("admin")).toBe(true);
-    expect(isPrivilegedRole("moderator")).toBe(true);
+    expect(isPrivilegedRole("moderator")).toBe(false);
     expect(isPrivilegedRole("user")).toBe(false);
     expect(isPrivilegedRole(null)).toBe(false);
     expect(isPrivilegedRole(undefined)).toBe(false);

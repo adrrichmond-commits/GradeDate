@@ -6,6 +6,7 @@ import { topPercentLabel } from "~/percentile";
 import { AuthUnavailable } from "~/auth-unavailable";
 import { UserPhoto } from "~/user-photo";
 import { getCsrfToken } from "~/csrf-client";
+import { isPrivilegedRole } from "~/admin-ui";
 import {
   useRequireSubscription,
   SubscriptionBanner,
@@ -742,9 +743,7 @@ function ProfilePage() {
       <div className="mt-5">
         <AgeVerificationCard user={user} onComplete={refetch} compact />
       </div>
-      {(["owner", "admin", "moderator"] as string[]).includes(
-        user.role || "",
-      ) && (
+      {isPrivilegedRole(user.role) && (
         <section
           aria-labelledby="passkey-heading"
           className="mb-6 rounded-2xl border border-white/10 bg-gray-900/60 p-5"
