@@ -33,7 +33,10 @@ export function safetyReviewerRecipient(env: Record<string, string | undefined> 
 
 export function reviewerQueueUrl(kind: "photo" | "message", env: Record<string, string | undefined> = process.env): string {
   const origin = (env.PUBLIC_SITE_ORIGIN ?? "https://gradedate.app").replace(/\/+$/, "");
-  return kind === "photo" ? `${origin}/api/admin/photo-moderation` : `${origin}/api/admin/message-moderation`;
+  // Deep-link into the admin console (the /api/admin/* endpoints are JSON
+  // APIs that 403 a browser click). /admin opens on the Photo review tab by
+  // default; the messages tab is selected via the #messages hash.
+  return kind === "photo" ? `${origin}/admin` : `${origin}/admin#messages`;
 }
 
 export function clearSafetyReviewerNotificationsForTest(): void {

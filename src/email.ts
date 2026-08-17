@@ -25,7 +25,7 @@ function sendFailureReason(error: unknown): "provider_error" | "unknown" {
 }
 
 async function deliver(
-  purpose: "password_reset" | "waitlist" | "contact" | "beta_invite" | "safety_reviewer",
+  purpose: "password_reset" | "waitlist" | "contact" | "beta_invite" | "safety_reviewer" | "inbound_forward",
   payload: EmailPayload,
   provider: EmailProvider | null = resend,
 ): Promise<boolean> {
@@ -187,4 +187,31 @@ export function sendSafetyReviewerEmail(
 </ul>
 <p><a href="${safeQueueUrl}">Open the review queue</a></p>`,
   }, provider);
+}
+
+/**
+ * Forward a received inbound email (legal@gradedate.app) to the owner's
+ * inbox. The forwarding recipient is a single fixed address; the original
+ * sender is preserved as the reply-to so the owner can reply directly.
+ */
+export function sendInboundForwardEmail(
+  input: { to: string; subject: string; text: string; html?: string | null; replyTo?: string },
+  provider?: EmailProvider | null,
+): Promise<boolean> {
+  const safeSubject = escapeHtml(input.subject).slice(0, 200);
+  const safeReplyTo = escapeHtml(input.replyTo ?? "");
+  const bodyHtml = input.html && input.html.length <= 200_000
+    ? input.html
+    : escapeHtml(input.text).replace(/\n/g, "<br>");
+  return deliver(
+    "inbound_forward",
+    {
+      from: "GradeDate <noreply@gradedate.app>",
+      to: input.to,
+      subject: `[legal@gradedate.app] ${safeSubject}`,
+      html: `<p style="color:#888;font-size:12px">Forwarded from <strong>legal@gradedate.app</strong> — original sender: ${safeReplyTo || "unknown"}. Reply to this email to respond to the sender.</p><hr>${bodyHtml}`,
+      reply_to: input.replyTo,
+    },
+    provider,
+  );
 }

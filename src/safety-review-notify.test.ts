@@ -25,7 +25,7 @@ describe("safety reviewer notification", () => {
     expect(sent?.kind).toBe("photo");
     expect(sent?.caseId).toBe("case-123");
     expect(sent?.flagType).toBe("nsfw");
-    expect(sent?.queueUrl).toContain("/api/admin/photo-moderation");
+    expect(sent?.queueUrl).toBe("https://gradedate.app/admin");
   });
 
   test("dedupes by case id (at most one notification per case)", async () => {
@@ -39,7 +39,7 @@ describe("safety reviewer notification", () => {
     expect(calls).toBe(1);
   });
 
-  test("message kind links to the message moderation queue", async () => {
+  test("message kind links to the admin console messages tab", async () => {
     clearSafetyReviewerNotificationsForTest();
     let sent: Record<string, unknown> | null = null;
     await notifySafetyReviewer(
@@ -47,7 +47,12 @@ describe("safety reviewer notification", () => {
       { PUBLIC_SITE_ORIGIN: "https://gradedate.app" },
       { sendEmail: async (payload) => { sent = payload as unknown as Record<string, unknown>; return true; } },
     );
-    expect(sent?.queueUrl).toBe("https://gradedate.app/api/admin/message-moderation");
+    expect(sent?.queueUrl).toBe("https://gradedate.app/admin#messages");
+  });
+  test("photo and message queue URLs deep-link into the admin console, not the JSON API", () => {
+    expect(reviewerQueueUrl("photo", { PUBLIC_SITE_ORIGIN: "https://gradedate.app" })).toBe("https://gradedate.app/admin");
+    expect(reviewerQueueUrl("message", { PUBLIC_SITE_ORIGIN: "https://gradedate.app" })).toBe("https://gradedate.app/admin#messages");
+    expect(reviewerQueueUrl("photo", { PUBLIC_SITE_ORIGIN: "https://gradedate.app/" })).toBe("https://gradedate.app/admin");
   });
 
   test("default recipient is the owner account", () => {
@@ -64,6 +69,7 @@ describe("safety reviewer notification", () => {
   });
 
   test("queue url falls back to gradedate.app origin", () => {
-    expect(reviewerQueueUrl("photo", {})).toBe("https://gradedate.app/api/admin/photo-moderation");
+    expect(reviewerQueueUrl("photo", {})).toBe("https://gradedate.app/admin");
+    expect(reviewerQueueUrl("message", {})).toBe("https://gradedate.app/admin#messages");
   });
 });
