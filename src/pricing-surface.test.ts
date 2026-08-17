@@ -111,6 +111,48 @@ describe("canonical pricing surface (smoke-test findings)", () => {
     expect(sections).toContain("Create a free account");
   });
 
+  test("anonymous pricing block renders a waitlist action as its dominant CTA (D2.2)", () => {
+    // The shared waitlist form is the pricing block's PRIMARY conversion
+    // surface for anonymous pre-launch visitors (owner CTA hierarchy D2.2).
+    const sections = read("pricing-sections.tsx");
+    expect(sections).toContain('import { WaitlistForm } from "~/waitlist-form";');
+    expect(sections).toContain('<WaitlistForm idPrefix="pricing" />');
+    // The waitlist band renders ONLY for anonymous visitors — signed-in beta
+    // users already have accounts and keep the Subscribe CTA instead.
+    expect(sections).toMatch(/!signedIn && \([\s\S]{0,600}<WaitlistForm idPrefix="pricing"/);
+    // Anonymous paid CTAs are muted/tertiary (gray text, no fill)…
+    expect(sections).toMatch(/text-gray-500[\s\S]{0,120}Get Started Free/);
+    expect(sections).toMatch(/text-gray-500[\s\S]{0,120}Create a free account/);
+    // …while the signed-in Subscribe button keeps PRIMARY weight (btn-primary).
+    expect(sections).toMatch(/signedIn \? \([\s\S]{0,200}btn-primary[\s\S]{0,120}Subscribe — \$5\.99\/month/);
+  });
+
+  test("demo CTA is demoted to secondary and ladders into the waitlist (D2.2)", () => {
+    const index = read("routes/index.tsx");
+    // The demo CTA is no longer the page's PRIMARY (btn-primary) — it is the
+    // secondary outline/ghost style, smaller than the waitlist primary.
+    expect(index).toContain('className="btn-secondary inline-flex text-base hover:border-rose-400 hover:text-rose-200"');
+    expect(index).toMatch(/to="\/grade"[\s\S]{0,120}className="btn-secondary/);
+    expect(index).not.toMatch(/Try the Demo — Free[\s\S]{0,80}btn-primary/);
+    // The demo experience ladders into the waitlist via the #waitlist anchor
+    // (both the done-state follow-up CTA and the demo-section microcopy).
+    expect(index).toContain('href="/#waitlist"');
+    expect(index).toMatch(/Want real AI grades on all your photos\?[\s\S]{0,200}href="\/#waitlist"/);
+    expect(index).toMatch(/Like what you see\?[\s\S]{0,200}href="\/#waitlist"/);
+  });
+
+  test("Founders CTAs are tertiary for anonymous and keep primary weight when signed in (D2.2)", () => {
+    const sections = read("pricing-sections.tsx");
+    // Signed-in members keep the loud amber gradient Founders button (their
+    // subscribe path is real revenue)…
+    expect(sections).toMatch(/signedIn \? \([\s\S]{0,250}from-amber-500 via-amber-400 to-yellow-500/);
+    // …anonymous visitors get a muted, small, soft-border button.
+    expect(sections).toMatch(/text-gray-500 transition hover:border-gray-600 hover:text-gray-300/);
+    // The homepage's own Founders chip in the waitlist section is muted too.
+    const index = read("routes/index.tsx");
+    expect(index).toMatch(/text-gray-400[\s\S]{0,150}Join the Founders Club/);
+  });
+
   test("honest premium CTA copy: real hooks, no false browsing claims", () => {
     const grade = read("routes/grade.tsx");
     expect(grade).not.toContain("Subscribe to browse matches at your grade level");
