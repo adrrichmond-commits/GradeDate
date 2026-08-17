@@ -38,7 +38,7 @@ describe("unified founder counter surface", () => {
     expect(db).toMatch(/founders_count: count, waitlist_count: waitlistCount, remaining, total: 1000/);
 
     // Both surfaces fetch the SAME endpoint and read the SAME unified shape.
-    const index = read("routes/index.tsx");
+    const index = read("pricing-sections.tsx");
     const store = read("routes/store.tsx");
     expect(index).toContain('fetch("/api/founders/count")');
     expect(index).not.toContain('fetch("/api/founder-spots-remaining")');
@@ -50,7 +50,7 @@ describe("unified founder counter surface", () => {
   });
 
   test("low-count 'First X of 1,000 claimed' branch exists on both surfaces", () => {
-    const index = read("routes/index.tsx");
+    const index = read("pricing-sections.tsx");
     const store = read("routes/store.tsx");
     expect(index).toContain("First {founders_count.toLocaleString()}");
     expect(index).toContain("of {total.toLocaleString()} claimed");
@@ -58,7 +58,7 @@ describe("unified founder counter surface", () => {
   });
 
   test("progress bar and 250/500/750 ticks only render once the count is ≥100", () => {
-    const index = read("routes/index.tsx");
+    const index = read("pricing-sections.tsx");
     // The tick marks are inside the ≥100 branch (after FOUNDER_BAR_THRESHOLD),
     // and the low-count branch is a clean-text return with no bar markup.
     expect(index).toContain("const FOUNDER_BAR_THRESHOLD = 100;");
@@ -69,7 +69,7 @@ describe("unified founder counter surface", () => {
   });
 
   test("honest waitlist line at 0 founders and honest low-spots line at ≥100", () => {
-    const index = read("routes/index.tsx");
+    const index = read("pricing-sections.tsx");
     expect(index).toContain("founders_count === 0 && waitlist_count > 0");
     expect(index).toContain("on the waitlist");
     expect(index).toContain("const FOUNDER_LOW_SPOTS = 100;");
@@ -86,7 +86,7 @@ describe("unified founder counter surface", () => {
 
 describe("founder avatar grid (illustrative examples only)", () => {
   test("grid exists with 12–15 stylized inline-SVG faces and a caption", () => {
-    const index = read("routes/index.tsx");
+    const index = read("pricing-sections.tsx");
     expect(index).toContain("FOUNDER_AVATAR_STYLES");
     expect(index).toContain("<FaceAvatar style={style} />");
     expect(index).toContain("Illustrative examples");
@@ -97,7 +97,7 @@ describe("founder avatar grid (illustrative examples only)", () => {
   });
 
   test("avatars are stylized SVG faces, never photorealistic or photos", () => {
-    const index = read("routes/index.tsx");
+    const index = read("pricing-sections.tsx");
     // The avatar renderer is pure inline SVG (no <img>, no photo asset URLs).
     const faceAvatarBody = index.slice(index.indexOf("function FaceAvatar"));
     expect(faceAvatarBody).toContain("<svg");
