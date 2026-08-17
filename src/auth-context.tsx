@@ -6,6 +6,7 @@ import {
   useCallback,
   type ReactNode,
 } from "react";
+import { analytics } from "@heycatch/sdk";
 import { getCsrfToken } from "~/csrf-client";
 
 export type AuthResponseState = "authenticated" | "anonymous" | "error";
@@ -90,6 +91,20 @@ export function isPremiumUser(user: SafeUser | null | undefined): boolean {
   return !!user.trial_ends_at && new Date(user.trial_ends_at).getTime() > Date.now();
 }
 
+/**
+ * HeyCatch `plan` person property: the app's own plan name, per the SDK's
+ * canonical person-property contract (values are ours, the key is fixed).
+ * Mirrors server-side entitlement so plan-level dashboard breakdowns line up
+ * with what the app actually grants.
+ */
+export function heycatchPlanLabel(user: SafeUser): string {
+  if (user.subscription_status === "active") return "premium";
+  if (user.trial_ends_at && new Date(user.trial_ends_at).getTime() > Date.now()) {
+    return "trial";
+  }
+  return "free";
+}
+
 interface AuthState {
   user: SafeUser | null;
   loading: boolean;
@@ -128,6 +143,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (responseState === "anonymous") {
         setUser(null);
         setAuthError(false);
+        // New anonymous visitor on this browser — clear any previous identity
+        // so their activity is no longer attributed to the signed-out user.
+        analytics.resetIdentity();
       } else if (responseState === "error") {
         // A server outage must not look like a logout. Keep a known user usable.
         setAuthError(true);
@@ -138,8 +156,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         ) {
           setAuthError(true);
         } else {
-          setUser(data.user);
+          const nextUser = data.user as SafeUser;
+          setUser(nextUser);
           setAuthError(false);
+          // HeyCatch: link this browser session to the authenticated user.
+          // Stable internal id only (never the email as the id); email/name/
+          // plan ride along as properties; signup_date is set-ONCE so a later
+          // sign-in can never move the account-age anchor. No-op before init.
+          analytics.setIdentity(
+            String(nextUser.id),
+            {
+              email: nextUser.email,
+              name: nextUser.display_name ?? undefined,
+              plan: heycatchPlanLabel(nextUser),
+            },
+            { signup_date: nextUser.created_at },
+          );
         }
       }
     } catch {

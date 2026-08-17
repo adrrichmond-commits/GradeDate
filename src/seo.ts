@@ -6,7 +6,7 @@ export const PUBLIC_INDEXABLE_PATHS = [
 ] as const;
 
 const PRIVATE_PREFIXES = [
-  "/api/", "/uploads/", "/matches", "/connections", "/chat/", "/profile", "/grade", "/store", "/subscribe", "/logout", "/login", "/signup", "/forgot-password", "/reset-password",
+  "/api/", "/uploads/", "/admin", "/matches", "/connections", "/chat/", "/profile", "/grade", "/store", "/subscribe", "/logout", "/login", "/signup", "/forgot-password", "/reset-password",
 ];
 
 export function shouldNoIndex(pathname: string): boolean {

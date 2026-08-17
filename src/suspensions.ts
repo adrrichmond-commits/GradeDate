@@ -12,7 +12,7 @@ export function isSuspensionReason(v: unknown): v is SuspensionReason { return t
 export function isSuspensionDuration(v: unknown): v is SuspensionDuration { return typeof v === "string" && (SUSPENSION_DURATIONS as readonly string[]).includes(v); }
 export function isSuspensionStatus(v: unknown): v is SuspensionStatus { return typeof v === "string" && (SUSPENSION_STATUSES as readonly string[]).includes(v); }
 export function isAppealStatus(v: unknown): v is AppealStatus { return typeof v === "string" && (APPEAL_STATUSES as readonly string[]).includes(v); }
-export function canReviewAppeal(role: unknown): boolean { return role === "owner" || role === "admin" || role === "moderator"; }
+export function canReviewAppeal(role: unknown): boolean { return role === "owner" || role === "admin"; }
 export function canOverrideSuspension(role: unknown): boolean { return role === "owner" || role === "admin"; }
 export function canTransitionAppeal(from: AppealStatus, to: AppealStatus): boolean { return from === "pending" && (to === "granted" || to === "denied"); }
 export function durationEnds(duration: SuspensionDuration, now = Date.now()): string | null { if (duration === "indefinite" || duration === "warning") return duration === "warning" ? new Date(now).toISOString() : null; const hours = duration === "24h" ? 24 : duration === "7d" ? 168 : 720; return new Date(now + hours * 3600000).toISOString(); }

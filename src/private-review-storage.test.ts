@@ -11,7 +11,7 @@ import {
 } from "./private-review-storage";
 
 const env = { GRADEDATE_PRIVATE_REVIEW_STORAGE: "true", GRADEDATE_REVIEW_SIGNING_KEY: "a".repeat(32), PRIVATE_BLOB_READ_WRITE_TOKEN: "test-private-token" };
-const principal = { userId: 7, role: "moderator" as const, reauthenticatedAt: 1_000_000 };
+const principal = { userId: 7, role: "admin" as const, reauthenticatedAt: 1_000_000 };
 const reviewCase = { caseId: "case-1", objectKey: "quarantine/case-1/photo", status: "quarantined" as const };
 const provider: PrivateReviewProvider = {
   put: async () => {}, get: async () => new Uint8Array([1, 2, 3]), delete: async () => {},
@@ -40,6 +40,10 @@ describe("private review storage", () => {
     const access = issueReviewAccess(reviewCase, principal, 1_000_000, env);
     expect(verifyReviewAccess(access.token, { ...reviewCase, principal }, 1_301_000, env)).toBe(false);
     expect(verifyReviewAccess(`${access.token}x`, { ...reviewCase, principal }, 1_000_000, env)).toBe(false);
+  });
+  test("legacy moderator role is denied review access entirely", () => {
+    expect(() => issueReviewAccess(reviewCase, { ...principal, role: "moderator" }, 1_000_000, env)).toThrow(ReviewAccessDeniedError);
+    expect(verifyReviewAccess(issueReviewAccess(reviewCase, principal, 1_000_000, env).token, { ...reviewCase, principal: { ...principal, role: "moderator" } }, 1_000_000, env)).toBe(false);
   });
   test("requires recent reauthentication", () => {
     expect(() => issueReviewAccess(reviewCase, { ...principal, reauthenticatedAt: 0 }, 1_000_000, env)).toThrow(ReviewAccessDeniedError);

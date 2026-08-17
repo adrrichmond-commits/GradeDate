@@ -1,7 +1,7 @@
 /** Phase 1 authorization and suspension policy. Keep this module pure so policy is testable. */
 export const ROLES = ["user", "owner", "admin", "moderator"] as const;
 export type Role = (typeof ROLES)[number];
-export const PRIVILEGED_ROLES = ["owner", "admin", "moderator"] as const;
+export const PRIVILEGED_ROLES = ["owner", "admin"] as const;
 export type PrivilegedRole = (typeof PRIVILEGED_ROLES)[number];
 
 export type SafetyUser = { id: number; role?: string | null; suspended_until?: string | null; suspension_reason?: string | null };

@@ -12,7 +12,7 @@
 
 /** Roles that may open /admin at all (server enforces the same set). */
 export function isPrivilegedRole(role: string | null | undefined): boolean {
-  return role === "owner" || role === "admin" || role === "moderator";
+  return isOwnerAdminRole(role);
 }
 
 /** Roles that may grant appeals / revoke suspensions / issue invites. */

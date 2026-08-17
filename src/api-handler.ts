@@ -131,6 +131,7 @@ import {
   type Badge,
   type PersistedBadge,
 } from "../src/db.ts";
+import { trackServerEvent } from "./analytics-server";
 import { sendPasswordResetEmail } from "../src/email.ts";
 import { isGradeCardOwner } from "./grade-card-access";
 import { sendWaitlistConfirmation, sendContactMessage, sendBetaInviteEmail } from "../src/email.ts";
@@ -165,7 +166,7 @@ import { scanMessage, scanMessageHeuristics, policyForMessageScan, messageFlagTy
 import { notifySafetyReviewer } from "./safety-review-notify";
 import { handleInboundEmail } from "./inbound-email";
 import { isSuspensionReason, isSuspensionDuration, isAppealStatus, canReviewAppeal, canOverrideSuspension, durationEnds, APPEAL_TEXT_MAX } from "./suspensions";
-import { hasPermission, isSuspended, isSuspensionException, privilegedMfaReady, type PrivilegedRole } from "./safety";
+import { hasPermission, isSuspended, isSuspensionException, privilegedMfaReady, PRIVILEGED_ROLES, type PrivilegedRole } from "./safety";
 import { registrationOptions, authenticationOptions, verifyRegistration, verifyAuthentication, MFA_CHALLENGE_TTL_MS } from "./webauthn-mfa";
 import { isCheckoutBlocked } from "./subscription-confirmation";
 import { stripeErrorClientFields, stripeErrorDetails, stripeErrorMessage, stripeErrorStatus } from "./stripe-error";
@@ -314,7 +315,7 @@ function getSessionId(req: Request): string | null {
 async function getCurrentSession(req: Request): Promise<Session | null> {
   const id = getSessionId(req); return id ? getSessionById(id) : null;
 }
-async function getCurrentUser(req: Request): Promise<User | null> {
+export async function getCurrentUser(req: Request): Promise<User | null> {
   const session = await getCurrentSession(req); if (!session) return null;
   const user = await getUserById(session.user_id);
   if (user?.subscription_status === "active" && user.subscription_expires_at && new Date(user.subscription_expires_at).getTime() <= Date.now() && !user.stripe_subscription_id) { await updateSubscriptionStatus(user.id, "inactive"); return getUserById(user.id); }
@@ -348,7 +349,7 @@ async function enforceSafety(req: Request, pathname: string): Promise<Response |
   if (pathname.startsWith("/api/admin/")) {
     const role = user?.role as PrivilegedRole | undefined;
     const session = await getCurrentSession(req);
-    if (!user || !hasPermission(user, ["owner", "admin", "moderator"]) || !privilegedMfaReady() || !session?.mfa_verified_at) return json({ error: "MFA-verified privileged session required", code: "PRIVILEGED_MFA_REQUIRED" }, 403);
+    if (!user || !hasPermission(user, PRIVILEGED_ROLES) || !privilegedMfaReady() || !session?.mfa_verified_at) return json({ error: "MFA-verified privileged session required", code: "PRIVILEGED_MFA_REQUIRED" }, 403);
     await recordAdminAuditEvent({ actorUserId: user.id, action: "admin.route.check", targetType: "route", targetId: pathname, requestId: req.headers.get("x-request-id") ?? undefined });
     void role;
   }
@@ -463,6 +464,15 @@ async function handleSignup(req: Request): Promise<Response> {
       }
       return json({ error: "This invite code is no longer valid — join the waitlist for the next cohort.", code: "BETA_INVITE_INVALID" }, 409);
     }
+    // HeyCatch: a redeemed beta invite grants the 14-day Premium trial
+    // (redeemBetaInviteCode sets trial_ends_at via COALESCE — one grant).
+    // This is the user's own request, so pass `req` to join their live
+    // session. Never throws; no-op under test.
+    await trackServerEvent(
+      "trial_started",
+      { plan: "premium", source: "trial" },
+      { userId: String(user.id), request: req },
+    );
   }
 
   // Process referral code if provided
@@ -506,9 +516,9 @@ async function handleLogin(req: Request): Promise<Response> {
   if (!valid) {
     return json({ error: "Invalid email or password" }, 401);
   }
-  // Password authentication never creates a privileged session. Owners,
-  // admins, and moderators must use the passkey step-up flow below.
-  if (["owner", "admin", "moderator"].includes(String(user.role))) {
+  // Password authentication never creates a privileged session. Owners and
+  // admins must use the passkey step-up flow below.
+  if ((PRIVILEGED_ROLES as readonly string[]).includes(String(user.role))) {
     await recordAdminAuditEvent({ actorUserId: user.id, actorRole: user.role, action: "mfa.password_only_denied", targetType: "user", targetId: String(user.id), requestId: requestIdFrom(req) });
     return json({ error: "Privileged MFA required", code: "PRIVILEGED_MFA_REQUIRED" }, 403);
   }
@@ -2315,6 +2325,17 @@ async function handleActivateUpsell(req: Request): Promise<Response> {
     return json({ error: "Payment is not verified yet", code: "PAYMENT_PENDING" }, 409);
   }
   const granted = await grantPaidUpsell(user.id, product, session.id);
+  // HeyCatch: fire only when THIS call flipped the entitlement (granted=true)
+  // — if the webhook already granted it, granted is false and the event was
+  // already sent there, so a purchase is never double-counted. This is the
+  // user's own request: pass `req` so the event joins their live session.
+  if (granted) {
+    await trackServerEvent(
+      "upsell_purchased",
+      { product, source: "paid" },
+      { userId: String(user.id), request: req },
+    );
+  }
   return json({ ok: true, granted, message: granted ? "Purchase activated!" : "Purchase was already activated." });
 }
 
@@ -2564,8 +2585,19 @@ async function handleStripeWebhook(req: Request): Promise<Response> {
         // entitlement table makes webhook retries and manual activation idempotent.
         const upsellProduct = session.metadata?.product as PaidUpsellProduct | undefined;
         if (session.mode === "payment" && upsellProduct && session.payment_status === "paid" && session.metadata?.user_id === String(user.id) && upsellPriceId(upsellProduct)) {
-          await grantPaidUpsell(user.id, upsellProduct, session.id);
+          const granted = await grantPaidUpsell(user.id, upsellProduct, session.id);
           logInfo(EVENTS.STRIPE_UPSELL_GRANTED, { user_id: user.id, product: upsellProduct });
+          // HeyCatch: count the purchase only on the grant that actually
+          // flipped the entitlement (granted=true). Webhook retries and the
+          // client's activate fallback both see granted=false, so a purchase
+          // is never double-counted. Webhook events have no request to pass.
+          if (granted) {
+            await trackServerEvent(
+              "upsell_purchased",
+              { product: upsellProduct, source: "paid" },
+              { userId: String(user.id) },
+            );
+          }
           break;
         }
 
@@ -2581,9 +2613,11 @@ async function handleStripeWebhook(req: Request): Promise<Response> {
 
         // Founders Club: assign sequential founder_number if spots remain
         const spotsRemaining = await getFounderSpotsRemaining();
+        let founderAssigned = false;
         if (spotsRemaining.remaining > 0) {
           const founderNum = await assignFounderNumber(user.id);
           if (founderNum !== null) {
+            founderAssigned = true;
             logInfo(EVENTS.STRIPE_FOUNDERS_ASSIGNED, {
               user_id: user.id,
               founder_number: founderNum,
@@ -2603,6 +2637,14 @@ async function handleStripeWebhook(req: Request): Promise<Response> {
             referee_user_id: user.id,
           });
         }
+        // HeyCatch: the subscription checkout completed — this branch only
+        // runs for non-upsell sessions. Webhook events have no request to
+        // pass (no browser session to join), so userId only. Never throws.
+        await trackServerEvent(
+          "subscription_started",
+          { plan: "premium", source: "paid", founder: founderAssigned },
+          { userId: String(user.id) },
+        );
         break;
       }
 
@@ -2742,7 +2784,7 @@ async function handleChangePassword(req: Request): Promise<Response> {
   if (sessionId) await revokeOtherSessions(user.id, sessionId);
   // Audit password changes by privileged roles (best-effort, mirrors the
   // mfa.password_only_denied audit pattern).
-  if (["owner", "admin", "moderator"].includes(String(user.role))) {
+  if ((PRIVILEGED_ROLES as readonly string[]).includes(String(user.role))) {
     await recordAdminAuditEvent({
       actorUserId: user.id,
       actorRole: user.role,
@@ -3006,8 +3048,8 @@ async function handleFounderSpotsRemaining(_req: Request): Promise<Response> {
 // ── Beta Invite Admin (Austin cohort issuance) ────────────────
 // Owner/admin-only issuance of closed-beta invite codes. The route is already
 // behind the privileged-MFA gate in enforceSafety (/api/admin/*); the handler
-// additionally restricts issuance to owner/admin (moderators can review but
-// cannot mint codes). Issuance is audit-logged (counts only — codes are
+// additionally restricts issuance to owner/admin (moderators cannot mint
+// codes). Issuance is audit-logged (counts only — codes are
 // redeemable tokens and are never logged).
 //
 // Launch flow: POST /api/admin/beta-invites { count, notify: true } issues N
@@ -3467,18 +3509,18 @@ function fromB64url(value: string): Uint8Array { return new Uint8Array(Buffer.fr
 async function privilegedCandidate(req: Request): Promise<User | null> {
   const body = await req.json().catch(() => null); if (!body?.email || !body?.password) return null;
   const user = await getUserByEmail(String(body.email).trim().toLowerCase());
-  if (!user || !["owner", "admin", "moderator"].includes(String(user.role)) || isSuspended(user) || !(await BunPw.verify(String(body.password), user.password_hash))) return null;
+  if (!user || !(PRIVILEGED_ROLES as readonly string[]).includes(String(user.role)) || isSuspended(user) || !(await BunPw.verify(String(body.password), user.password_hash))) return null;
   return user;
 }
 async function handleMfaEnrollOptions(req: Request): Promise<Response> {
-  const user = await getCurrentUser(req); if (!user || !["owner","admin","moderator"].includes(String(user.role)) || isSuspended(user)) return json({error:"Forbidden"},403);
+  const user = await getCurrentUser(req); if (!user || !(PRIVILEGED_ROLES as readonly string[]).includes(String(user.role)) || isSuspended(user)) return json({error:"Forbidden"},403);
   const credentials = await getWebAuthnCredentials(user.id); const options = await registrationOptions(user, credentials.map(c => String(c.id)));
   const challengeId = await createWebAuthnChallenge({userId:user.id, challenge:options.challenge, purpose:"registration", expiresAt:new Date(Date.now()+MFA_CHALLENGE_TTL_MS)});
   await recordAdminAuditEvent({actorUserId:user.id,actorRole:user.role,action:"mfa.enrollment.started",targetType:"user",targetId:String(user.id),requestId:requestIdFrom(req)});
   return json({options, challenge_id:challengeId});
 }
 async function handleMfaEnrollVerify(req: Request): Promise<Response> {
-  const user = await getCurrentUser(req); if (!user || !["owner","admin","moderator"].includes(String(user.role)) || isSuspended(user)) return json({error:"Forbidden"},403);
+  const user = await getCurrentUser(req); if (!user || !(PRIVILEGED_ROLES as readonly string[]).includes(String(user.role)) || isSuspended(user)) return json({error:"Forbidden"},403);
   // Failure-path audit so a failed enrollment leaves a trail with the exact
   // reason. Best-effort: a logging failure must never mask the real error.
   const logFail = (reason: string, extra: Record<string, unknown> = {}): Promise<void> =>
@@ -3510,7 +3552,7 @@ async function handlePrivilegedMfaStart(req: Request): Promise<Response> {
   const credentials=await getWebAuthnCredentials(user.id); if(!credentials.length)return json({error:"Passkey enrollment required",code:"MFA_REQUIRED"},403); const options=await authenticationOptions(credentials.map(c=>String(c.id))); const challengeId=await createWebAuthnChallenge({userId:user.id,challenge:options.challenge,purpose:"authentication",expiresAt:new Date(Date.now()+MFA_CHALLENGE_TTL_MS)}); await recordAdminAuditEvent({actorUserId:user.id,actorRole:user.role,action:"mfa.authentication.started",targetType:"user",targetId:String(user.id),requestId:requestIdFrom(req)}); return json({options,challenge_id:challengeId});
 }
 async function handlePrivilegedMfaFinish(req: Request): Promise<Response> {
-  const limited=checkStrictRateLimit(req); if(limited)return limited; const body=await req.json().catch(()=>null); const consumed=body?.challenge_id?await consumeWebAuthnChallenge(String(body.challenge_id),"authentication"):null; if(!consumed||!body?.response)return json({error:"Invalid or expired challenge"},401); const user=await getUserById(consumed.userId); if(!user||!["owner","admin","moderator"].includes(String(user.role))||isSuspended(user))return json({error:"Privileged access denied"},403); const credentials=await getWebAuthnCredentials(user.id); const cred=credentials.find(c=>String(c.id)===String(body.response?.id)); if(!cred)return json({error:"Invalid assertion"},401); try { const result=await verifyAuthentication(body.response,consumed.challenge,{id:String(cred.id),publicKey:new Uint8Array(cred.public_key),counter:Number(cred.counter)}); if(!result.verified)return json({error:"Invalid assertion"},401); await updateWebAuthnCounter(String(cred.id),result.authenticationInfo.newCounter); const session=await createPrivilegedSession(user.id); await recordAdminAuditEvent({actorUserId:user.id,actorRole:user.role,action:"mfa.authentication.completed",targetType:"session",targetId:String(session.id),requestId:requestIdFrom(req)}); return setSessionCookie(json({user:toSafeUser(user),mfa_verified:true,expires_at:session.expires_at}),session.id); } catch { return json({error:"Invalid assertion"},401); }
+  const limited=checkStrictRateLimit(req); if(limited)return limited; const body=await req.json().catch(()=>null); const consumed=body?.challenge_id?await consumeWebAuthnChallenge(String(body.challenge_id),"authentication"):null; if(!consumed||!body?.response)return json({error:"Invalid or expired challenge"},401); const user=await getUserById(consumed.userId); if(!user||!(PRIVILEGED_ROLES as readonly string[]).includes(String(user.role))||isSuspended(user))return json({error:"Privileged access denied"},403); const credentials=await getWebAuthnCredentials(user.id); const cred=credentials.find(c=>String(c.id)===String(body.response?.id)); if(!cred)return json({error:"Invalid assertion"},401); try { const result=await verifyAuthentication(body.response,consumed.challenge,{id:String(cred.id),publicKey:new Uint8Array(cred.public_key),counter:Number(cred.counter)}); if(!result.verified)return json({error:"Invalid assertion"},401); await updateWebAuthnCounter(String(cred.id),result.authenticationInfo.newCounter); const session=await createPrivilegedSession(user.id); await recordAdminAuditEvent({actorUserId:user.id,actorRole:user.role,action:"mfa.authentication.completed",targetType:"session",targetId:String(session.id),requestId:requestIdFrom(req)}); return setSessionCookie(json({user:toSafeUser(user),mfa_verified:true,expires_at:session.expires_at}),session.id); } catch { return json({error:"Invalid assertion"},401); }
 }
 
 export async function handleApiRoute(
