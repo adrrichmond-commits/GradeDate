@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "~/auth-context";
+import { WaitlistForm } from "~/waitlist-form";
 
 // ---------------------------------------------------------------------------
 // Shared pricing + Founders Club sections — single source of truth for the
@@ -68,12 +69,25 @@ function PricingSection() {
             ))}
           </ul>
 
-          <Link
-            to="/grade"
-            className="btn-secondary w-full justify-center text-base"
-          >
-            Get Started Free
-          </Link>
+          {/* Free card CTA. Owner CTA-hierarchy (D2.2): for anonymous
+              pre-launch visitors this is TERTIARY (muted text link) — the
+              waitlist is the pricing block's one primary action. Signed-in
+              beta users keep the normal secondary button. */}
+          {signedIn ? (
+            <Link
+              to="/grade"
+              className="btn-secondary w-full justify-center text-base"
+            >
+              Get Started Free
+            </Link>
+          ) : (
+            <Link
+              to="/grade"
+              className="inline-flex w-full items-center justify-center text-sm font-medium text-gray-500 underline-offset-4 transition hover:text-gray-300 hover:underline"
+            >
+              Get Started Free
+            </Link>
+          )}
         </div>
 
         {/* ── Paid Tier Card (more prominent) ── */}
@@ -122,6 +136,11 @@ function PricingSection() {
             ))}
           </ul>
 
+          {/* Paid card CTA. Signed-in beta users keep the normal PRIMARY
+              subscribe button (their trial→paid path is real revenue — never
+              muted). Anonymous pre-launch visitors get a TERTIARY muted link
+              (owner D2.2): destinations stay honest (→ /signup, the beta
+              gate handles it) — only the visual weight changes. */}
           {signedIn ? (
             <Link
               to="/subscribe"
@@ -132,7 +151,7 @@ function PricingSection() {
           ) : (
             <Link
               to="/signup"
-              className="btn-primary w-full justify-center text-base"
+              className="inline-flex w-full items-center justify-center text-sm font-medium text-gray-500 underline-offset-4 transition hover:text-gray-300 hover:underline"
             >
               Create a free account
             </Link>
@@ -144,6 +163,31 @@ function PricingSection() {
           </p>
         </div>
       </div>
+
+      {/* Anonymous waitlist band — the pricing block's DOMINANT action for
+          pre-launch visitors (owner D2.2): the shared waitlist form in a
+          rose-tinted card. Signed-in beta users already have accounts, so
+          they keep the Subscribe CTA instead. */}
+      {!signedIn && (
+        <div className="mt-10">
+          <div className="card border-rose-500/20 bg-gradient-to-br from-rose-500/5 to-violet-500/5 p-8 sm:p-10">
+            <h3 className="text-xl font-bold text-white">
+              Austin, TX goes first — get on the list
+            </h3>
+            <p className="mx-auto mt-2 max-w-md text-sm text-gray-400">
+              Join the waitlist and we&apos;ll email you the moment the beta
+              reaches your city. Free to join, no spam.
+            </p>
+            <div className="mt-6">
+              <WaitlistForm idPrefix="pricing" />
+            </div>
+            <p className="mt-4 text-xs text-gray-500">
+              No spam. Unsubscribe anytime. We&apos;ll only email you about your
+              city&apos;s launch.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -545,7 +589,11 @@ function FoundersClubSection() {
         </div>
 
         {/* CTA — changes if spots are gone. Paid CTAs are auth-gated:
-            anonymous visitors go to /signup (checkout needs an account). */}
+            anonymous visitors go to /signup (checkout needs an account).
+            Owner CTA-hierarchy (D2.2): for anonymous pre-launch visitors the
+            Founders CTA is TERTIARY (muted/quiet); signed-in beta users keep
+            the loud amber gradient button (their subscribe path is real
+            revenue). */}
         {spotsGone ? (
           <div className="flex flex-col items-center gap-3">
             <div className="rounded-full border border-gray-700 bg-gray-800/50 px-6 py-4 text-gray-400">
@@ -554,32 +602,45 @@ function FoundersClubSection() {
             </div>
             <Link
               to={signedIn ? "/subscribe" : "/signup"}
-              className="btn-secondary inline-flex items-center gap-2 px-8 py-4 text-base"
+              className={
+                signedIn
+                  ? "btn-secondary inline-flex items-center gap-2 px-8 py-4 text-base"
+                  : "text-sm font-medium text-gray-500 underline-offset-4 transition hover:text-gray-300 hover:underline"
+              }
             >
               Join Waitlist
             </Link>
           </div>
         ) : (
           <div className="flex flex-col items-center gap-4">
-            <Link
-              to={signedIn ? "/subscribe" : "/signup"}
-              className="inline-flex items-center gap-3 rounded-full bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-500 px-8 py-4 text-base font-bold text-gray-950 shadow-xl shadow-amber-500/25 transition-all duration-300 hover:scale-105 hover:shadow-amber-500/40 active:scale-95"
-            >
-              <svg
-                className="h-5 w-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
+            {signedIn ? (
+              <Link
+                to="/subscribe"
+                className="inline-flex items-center gap-3 rounded-full bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-500 px-8 py-4 text-base font-bold text-gray-950 shadow-xl shadow-amber-500/25 transition-all duration-300 hover:scale-105 hover:shadow-amber-500/40 active:scale-95"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M5 13l4 4L19 7"
-                />
-              </svg>
-              Join the Founders Club
-            </Link>
+                <svg
+                  className="h-5 w-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M5 13l4 4L19 7"
+                  />
+                </svg>
+                Join the Founders Club
+              </Link>
+            ) : (
+              <Link
+                to="/signup"
+                className="inline-flex items-center gap-2 rounded-full border border-white/10 px-6 py-2.5 text-sm font-medium text-gray-500 transition hover:border-gray-600 hover:text-gray-300"
+              >
+                Join the Founders Club
+              </Link>
+            )}
             <p className="text-xs text-gray-500">
               $5.99/month · Lifetime price lock · Cancel anytime
             </p>
