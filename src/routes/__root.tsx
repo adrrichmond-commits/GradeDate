@@ -10,6 +10,7 @@ import type { ReactNode } from "react";
 import { useEffect, useState, useRef } from "react";
 import { AuthProvider, isPremiumUser, useAuth } from "~/auth-context";
 import { getCsrfToken } from "~/csrf-client";
+import { HOME_ANCHORS, HomeAnchorLinks, homeAnchorHref } from "~/nav-anchors";
 import { resolveCanonicalSiteUrl } from "~/site-url";
 import { XIcon, TikTokIcon } from "~/social-icons";
 
@@ -186,7 +187,7 @@ function BrandedLoader({ text }: { text?: string }) {
 /* App Shell                                                           */
 /* ------------------------------------------------------------------ */
 function AppShell() {
-  const { user, loading, authError, pushPermission, pushSubscribed, subscribeToPush, unsubscribeFromPush } = useAuth();
+  const { user, pushPermission, pushSubscribed, subscribeToPush, unsubscribeFromPush } = useAuth();
   const [unread, setUnread] = useState(0);
   const [cookieConsent, setCookieConsent] = useState(true);
   const [showPushPrompt, setShowPushPrompt] = useState(false);
@@ -194,6 +195,19 @@ function AppShell() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const closeMenu = () => setMenuOpen(false);
+  // Homepage detection: anonymous visitors on "/" get the section anchors.
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const isHomePage = pathname === "/";
+  // Scroll to a homepage section with the fixed 64px header accounted for
+  // (the sections carry scroll-mt-24). Mobile-menu anchors use this so the
+  // menu can close (restoring body overflow) before the scroll happens.
+  const scrollToSection = (sectionId: string) => {
+    setMenuOpen(false);
+    requestAnimationFrame(() => {
+      document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      history.replaceState(null, "", `#${sectionId}`);
+    });
+  };
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -301,11 +315,7 @@ function AppShell() {
             <span>Date</span>
           </Link>
           <div className="flex items-center gap-4">
-            {loading ? (
-              <div className="h-4 w-16 animate-pulse rounded bg-gray-800" />
-            ) : authError ? (
-              <span role="status" className="text-xs text-amber-300">Session unavailable</span>
-            ) : user ? (
+            {user ? (
               <>
                 {/* ── Desktop nav (md+) ── */}
                 <div className="hidden md:flex items-center gap-4">
@@ -383,18 +393,44 @@ function AppShell() {
               </>
             ) : (
               <>
-                <Link
-                  to="/login"
-                  className="text-sm text-gray-400 transition hover:text-white"
-                >
-                  Login
-                </Link>
-                <Link
-                  to="/signup"
-                  className="rounded-full bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-500 hover:scale-105 active:scale-95"
-                >
-                  Sign Up
-                </Link>
+                {/* ── Anonymous nav: homepage anchors (md+) + Login/Sign Up ── */}
+                <HomeAnchorLinks className="hidden md:flex items-center gap-4" />
+                <div className={isHomePage ? "hidden md:flex items-center gap-4" : "flex items-center gap-4"}>
+                  <Link
+                    to="/login"
+                    className="text-sm text-gray-400 transition hover:text-white"
+                  >
+                    Login
+                  </Link>
+                  <Link
+                    to="/signup"
+                    className="rounded-full bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-500 hover:scale-105 active:scale-95"
+                  >
+                    Sign Up
+                  </Link>
+                </div>
+                {/* ── Anonymous mobile: hamburger menu (homepage only) ── */}
+                {isHomePage && (
+                  <button
+                    type="button"
+                    className="md:hidden flex items-center justify-center h-10 w-10 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition"
+                    onClick={() => setMenuOpen((prev) => !prev)}
+                    aria-label={menuOpen ? "Close menu" : "Open menu"}
+                    aria-expanded={menuOpen}
+                    aria-controls="mobile-navigation"
+                    ref={menuButtonRef}
+                  >
+                    {menuOpen ? (
+                      <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    ) : (
+                      <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                      </svg>
+                    )}
+                  </button>
+                )}
               </>
             )}
           </div>
@@ -493,6 +529,55 @@ function AppShell() {
                 Logout
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Mobile slide-down menu panel (anonymous, homepage only) ── */}
+      {!user && isHomePage && menuOpen && (
+        <div
+          id="mobile-navigation"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Mobile navigation"
+          tabIndex={-1}
+          className="fixed inset-x-0 top-16 z-40 border-b border-white/5 bg-gray-950/95 backdrop-blur-md md:hidden overflow-y-auto max-h-[80vh]"
+          onKeyDown={(e) => {
+            if (e.key === "Escape") { e.preventDefault(); closeMenu(); menuButtonRef.current?.focus(); return; }
+            if (e.key !== "Tab") return;
+            const items = Array.from(e.currentTarget.querySelectorAll<HTMLElement>("a[href], button:not([disabled])"));
+            if (!items.length) return;
+            const first = items[0], last = items[items.length - 1];
+            if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+            else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+          }}
+        >
+          <div className="flex flex-col gap-1 px-4 py-3">
+            {HOME_ANCHORS.map((a) => (
+              <a
+                key={a.sectionId}
+                href={homeAnchorHref(a.sectionId)}
+                onClick={(e) => { e.preventDefault(); scrollToSection(a.sectionId); }}
+                className="rounded-lg px-4 py-3 text-sm text-gray-300 transition hover:bg-gray-800 hover:text-white"
+              >
+                {a.label}
+              </a>
+            ))}
+            <hr className="my-1 border-white/5" />
+            <Link
+              to="/login"
+              onClick={() => setMenuOpen(false)}
+              className="rounded-lg px-4 py-3 text-sm text-gray-300 transition hover:bg-gray-800 hover:text-white"
+            >
+              Login
+            </Link>
+            <Link
+              to="/signup"
+              onClick={() => setMenuOpen(false)}
+              className="rounded-lg bg-rose-600 px-4 py-3 text-center text-sm font-semibold text-white transition hover:bg-rose-500"
+            >
+              Sign Up
+            </Link>
           </div>
         </div>
       )}
