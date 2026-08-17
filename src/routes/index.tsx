@@ -1034,7 +1034,7 @@ function Home() {
       {/* ─────────────────────────────────────────────────────────────
           2. HOW IT WORKS
           ───────────────────────────────────────────────────────────── */}
-      <section id="how-it-works" className="px-4 py-24">
+      <section id="how-it-works" className="scroll-mt-24 px-4 py-24">
         <div className="mx-auto max-w-6xl">
           <h2 className="mb-4 text-center text-3xl font-bold sm:text-4xl">
             How It Works
@@ -1170,7 +1170,7 @@ function Home() {
       {/* ─────────────────────────────────────────────────────────────
           3. FREE PREVIEW GRADING — a real hook that works today
           ───────────────────────────────────────────────────────────── */}
-      <section className="relative overflow-hidden px-4 py-24">
+      <section id="demo" className="relative scroll-mt-24 overflow-hidden px-4 py-24">
         {/* Subtle gradient background to differentiate section */}
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-rose-500/[0.03] via-transparent to-violet-500/[0.03]" />
 
@@ -1239,7 +1239,7 @@ function Home() {
       {/* ─────────────────────────────────────────────────────────────
           4. PRICING — "One Plan. Full Access."
           ───────────────────────────────────────────────────────────── */}
-      <section id="pricing" className="px-4 py-24">
+      <section id="pricing" className="scroll-mt-24 px-4 py-24">
         <PricingSection />
       </section>
 
@@ -1251,7 +1251,7 @@ function Home() {
       {/* ─────────────────────────────────────────────────────────────
           6. CLOSING CTA — the waitlist again, unmissable
           ───────────────────────────────────────────────────────────── */}
-      <section id="waitlist" className="px-4 py-24">
+      <section id="waitlist" className="scroll-mt-24 px-4 py-24">
         <div className="mx-auto max-w-2xl text-center">
           {/* Waitlist card */}
           <div className="card border-rose-500/20 bg-gradient-to-br from-rose-500/5 to-violet-500/5 p-10">
