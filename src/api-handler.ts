@@ -164,6 +164,7 @@ import { getPrivateReviewProvider } from "./private-review-provider";
 import { scanPhoto, policyForPhotoScan } from "./photo-moderation";
 import { scanMessage, scanMessageHeuristics, policyForMessageScan, messageFlagTypeForReportReason, userReportPolicyForClassification } from "./message-moderation";
 import { notifySafetyReviewer } from "./safety-review-notify";
+import { handleInboundEmail } from "./inbound-email";
 import { isSuspensionReason, isSuspensionDuration, isAppealStatus, canReviewAppeal, canOverrideSuspension, durationEnds, APPEAL_TEXT_MAX } from "./suspensions";
 import { hasPermission, isSuspended, isSuspensionException, privilegedMfaReady, PRIVILEGED_ROLES, type PrivilegedRole } from "./safety";
 import { registrationOptions, authenticationOptions, verifyRegistration, verifyAuthentication, MFA_CHALLENGE_TTL_MS } from "./webauthn-mfa";
@@ -341,7 +342,7 @@ function requireSubscription(user: User): Response | null {
 // Central fail-closed gate: every authenticated API action checks suspension here.
 async function enforceSafety(req: Request, pathname: string): Promise<Response | null> {
   if (isSuspensionException(pathname, req.method)) return null;
-  const publicPath = pathname === "/api/health" || pathname === "/api/ready" || pathname === "/api/csrf" || pathname === "/api/geo-check" || pathname === "/api/auth/signup" || pathname === "/api/auth/login" || pathname === "/api/auth/forgot-password" || pathname === "/api/auth/reset-password" || pathname === "/api/webhooks/stripe" || pathname === "/api/waitlist/join" || pathname === "/api/contact";
+  const publicPath = pathname === "/api/health" || pathname === "/api/ready" || pathname === "/api/csrf" || pathname === "/api/geo-check" || pathname === "/api/auth/signup" || pathname === "/api/auth/login" || pathname === "/api/auth/forgot-password" || pathname === "/api/auth/reset-password" || pathname === "/api/webhooks/stripe" || pathname === "/api/inbound-email" || pathname === "/api/waitlist/join" || pathname === "/api/contact";
   if (publicPath) return null;
   const user = await getCurrentUser(req);
   if (user && isSuspended(user)) return json({ error: "Account suspended", code: "ACCOUNT_SUSPENDED" }, 423);
@@ -3835,6 +3836,11 @@ export async function handleApiRoute(
   // Stripe webhook (unauthenticated — validated by Stripe signature, no CSRF)
   if (pathname === "/api/webhooks/stripe" && method === "POST") {
     return handleStripeWebhook(req);
+  }
+  // Resend inbound webhook for legal@gradedate.app (unauthenticated —
+  // validated by the INBOUND_EMAIL_SECRET check inside the handler)
+  if (pathname === "/api/inbound-email" && method === "POST") {
+    return handleInboundEmail(req);
   }
 
   // Push notifications — CSRF required for subscribe/unsubscribe

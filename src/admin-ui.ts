@@ -355,3 +355,20 @@ export function isRecentMfaError(error: unknown): boolean {
       (error as { message: string }).message.includes("reauthentication"))
   );
 }
+
+/**
+ * Admin console tabs, ordered as rendered. Hash deep links resolve against
+ * this list (e.g. "#messages" selects the Message flags tab).
+ */
+export const ADMIN_TAB_KEYS = ["photos", "messages", "reports", "appeals", "suspensions", "beta"] as const;
+export type AdminTabKey = (typeof ADMIN_TAB_KEYS)[number];
+
+/**
+ * Map a location hash to the tab it selects. Empty/invalid hashes resolve to
+ * the default "photos" tab; known hashes map 1:1 ("#messages" → "messages").
+ * Used for deep links such as the safety-reviewer notification emails.
+ */
+export function tabKeyFromHash(hash: string): AdminTabKey {
+  const key = hash.replace(/^#/, "").trim().toLowerCase();
+  return (ADMIN_TAB_KEYS as readonly string[]).includes(key) ? (key as AdminTabKey) : "photos";
+}

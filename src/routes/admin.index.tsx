@@ -34,6 +34,8 @@ import {
   SUSPENSION_DURATIONS,
   SUSPENSION_REASONS,
   MESSAGE_FLAG_ACTIONS,
+  tabKeyFromHash,
+  type AdminTabKey,
 } from "~/admin-ui";
 
 export const Route = createFileRoute("/admin/")({ component: AdminPage });
@@ -235,7 +237,7 @@ function MfaStepUp({ defaultEmail, reason, onDone }: { defaultEmail: string; rea
 
 /* ── Tabs ───────────────────────────────────────────────────────── */
 
-type TabKey = "photos" | "messages" | "reports" | "appeals" | "suspensions" | "beta";
+type TabKey = AdminTabKey;
 
 const TABS: { key: TabKey; label: string; ownerOnly?: boolean }[] = [
   { key: "photos", label: "Photo review" },
@@ -1034,7 +1036,24 @@ function BetaTab({ onMfaRequired }: { onMfaRequired: () => void }) {
 /* ── Page shell ─────────────────────────────────────────────────── */
 
 function AdminDashboard({ role, email }: { role: string; email: string }) {
-  const [tab, setTab] = useState<TabKey>("photos");
+  // Initial tab honors a deep-link hash (#messages etc.); empty/invalid → "photos".
+  const [tab, setTab] = useState<TabKey>(() =>
+    typeof window === "undefined" ? "photos" : tabKeyFromHash(window.location.hash),
+  );
+  // Keep the tab in sync when the hash changes (back/forward, manual edits).
+  useEffect(() => {
+    const onHashChange = () => setTab(tabKeyFromHash(window.location.hash));
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+  // Select a tab and mirror it into the URL hash so deep links work both ways.
+  const selectTab = (key: TabKey) => {
+    setTab(key);
+    setPendingSuspension(null);
+    if (typeof window !== "undefined" && window.location.hash !== `#${key}`) {
+      window.location.hash = key;
+    }
+  };
   const [mfaState, setMfaState] = useState<"probing" | "ok" | "required">("probing");
   const [mfaReason, setMfaReason] = useState("");
   const [probeError, setProbeError] = useState("");
@@ -1081,6 +1100,7 @@ function AdminDashboard({ role, email }: { role: string; email: string }) {
     // Swap to the suspensions tab with the prefilled form via a keyed banner.
     setPendingSuspension({ userId, reportId });
     setTab("suspensions");
+    if (typeof window !== "undefined") window.location.hash = "suspensions";
   };
   const [pendingSuspension, setPendingSuspension] = useState<{ userId: number; reportId: string } | null>(null);
 
@@ -1117,7 +1137,7 @@ function AdminDashboard({ role, email }: { role: string; email: string }) {
               <button
                 key={t.key}
                 type="button"
-                onClick={() => { setTab(t.key); setPendingSuspension(null); }}
+                onClick={() => selectTab(t.key)}
                 className={`shrink-0 rounded-full px-4 py-2 text-sm font-semibold transition ${current.key === t.key ? "bg-rose-600 text-white" : "border border-gray-700 text-gray-400 hover:text-white"}`}
               >
                 {t.label}

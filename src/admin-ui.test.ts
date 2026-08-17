@@ -16,6 +16,7 @@ import {
   reportStatusLabel,
   suspensionDurationLabel,
   suspensionReasonLabel,
+  tabKeyFromHash,
 } from "./admin-ui";
 
 describe("admin-ui role guard", () => {
@@ -115,5 +116,20 @@ describe("admin-ui error classification", () => {
   test("recognises the 5-minute reauthentication notice", () => {
     expect(isRecentMfaError({ message: "Recent MFA reauthentication required" })).toBe(true);
     expect(isRecentMfaError({ message: "Forbidden" })).toBe(false);
+  });
+});
+
+describe("admin-ui hash deep links", () => {
+  test("maps known hashes to their tab, unknown/empty to photos", () => {
+    expect(tabKeyFromHash("#messages")).toBe("messages");
+    expect(tabKeyFromHash("#suspensions")).toBe("suspensions");
+    expect(tabKeyFromHash("#beta")).toBe("beta");
+    expect(tabKeyFromHash("#photos")).toBe("photos");
+  });
+  test("defaults to the photos tab for empty/invalid hashes", () => {
+    expect(tabKeyFromHash("")).toBe("photos");
+    expect(tabKeyFromHash("#nonsense")).toBe("photos");
+    expect(tabKeyFromHash("messages")).toBe("messages");
+    expect(tabKeyFromHash("#MESSAGES")).toBe("messages");
   });
 });
