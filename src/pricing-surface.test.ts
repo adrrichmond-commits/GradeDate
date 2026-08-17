@@ -18,12 +18,19 @@ const read = (rel: string) => readFileSync(path.join(SRC, rel), "utf8");
 
 describe("canonical pricing surface (smoke-test findings)", () => {
   test("homepage offers only the monthly $5.99 Premium plan", () => {
+    // The Free/$5.99/Founders offer lives in the shared pricing sections
+    // module (single source for the homepage AND the /pricing route).
+    const sections = read("pricing-sections.tsx");
+    expect(sections).not.toMatch(/annual/i);
+    expect(sections).not.toContain("$49.99");
+    expect(sections).not.toContain("/year");
+    expect(sections).toContain("Subscribe — $5.99/month");
+    expect(sections).toContain("1 free regrade per week");
+    // The homepage renders those shared sections (no copied drift).
     const index = read("routes/index.tsx");
-    expect(index).not.toMatch(/annual/i);
-    expect(index).not.toContain("$49.99");
-    expect(index).not.toContain("/year");
-    expect(index).toContain("Subscribe — $5.99/month");
-    expect(index).toContain("1 free regrade per week");
+    expect(index).toContain('import { PricingSection, FoundersClubSection } from "~/pricing-sections";');
+    expect(index).toContain("<PricingSection />");
+    expect(index).toContain("<FoundersClubSection />");
   });
 
   test("subscribe page only accepts the monthly plan", () => {
@@ -94,12 +101,14 @@ describe("canonical pricing surface (smoke-test findings)", () => {
   });
 
   test("landing page gates paid CTAs for anonymous visitors", () => {
-    const index = read("routes/index.tsx");
-    expect(index).toContain('import { useAuth } from "~/auth-context";');
-    expect(index).toContain("const signedIn = !!user;");
-    // Anonymous path points at /signup, not the auth-required /subscribe page.
-    expect(index).toContain('to={signedIn ? "/subscribe" : "/signup"}');
-    expect(index).toContain("Create a free account");
+    // Paid-CTA gating lives in the shared pricing sections module (used by
+    // both the homepage and the /pricing route) — anonymous visitors are
+    // pointed at /signup, not the auth-required /subscribe page.
+    const sections = read("pricing-sections.tsx");
+    expect(sections).toContain('import { useAuth } from "~/auth-context";');
+    expect(sections).toContain("const signedIn = !!user;");
+    expect(sections).toContain('to={signedIn ? "/subscribe" : "/signup"}');
+    expect(sections).toContain("Create a free account");
   });
 
   test("honest premium CTA copy: real hooks, no false browsing claims", () => {
