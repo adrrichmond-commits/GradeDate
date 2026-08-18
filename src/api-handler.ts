@@ -2,6 +2,16 @@ import type { Server } from "bun";
 import { originFromUrl, resolveSiteUrl } from "./site-url";
 import { PREMIUM_PRICE_ID, hasPremiumEntitlement } from "./canonical-entitlements";
 import { deriveCoachingTips } from "./coaching";
+import {
+  FALLBACK_OVERALL,
+  LOCKED_SECTION_COPY,
+  PROFILE_REVIEW_SECTION_KEYS,
+  PROFILE_REVIEW_SECTIONS,
+  reviewProfile,
+  type ProfileReviewOutcome,
+  type ProfileReviewResult,
+  type ProfileSnapshot,
+} from "./profile-review";
 import { topPercentLabel } from "./percentile";
 import { validateUnmatchRequest } from "./unmatch-flow";
 import { parseExperimentEvent } from "./experiment";
@@ -95,6 +105,10 @@ import {
   calculateCompatibility,
   updateUserPercentile,
   updateLastFreeRegrade,
+  recordProfileReview,
+  hasUsedFreeReview,
+  premiumReviewsInWindow,
+  lastPremiumReviewAt,
   joinWaitlist,
   getUserBadges,
   getUserPersistedBadges,
@@ -1449,6 +1463,112 @@ async function handleGradePhotos(req: Request): Promise<Response> {
     percentile_city: percentileResult?.percentile_city ?? null,
     percentile_label: topLabel,
     coaching,
+  });
+}
+// ── Full-profile review (Premium) ─────────────────────────────
+const PROFILE_REVIEW_WINDOW_DAYS = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Injectable seam for tests (same pattern as setBetaInviteEmailSenderForTesting). */
+type ProfileReviewFn = (
+  profile: ProfileSnapshot,
+  env?: Record<string, string | undefined>,
+  fetcher?: typeof fetch,
+) => Promise<ProfileReviewOutcome>;
+let profileReviewFn: ProfileReviewFn = (profile, env, fetcher) => reviewProfile(profile, env, fetcher);
+export function setProfileReviewFnForTesting(fn: ProfileReviewFn): void {
+  profileReviewFn = fn;
+}
+
+/**
+ * Build the server-side profile snapshot from the DB row. The free taste
+ * reviews ONLY the bio: every other field is dropped from the snapshot so the
+ * taste can never leak full-review content, and the prompt (assembled from
+ * this snapshot) never contains client-supplied text.
+ */
+function buildProfileSnapshot(user: User, premium: boolean): ProfileSnapshot {
+  const snapshot: ProfileSnapshot = {
+    bio: user.bio ?? null,
+    hobbies: user.hobbies ?? null,
+    ideal_first_date: user.ideal_first_date ?? null,
+    green_flags: user.green_flags ?? null,
+    red_flags: user.red_flags ?? null,
+    obsessions: user.obsessions ?? null,
+    communication_style: user.communication_style ?? null,
+    lifestyle: user.lifestyle ?? null,
+    dating_goals: user.dating_goals ?? null,
+  };
+  if (!premium) {
+    for (const key of PROFILE_REVIEW_SECTION_KEYS) {
+      if (key !== "bio") (snapshot as Record<string, string | null>)[key] = null;
+    }
+  }
+  return snapshot;
+}
+
+/** Free taste: bio section real, every other section locked with honest copy. */
+function shapeFreeTaste(review: ProfileReviewResult): ProfileReviewResult {
+  const bio = review.sections.find((s) => s.key === "bio");
+  const sections = PROFILE_REVIEW_SECTIONS.map(([key, label]) => {
+    if (key === "bio") {
+      return { key, label, feedback: bio?.feedback ?? "Add a short bio so people know who you are before they like you." };
+    }
+    return { key, label, feedback: LOCKED_SECTION_COPY, locked: true };
+  });
+  return { overall: bio?.feedback ?? FALLBACK_OVERALL, sections, tips: review.tips };
+}
+
+async function handleProfileReview(req: Request): Promise<Response> {
+  const request_id = requestIdFrom(req);
+  const user = await getCurrentUser(req);
+  if (!user) return json({ error: "Unauthorized" }, 401);
+  const verificationErr = verificationGate(user);
+  if (verificationErr) return verificationErr;
+  const rateLimitResponse = checkRateLimit(req, "profile-review", { maxRequests: 3, windowMs: 15 * 60 * 1000 });
+  if (rateLimitResponse) return rateLimitResponse;
+  const hasActivePremium = hasPremiumEntitlement(user.subscription_status, user.subscription_expires_at, user.trial_ends_at);
+  logInfo(EVENTS.PROFILE_REVIEW_STARTED, { request_id, tier: hasActivePremium ? "premium" : "free" });
+  if (hasActivePremium) {
+    const inWindow = await premiumReviewsInWindow(user.id, PROFILE_REVIEW_WINDOW_DAYS);
+    if (inWindow > 0) {
+      const lastAt = await lastPremiumReviewAt(user.id);
+      const daysLeft = lastAt
+        ? Math.max(1, Math.ceil(PROFILE_REVIEW_WINDOW_DAYS - (Date.now() - new Date(lastAt).getTime()) / DAY_MS))
+        : PROFILE_REVIEW_WINDOW_DAYS;
+      logInfo(EVENTS.PROFILE_REVIEW_BLOCKED, { request_id, reason: "premium_window", days_remaining: daysLeft });
+      return json({
+        error: `Your full profile review is available once every 30 days. ${daysLeft} day(s) until your next review.`,
+        code: "REVIEW_WINDOW_ACTIVE",
+        days_remaining: daysLeft,
+        premiumRequired: false,
+      }, 402);
+    }
+  } else if (await hasUsedFreeReview(user.id)) {
+    logInfo(EVENTS.PROFILE_REVIEW_BLOCKED, { request_id, reason: "free_taste_used" });
+    // Shaped so the UI can render the Premium upsell (code + premiumRequired).
+    return json({
+      error: "Your free bio review is used. Unlock the full profile review with Premium to see feedback on every section.",
+      code: "FREE_REVIEW_USED",
+      premiumRequired: true,
+    }, 402);
+  }
+  const snapshot = buildProfileSnapshot(user, hasActivePremium);
+  const { review, method } = await profileReviewFn(snapshot, process.env, fetch);
+  await recordProfileReview({
+    userId: user.id,
+    tier: hasActivePremium ? "premium" : "free",
+    profileSnapshot: snapshot,
+    review,
+    method,
+  });
+  logInfo(EVENTS.PROFILE_REVIEW_COMPLETED, { request_id, tier: hasActivePremium ? "premium" : "free", method });
+  if (method === "mock") {
+    logInfo(EVENTS.PROFILE_REVIEW_FALLBACK, { request_id, tier: hasActivePremium ? "premium" : "free" });
+  }
+  return json({
+    review: hasActivePremium ? review : shapeFreeTaste(review),
+    method,
+    premiumRequired: false,
   });
 }
 
@@ -3733,6 +3853,12 @@ export async function handleApiRoute(
     const csrfErr = checkCsrf(req);
     if (csrfErr) return csrfErr;
     return handleGradePhotos(req);
+  }
+  // Full-profile review (Premium) — CSRF required
+  if (pathname === "/api/profile-review" && method === "POST") {
+    const csrfErr = checkCsrf(req);
+    if (csrfErr) return csrfErr;
+    return handleProfileReview(req);
   }
 
   // Experiment events — CSRF required; records only coarse allowlisted fields

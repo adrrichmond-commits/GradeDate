@@ -604,6 +604,20 @@ export async function initTables(): Promise<void> {
   try {
     await sql()`CREATE INDEX IF NOT EXISTS idx_user_badges_user_id ON user_badges(user_id)`;
   } catch { /* ignore */ }
+  await sql()`
+    CREATE TABLE IF NOT EXISTS profile_reviews (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      tier TEXT NOT NULL CHECK (tier IN ('free','premium')),
+      profile_snapshot JSONB NOT NULL,
+      review JSONB NOT NULL,
+      method TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `;
+  try {
+    await sql()`CREATE INDEX IF NOT EXISTS idx_profile_reviews_user_id ON profile_reviews(user_id)`;
+  } catch { /* ignore */ }
 }
 
 /**
@@ -1104,6 +1118,66 @@ export async function updateLastFreeRegrade(userId: number): Promise<void> {
     UPDATE users SET last_free_regrade_at = NOW()
     WHERE id = ${userId}
   `;
+}
+
+// ── Profile reviews (Premium Full-Profile Review) ─────────────
+export interface ProfileReviewRow {
+  id: number;
+  user_id: number;
+  tier: "free" | "premium";
+  profile_snapshot: unknown;
+  review: unknown;
+  method: string;
+  created_at: string;
+}
+
+export async function recordProfileReview(input: {
+  userId: number;
+  tier: "free" | "premium";
+  profileSnapshot: unknown;
+  review: unknown;
+  method: string;
+}): Promise<ProfileReviewRow> {
+  const rows = await sql()`
+    INSERT INTO profile_reviews (user_id, tier, profile_snapshot, review, method)
+    VALUES (${input.userId}, ${input.tier}, ${JSON.stringify(input.profileSnapshot)}::jsonb, ${JSON.stringify(input.review)}::jsonb, ${input.method})
+    RETURNING *
+  `;
+  return rows[0] as unknown as ProfileReviewRow;
+}
+
+/** True once the user has used their one-time free bio review (any tier). */
+export async function hasUsedFreeReview(userId: number): Promise<boolean> {
+  const rows = await sql()`
+    SELECT 1 FROM profile_reviews
+    WHERE user_id = ${userId} AND tier = 'free'
+    LIMIT 1
+  `;
+  return rows.length > 0;
+}
+
+/**
+ * Count premium full reviews in the rolling 30-day window (the window starts
+ * at the first premium review). >0 means the cap is hit.
+ */
+export async function premiumReviewsInWindow(userId: number, days = 30): Promise<number> {
+  const rows = await sql()`
+    SELECT COUNT(*) AS cnt FROM profile_reviews
+    WHERE user_id = ${userId} AND tier = 'premium'
+      AND created_at >= NOW() - make_interval(days => ${days})
+  `;
+  return rows.length > 0 ? Number((rows[0] as { cnt: number }).cnt) : 0;
+}
+
+/** Most recent premium review timestamp, for the days-remaining message. */
+export async function lastPremiumReviewAt(userId: number): Promise<string | null> {
+  const rows = await sql()`
+    SELECT created_at FROM profile_reviews
+    WHERE user_id = ${userId} AND tier = 'premium'
+    ORDER BY created_at DESC
+    LIMIT 1
+  `;
+  return rows.length > 0 ? String((rows[0] as { created_at: unknown }).created_at) : null;
 }
 
 // ── Session queries ───────────────────────────────────────────
