@@ -22,10 +22,9 @@ import {
 import { Analytics } from "@vercel/analytics/react";
 import appCss from "~/styles/app.css?url";
 
-// TODO(owner): replace with the real founder name once the owner supplies it
-// (see /about — audit B4). Rendered in the footer as "Built by {name}",
-// linking to /about. Deliberately a placeholder, never an invented name.
-const FOUNDER_CREDIT_NAME = "the founder";
+// Founder name as supplied by the owner (see /about — audit B4). Rendered in
+// the footer as "Built by {name}", linking to /about.
+const FOUNDER_CREDIT_NAME = "Austin";
 
 export const Route = createRootRoute({
   head: () => ({
@@ -646,8 +645,7 @@ function AppShell() {
               All rights reserved.
             </span>
             {/* Founder credit (audit B4): "Built by [Name]" → /about. Name is
-                a flagged placeholder (FOUNDER_CREDIT_NAME above) until the
-                owner supplies the real founder name. */}
+                the owner-supplied founder name (FOUNDER_CREDIT_NAME above). */}
             <span>
               Built by{" "}
               <Link
