@@ -22,7 +22,7 @@ describe("pricing route", () => {
     const sections = read("pricing-sections.tsx");
     expect(sections).toContain("export { PricingSection, FoundersClubSection };");
     expect(sections).toContain("function PricingSection()");
-    expect(sections).toContain("function FoundersClubSection()");
+    expect(sections).toContain("function FoundersClubSection(");
     // The real tiers render from the module: Free $0, Premium $5.99 monthly.
     expect(sections).toContain("$0");
     expect(sections).toContain("$5.99");
@@ -38,7 +38,7 @@ describe("pricing route", () => {
       'import { PricingSection, FoundersClubSection } from "~/pricing-sections";'
     );
     expect(route).toContain("<PricingSection />");
-    expect(route).toContain("<FoundersClubSection />");
+    expect(route).toContain("<FoundersClubSection");
     // Real rendered content — never a redirect or a hash-fragment hand-off.
     expect(route).not.toMatch(/redirect/i);
     expect(route).not.toContain('href="/#pricing"');
@@ -64,7 +64,7 @@ describe("pricing route", () => {
     expect(index).toContain("import { PricingSection, FoundersClubSection } from \"~/pricing-sections\";");
     expect(index).toContain('<section id="pricing" className="scroll-mt-24 px-4 py-24">');
     expect(index).toContain("<PricingSection />");
-    expect(index).toContain("<FoundersClubSection />");
+    expect(index).toContain("<FoundersClubSection");
     // The nav "Pricing" entry points at the real /pricing route (audit A1) —
     // the homepage section still renders the same shared sections.
     expect(read("nav-anchors.tsx")).toContain('{ label: "Pricing", sectionId: "pricing", href: "/pricing" }');

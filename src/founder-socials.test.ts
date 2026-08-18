@@ -5,13 +5,16 @@
  *     landing Founders section and the store card consume that same shape
  *     (the legacy /api/founder-spots-remaining endpoint stays as a thin alias
  *     of the same data, not a second implementation).
- *   - Low-count display: while founders_count < 100 the surfaces render
- *     "First X of 1,000 claimed" as clean text (no bar / tick marks); at ≥100
- *     the bar + honest "Only N spots left" appear; at 0 founders with people
- *     on the waitlist an honest waitlist line is shown.
- *   - The founder avatar grid is ILLUSTRATIVE: stylized inline-SVG faces with
- *     an "Illustrative examples" caption — never photorealistic, never photos
- *     of real (or fake-real) members.
+ *   - Live count display (A3): the Founders section always renders the real
+ *     claimed count as "X of 1,000 Founder spots claimed" with a filled
+ *     progress bar + 250/500/750 ticks (no count threshold); at 0 founders
+ *     with people on the waitlist an honest "N on the waitlist" line is
+ *     shown instead of a 0% bar. SSR seeds the count via route loaders so the
+ *     HTML never shows a "Loading..." placeholder.
+ *   - The admitted-illustration avatar grid was REMOVED (audit option B):
+ *     no stylized SVG "member" faces anywhere — the section leads with the
+ *     resolved live count bar. (Owner can add real blurred signup avatars
+ *     later if a community preview is wanted.)
  *   - Social links point at the real GradeDate profiles with accessible labels
  *     and rel="noopener noreferrer".
  */
@@ -49,20 +52,22 @@ describe("unified founder counter surface", () => {
     expect(store).toContain("waitlist_count");
   });
 
-  test("low-count 'First X of 1,000 claimed' branch exists on both surfaces", () => {
+  test("live count renders as 'X of 1,000 Founder spots claimed' (A3)", () => {
     const index = read("pricing-sections.tsx");
     const store = read("routes/store.tsx");
-    expect(index).toContain("First {founders_count.toLocaleString()}");
-    expect(index).toContain("of {total.toLocaleString()} claimed");
+    // Landing/pricing counter: big number + "of 1,000 Founder spots claimed".
+    expect(index).toContain("{founders_count.toLocaleString()}");
+    expect(index).toContain("of {total.toLocaleString()} Founder spots claimed");
+    // The store card keeps its own text form of the same live data.
     expect(store).toContain("First {foundersCount.founders_count} of {foundersCount.total} claimed");
   });
 
-  test("progress bar and 250/500/750 ticks only render once the count is ≥100", () => {
+  test("progress bar and 250/500/750 ticks always render (A3 — no count threshold)", () => {
     const index = read("pricing-sections.tsx");
-    // The tick marks are inside the ≥100 branch (after FOUNDER_BAR_THRESHOLD),
-    // and the low-count branch is a clean-text return with no bar markup.
-    expect(index).toContain("const FOUNDER_BAR_THRESHOLD = 100;");
-    expect(index).toContain("founders_count >= FOUNDER_BAR_THRESHOLD");
+    // The filled bar renders for every live count (even 1 of 1,000) — the old
+    // ≥100 threshold gate is gone, so the bar is the resolved, factual lead.
+    expect(index).not.toContain("FOUNDER_BAR_THRESHOLD");
+    expect(index).toContain("width: `${Math.max(1, (founders_count / total) * 100)}%`");
     expect(index).toContain("<span>250</span>");
     expect(index).toContain("<span>500</span>");
     expect(index).toContain("<span>750</span>");
@@ -84,30 +89,18 @@ describe("unified founder counter surface", () => {
   });
 });
 
-describe("founder avatar grid (illustrative examples only)", () => {
-  test("grid exists with 12–15 stylized inline-SVG faces and a caption", () => {
+describe("founder avatar grid (audit option B — removed)", () => {
+  test("the admitted-illustration avatar grid is gone from the Founders sections", () => {
     const index = read("pricing-sections.tsx");
-    expect(index).toContain("FOUNDER_AVATAR_STYLES");
-    expect(index).toContain("<FaceAvatar style={style} />");
-    expect(index).toContain("Illustrative examples");
-    // 12–15 entries in the avatar config array.
-    const entries = index.match(/skin: "#[0-9A-Fa-f]{6}"/g) ?? [];
-    expect(entries.length).toBeGreaterThanOrEqual(12);
-    expect(entries.length).toBeLessThanOrEqual(15);
-  });
-
-  test("avatars are stylized SVG faces, never photorealistic or photos", () => {
-    const index = read("pricing-sections.tsx");
-    // The avatar renderer is pure inline SVG (no <img>, no photo asset URLs).
-    const faceAvatarBody = index.slice(index.indexOf("function FaceAvatar"));
-    expect(faceAvatarBody).toContain("<svg");
-    expect(faceAvatarBody).not.toContain("<img");
-    expect(faceAvatarBody).not.toMatch(/\.(png|jpe?g|webp|avif)/i);
-    // No photo-style avatar assets are referenced anywhere in the section.
-    expect(index).not.toMatch(/\/avatars\//);
-    expect(index).not.toMatch(/founder-avatar.*\.(png|jpe?g|webp)/i);
-    // Caption is explicit that these are not real members.
-    expect(index).toContain("stylized illustrations, not photos of real members");
+    // Audit option B: no stylized-illustration avatar grid anywhere in the
+    // shared Founders section (homepage + /pricing). The section now leads
+    // with the resolved live count bar. The owner can supply real, blurred
+    // signup avatars later if a community preview is wanted.
+    expect(index).not.toContain("FOUNDER_AVATAR_STYLES");
+    expect(index).not.toContain("FaceAvatar");
+    expect(index).not.toContain("FounderHair");
+    expect(index).not.toContain("Illustrative examples");
+    expect(index).not.toContain("stylized illustrations, not photos of real members");
   });
 });
 

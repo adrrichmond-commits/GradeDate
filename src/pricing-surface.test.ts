@@ -30,7 +30,7 @@ describe("canonical pricing surface (smoke-test findings)", () => {
     const index = read("routes/index.tsx");
     expect(index).toContain('import { PricingSection, FoundersClubSection } from "~/pricing-sections";');
     expect(index).toContain("<PricingSection />");
-    expect(index).toContain("<FoundersClubSection />");
+    expect(index).toContain("<FoundersClubSection");
   });
 
   test("subscribe page only accepts the monthly plan", () => {
