@@ -17,6 +17,7 @@ import { XIcon, TikTokIcon } from "~/social-icons";
 import {
   STRUCTURED_DATA_LD_JSON,
   STRUCTURED_DATA_PATHS,
+  VS_SCIMATCH_LD_JSON,
 } from "~/structured-data";
 
 import { Analytics } from "@vercel/analytics/react";
@@ -663,6 +664,9 @@ function AppShell() {
             <Link to="/customers" className="transition hover:text-gray-300">
               Customers
             </Link>
+            <Link to="/vs/scimatch" className="transition hover:text-gray-300">
+              vs SciMatch
+            </Link>
             <Link to="/terms" className="transition hover:text-gray-300">
               Terms of Service
             </Link>
@@ -780,6 +784,7 @@ function RootDocument({ children }: { children: ReactNode }) {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const siteUrl = resolveCanonicalSiteUrl(pathname) ?? pathname;
   const carriesStructuredData = (STRUCTURED_DATA_PATHS as readonly string[]).includes(pathname);
+  const carriesVsSciMatchData = pathname === "/vs/scimatch";
   return (
     <html lang="en" className="dark">
       <head>
@@ -795,6 +800,19 @@ function RootDocument({ children }: { children: ReactNode }) {
             the same FAQ_ITEMS source (src/structured-data.ts). */}
         {carriesStructuredData &&
           STRUCTURED_DATA_LD_JSON.map((json) => (
+            <script
+              key={json["@type"]}
+              type="application/ld+json"
+              dangerouslySetInnerHTML={{ __html: JSON.stringify(json) }}
+            />
+          ))}
+        {/* JSON-LD for the /vs/scimatch comparison page (audit C1 / D5.3):
+            FAQPage + WebPage, emitted here only for that pathname — the same
+            per-pathname pattern as the homepage/pricing schemas above. The
+            FAQPage mirrors the visible FAQ on the page, which renders from the
+            same VS_SCIMATCH_FAQ_ITEMS source (src/structured-data.ts). */}
+        {carriesVsSciMatchData &&
+          VS_SCIMATCH_LD_JSON.map((json) => (
             <script
               key={json["@type"]}
               type="application/ld+json"
