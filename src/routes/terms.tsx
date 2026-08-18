@@ -1,7 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { staticPageHead } from "~/route-heads";
 
 export const Route = createFileRoute("/terms")({
   component: TermsOfService,
+  head: () => staticPageHead("GradeDate — Terms of Service", "The terms that govern your use of the GradeDate service and account."),
 });
 
 function TermsOfService() {

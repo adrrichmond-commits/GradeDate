@@ -1,7 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { staticPageHead } from "~/route-heads";
 
 export const Route = createFileRoute("/dmca")({
   component: DMCAPolicy,
+  head: () => staticPageHead("GradeDate — DMCA Policy", "How to submit a copyright takedown notice to GradeDate under the DMCA."),
 });
 
 function DMCAPolicy() {

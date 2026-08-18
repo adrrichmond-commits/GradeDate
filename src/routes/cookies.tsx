@@ -1,7 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { staticPageHead } from "~/route-heads";
 
 export const Route = createFileRoute("/cookies")({
   component: CookiePolicy,
+  head: () => staticPageHead("GradeDate — Cookie Policy", "How GradeDate uses cookies, what they're for, and how to manage them."),
 });
 
 function CookiePolicy() {

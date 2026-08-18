@@ -742,24 +742,21 @@ function AppShell() {
 }
 
 function RootDocument({ children }: { children: ReactNode }) {
-  // Canonical/OG URLs are resolved from the request/runtime origin (never a
-  // hardcoded domain) so they match whatever environment serves the page:
-  // SSR request origin during server render, window.location on the client.
+  // The root route's head() (above) supplies the default title/description/OG/
+  // Twitter metadata plus every link (app CSS, favicon, fonts); TanStack merges
+  // route heads child-first, so any page with its own head() (e.g. /pricing and
+  // the legal pages) overrides the home defaults and exactly one <title> is
+  // emitted. Only the per-pathname canonical and og:url stay here, resolved
+  // from the request/runtime origin (never a hardcoded domain) so they match
+  // whatever environment serves the page: SSR request origin during server
+  // render, window.location on the client.
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const siteUrl = resolveCanonicalSiteUrl(pathname) ?? pathname;
   return (
     <html lang="en" className="dark">
       <head>
         <HeadContent />
-        <title>GradeDate — Austin, TX Goes First. Join the Waitlist.</title>
-        <meta name="description" content="Your dating profile, graded by AI. Honest photo feedback, your city percentile, and matches with similar people nearby. Austin, TX goes first — join the waitlist free." />
-        <meta property="og:title" content="GradeDate — Austin, TX Goes First. Join the Waitlist." />
-        <meta property="og:description" content="Your dating profile, graded by AI. Honest photo feedback, your city percentile, and matches with similar people nearby. Austin, TX goes first — join the waitlist free." />
-        <meta property="og:type" content="website" />
         <meta property="og:url" content={siteUrl} />
-        <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content="GradeDate — Austin, TX Goes First. Join the Waitlist." />
-        <meta name="twitter:description" content="Your dating profile, graded by AI. Honest photo feedback, your city percentile, and matches with similar people nearby. Austin, TX goes first — join the waitlist free." />
         <link rel="canonical" href={siteUrl} />
       </head>
       <body class="overflow-x-hidden w-full">
