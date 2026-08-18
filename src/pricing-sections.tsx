@@ -591,9 +591,9 @@ function FoundersClubSection() {
         {/* CTA — changes if spots are gone. Paid CTAs are auth-gated:
             anonymous visitors go to /signup (checkout needs an account).
             Owner CTA-hierarchy (D2.2): for anonymous pre-launch visitors the
-            Founders CTA is TERTIARY (muted/quiet); signed-in beta users keep
-            the loud amber gradient button (their subscribe path is real
-            revenue). */}
+            Founders CTA is TERTIARY (muted text link — same quiet style as the
+            pricing cards); signed-in beta users keep the loud amber gradient
+            button (their subscribe path is real revenue). */}
         {spotsGone ? (
           <div className="flex flex-col items-center gap-3">
             <div className="rounded-full border border-gray-700 bg-gray-800/50 px-6 py-4 text-gray-400">
@@ -636,7 +636,7 @@ function FoundersClubSection() {
             ) : (
               <Link
                 to="/signup"
-                className="inline-flex items-center gap-2 rounded-full border border-white/10 px-6 py-2.5 text-sm font-medium text-gray-500 transition hover:border-gray-600 hover:text-gray-300"
+                className="inline-flex items-center justify-center text-sm font-medium text-gray-500 underline-offset-4 transition hover:text-gray-300 hover:underline"
               >
                 Join the Founders Club
               </Link>
