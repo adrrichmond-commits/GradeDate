@@ -161,7 +161,7 @@ import { resolveOwnedPhotoPaths, validateAnonymousGradePath } from "./photo-acce
 import { canReviewPhoto, canTransitionQuarantine, isQuarantineStatus, privateReviewStorageReady, redactPhotoCase,  canUseOwnerAction, canTransition, isReportStatus, isReportPriority, isReportReason, REPORT_DETAILS_MAX, REPORT_RATE_LIMIT } from "./report-queue";
 import { issueReviewAccess, readReviewPhoto, quarantinePhoto, privateReviewReady, ReviewAccessDeniedError } from "./private-review-storage";
 import { getPrivateReviewProvider } from "./private-review-provider";
-import { scanPhoto, policyForPhotoScan } from "./photo-moderation";
+import { scanPhoto as defaultScanPhoto, policyForPhotoScan, type PhotoScanResult } from "./photo-moderation";
 import { scanMessage, scanMessageHeuristics, policyForMessageScan, messageFlagTypeForReportReason, userReportPolicyForClassification } from "./message-moderation";
 import { notifySafetyReviewer } from "./safety-review-notify";
 import { handleInboundEmail } from "./inbound-email";
@@ -556,25 +556,72 @@ async function handleMe(req: Request): Promise<Response> {
   return response;
 }
 
+/**
+ * Photo-scanner seam (test-only; same injectable pattern as
+ * setBetaInviteEmailSenderForTesting). Defaults to the real provider-backed
+ * scanPhoto. Tests inject a deterministic scanner so the durable upload-path
+ * moderation chain can be exercised without network calls (or interference
+ * from other test files' fetch stubs).
+ */
+let photoScanner: (bytes: Uint8Array, contentType: string) => Promise<PhotoScanResult> = (bytes, contentType) => defaultScanPhoto(bytes, contentType);
+export function setPhotoScannerForTesting(fn: ((bytes: Uint8Array, contentType: string) => Promise<PhotoScanResult>) | null): void {
+  photoScanner = fn ?? ((bytes, contentType) => defaultScanPhoto(bytes, contentType));
+}
+
+/**
+ * Run the post-upload moderation chain for one authenticated photo:
+ * scan -> flag -> case -> quarantine -> transition.
+ *
+ * DURABILITY CONTRACT: handleUpload awaits this BEFORE sending the upload
+ * response, so a serverless function freeze (which can cut fire-and-forget
+ * work short right after a response) can never leave a flagged photo with no
+ * durable moderation record. Prod E2E (2026-08-17) observed exactly that:
+ * 2 of 4 scans completed and one case was stuck in `pending` with no
+ * `private_object_key` — unopenable in the review queue and invisible to the
+ * retention purge (which only swept quarantined-with-key cases).
+ *
+ * Failure containment (fail-closed, never throws for provider/store faults):
+ *  - provider scan failures classify as "error" and are flagged for review;
+ *  - a private-store quarantine failure keeps the durable pending case row
+ *    (the retention purge deletes stuck pending-without-key automated cases
+ *    after the 30-day retention window — see retention-cleanup.ts);
+ *  - the suspension write for zero-tolerance content is best-effort (the
+ *    quarantine already hides the content; the reviewer can suspend from the
+ *    console);
+ *  - the owner notification email is fire-and-forget and never blocks uploads.
+ */
 async function moderateUploadedPhoto(photoId: number, userId: number, photoPath: string, bytes: ArrayBuffer, contentType: string): Promise<void> {
-  const result = await scanPhoto(new Uint8Array(bytes), contentType);
+  const result = await photoScanner(new Uint8Array(bytes), contentType);
   const policy = policyForPhotoScan(result);
   if (!policy.flag) return;
   await upsertModerationFlag(photoId, userId, result.classification === "error" ? "error" : result.classification, result.confidence, result.providerRef, "new");
   const existingCase = await getPhotoModerationCaseForPhoto(photoId, userId);
   const caseRecord = existingCase ?? await createPhotoModerationCase(photoId, userId, "automated_photo_scan", result.classification, result.classification);
-  if (caseRecord) {
-    // Owner safety-reviewer notification — fire and forget, never fails uploads.
-    void notifySafetyReviewer({ kind: "photo", caseId: String(caseRecord.id), flagType: result.classification, source: "automated_photo_scan", confidence: result.confidence, reason: result.classification }).catch(() => {});
-  }
-  if (!caseRecord || !policy.quarantine || existingCase?.private_object_key) return;
+  if (!caseRecord) return;
+  // Owner safety-reviewer notification — fire and forget, never fails uploads.
+  void notifySafetyReviewer({ kind: "photo", caseId: String(caseRecord.id), flagType: result.classification, source: "automated_photo_scan", confidence: result.confidence, reason: result.classification }).catch(() => {});
+  if (!policy.quarantine || existingCase?.private_object_key) return;
   const provider = getPrivateReviewProvider();
   if (!provider || !privateReviewReady()) return;
   const objectKey = `quarantine/${caseRecord.id}/${photoId}`;
-  await quarantinePhoto(provider, objectKey, new Uint8Array(bytes), contentType);
+  try {
+    await quarantinePhoto(provider, objectKey, new Uint8Array(bytes), contentType);
+  } catch (error) {
+    // Durable fail-closed: the pending case row (written above) survives so the
+    // review queue still shows the flag; the retention purge removes
+    // pending-without-key automated cases after the 30-day retention window.
+    logWarn("photo_moderation.quarantine_failed", { caseId: String(caseRecord.id), error: error instanceof Error ? error.message : "unknown" });
+    return;
+  }
   await attachPrivatePhotoObject(String(caseRecord.id), objectKey, contentType);
   await transitionPhotoModerationCase(String(caseRecord.id), "quarantined", userId, result.classification);
-  if (policy.lockAccount) await createSuspension({ userId, reason: "underage", duration: "indefinite", endsAt: null, actorUserId: null, sourceCaseId: String(caseRecord.id) });
+  if (policy.lockAccount) {
+    try {
+      await createSuspension({ userId, reason: "underage", duration: "indefinite", endsAt: null, actorUserId: null, sourceCaseId: String(caseRecord.id) });
+    } catch (error) {
+      logWarn("photo_moderation.suspension_failed", { caseId: String(caseRecord.id), error: error instanceof Error ? error.message : "unknown" });
+    }
+  }
   void photoPath;
 }
 
@@ -643,6 +690,10 @@ async function handleUpload(req: Request): Promise<Response> {
     return json({ error: "Maximum 6 photos allowed. Please delete one first." }, 400);
   }
   const uploadResults: { id?: number; photo_path: string; sort_order?: number; is_primary?: boolean }[] = [];
+  // Collected per-photo moderation chains, awaited below as a durability
+  // barrier: the upload response is sent only after every photo's moderation
+  // outcome (or durable pending case row) is persisted. See moderateUploadedPhoto.
+  const moderationTasks: Promise<void>[] = [];
 
   for (const [index, file] of files.entries()) {
     const ext = file.name.split(".").pop() || "jpg";
@@ -674,8 +725,18 @@ async function handleUpload(req: Request): Promise<Response> {
       }
 
       uploadResults.push({ id: photo.id, photo_path: photo.photo_path, sort_order: photo.sort_order, is_primary: isPrimary });
-      // Scanner is deliberately asynchronous: provider failures never fail uploads.
-      void moderateUploadedPhoto(photo.id, user.id, storedPath, buffer, file.type).catch((error) => logError(EVENTS.PHOTO_UPLOAD_FAILED, { request_id, reason: "moderation_failed", error: error instanceof Error ? error.message : "unknown" }));
+      // Moderation must be DURABLE before the upload response is sent: a
+      // serverless function can be frozen right after responding, which cut the
+      // old fire-and-forget scan short in prod E2E (2 of 4 scans completed; one
+      // case stuck in pending with no private_object_key). The chain runs
+      // concurrently across the batch and is awaited before the response;
+      // provider failures still never fail uploads (they classify as "error"
+      // and land in the human review queue).
+      moderationTasks.push(
+        moderateUploadedPhoto(photo.id, user.id, storedPath, buffer, file.type).catch((error) =>
+          logError(EVENTS.PHOTO_UPLOAD_FAILED, { request_id, reason: "moderation_failed", error: error instanceof Error ? error.message : "unknown" }),
+        ),
+      );
     } else {
       // Anonymous free preview — save to temp/blobs
       const anonId = crypto.randomUUID();
@@ -689,6 +750,9 @@ async function handleUpload(req: Request): Promise<Response> {
   }
 
   if (user) {
+    // Durability barrier: every photo's moderation outcome (or durable pending
+    // case row) is persisted before the client is told the upload succeeded.
+    await Promise.all(moderationTasks);
     logInfo(EVENTS.UPLOAD_COMPLETED, { user_type: "authenticated", file_count: uploadResults.length, user_id: user.id });
     logInfo(EVENTS.PHOTO_UPLOAD_COMPLETED, { request_id, user_type: "authenticated", file_count: uploadResults.length });
     return json({ photos: uploadResults });

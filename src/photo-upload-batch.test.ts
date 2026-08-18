@@ -1,5 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { readFileSync } from "node:fs";
+import { InMemoryPrivateReviewProvider, configurePrivateReviewProvider } from "./private-review-provider";
+import type { PrivateReviewProvider } from "./private-review-storage";
+import type { PhotoScanResult } from "./photo-moderation";
 
 /**
  * Multi-file photo upload correctness (QA session 5b4848bb, step 7 findings):
@@ -40,6 +43,9 @@ const usersById = new Map<number, Record<string, unknown>>();
 const sessions = new Map<string, { id: string; user_id: number; revoked_at: string | null }>();
 let photoSeq = 1;
 let addPhotoCalls: Array<{ sortOrder: number; path: string }> = [];
+// Durable-moderation harness: records the moderation DB calls made by the
+// upload path (see the "durable post-upload photo moderation" describe below).
+let moderationCalls: Array<{ fn: string; args: unknown[] }> = [];
 let profileUpdates: Array<{ fields: Record<string, unknown> }> = [];
 
 function baseUser(photoPath: string | null): Record<string, unknown> {
@@ -108,6 +114,7 @@ function resetState(): void {
   photoSeq = 1;
   addPhotoCalls = [];
   profileUpdates = [];
+  moderationCalls = [];
   sessions.set("s_up", { id: "s_up", user_id: USER_ID, revoked_at: null });
 }
 
@@ -147,6 +154,28 @@ function makeDbMock(): Record<string, unknown> {
       if (u && typeof fields.photo_path === "string") u.photo_path = fields.photo_path;
       void userId;
     },
+    // ── Durable-moderation harness (recording) ─────────────────────────────
+    upsertModerationFlag: async (photoId: number, userId: number, flagType: string, confidence: number | null, providerRef: string | null, status = "new") => {
+      moderationCalls.push({ fn: "upsertModerationFlag", args: [photoId, userId, flagType, confidence, providerRef, status] });
+      return { id: "flag-1", photo_id: photoId, user_id: userId, flag_type: flagType, confidence, provider_ref: providerRef, status, created_at: "2026-08-01T00:00:00Z" };
+    },
+    getPhotoModerationCaseForPhoto: async () => null,
+    createPhotoModerationCase: async (photoId: number, userId: number, source: string, result = "unknown", reason?: string | null) => {
+      moderationCalls.push({ fn: "createPhotoModerationCase", args: [photoId, userId, source, result, reason ?? null] });
+      return { id: `case-${photoId}`, photo_id: photoId, user_id: userId, status: "pending", source, result, reason: reason ?? result, private_object_key: null, retention_until: "2026-09-01T00:00:00Z" };
+    },
+    attachPrivatePhotoObject: async (caseId: string, objectKey: string, contentType: string) => {
+      moderationCalls.push({ fn: "attachPrivatePhotoObject", args: [caseId, objectKey, contentType] });
+      return { id: caseId };
+    },
+    transitionPhotoModerationCase: async (id: string, status: string, actorId: number, result?: string) => {
+      moderationCalls.push({ fn: "transitionPhotoModerationCase", args: [id, status, actorId, result ?? null] });
+      return { id, status, result: result ?? null };
+    },
+    createSuspension: async () => {
+      moderationCalls.push({ fn: "createSuspension", args: [] });
+      return { id: "susp-1" };
+    },
   };
 }
 mock.module("../src/db.ts", () => makeDbMock());
@@ -170,10 +199,13 @@ mock.module("../src/blob-store.ts", () => ({
 
 const ORIGINAL_STRIPE_KEY = process.env.STRIPE_SECRET_KEY;
 let handleApiRoute: (req: Request) => Promise<Response | null>;
+// Loaded dynamically AFTER mock.module("../src/db.ts") registers, so api-handler
+// binds to the mocked db module (same convention as handleApiRoute).
+let setPhotoScannerForTesting: (fn: ((bytes: Uint8Array, contentType: string) => Promise<PhotoScanResult>) | null) => void;
 
 beforeAll(async () => {
   process.env.STRIPE_SECRET_KEY = "sk_test_mock";
-  ({ handleApiRoute } = await import("./api-handler"));
+  ({ handleApiRoute, setPhotoScannerForTesting } = await import("./api-handler"));
   resetState();
 });
 afterAll(() => {
@@ -333,5 +365,107 @@ describe("upload batch source wiring", () => {
     expect(apiSource).toContain("const MAX_FILE_SIZE = 4 * 1024 * 1024;");
     expect(apiSource).toContain('"Photo must be under 4 MB"');
     expect(apiSource).not.toContain("Photo must be under 10 MB");
+  });
+});
+describe("durable post-upload photo moderation (serverless-freeze fix)", () => {
+  // Proves the upload response is only sent AFTER the moderation chain
+  // (scan -> flag -> case -> quarantine attach -> quarantined transition) has
+  // durably persisted, so a serverless function freeze can no longer strand a
+  // flagged photo in pending-without-key limbo. A scanner seam replaces the
+  // provider round-trip (the seam is the repo's injectable-testing convention;
+  // a real HTTP scan would fight other test files' global fetch stubs), and
+  // the in-memory private review store stands in for the private blob store.
+  const ENV_KEYS = ["GRADEDATE_PRIVATE_REVIEW_STORAGE", "GRADEDATE_REVIEW_SIGNING_KEY", "PRIVATE_BLOB_READ_WRITE_TOKEN"];
+  const savedEnv: Record<string, string | undefined> = {};
+  let scanClassification: PhotoScanResult = { classification: "nsfw", confidence: 0.9, providerRef: "test-scan" };
+  const memProvider = new InMemoryPrivateReviewProvider();
+
+  beforeAll(() => {
+    for (const key of ENV_KEYS) savedEnv[key] = process.env[key];
+    process.env.GRADEDATE_PRIVATE_REVIEW_STORAGE = "true";
+    process.env.GRADEDATE_REVIEW_SIGNING_KEY = "s".repeat(64);
+    process.env.PRIVATE_BLOB_READ_WRITE_TOKEN = "t";
+    setPhotoScannerForTesting(async () => scanClassification);
+    configurePrivateReviewProvider(memProvider);
+  });
+  afterAll(() => {
+    setPhotoScannerForTesting(null);
+    for (const key of ENV_KEYS) {
+      if (savedEnv[key] === undefined) delete process.env[key];
+      else process.env[key] = savedEnv[key];
+    }
+    configurePrivateReviewProvider(null);
+  });
+
+  beforeEach(() => {
+    resetState();
+    moderationCalls = [];
+    scanClassification = { classification: "nsfw", confidence: 0.9, providerRef: "test-scan" };
+    configurePrivateReviewProvider(memProvider);
+  });
+
+  test("upload responds only after the moderation chain is durably persisted", async () => {
+    seedPhotos(0);
+    const res = await handleApiRoute(uploadRequest([makeImageFile(1024, "flag.jpg")]));
+    expect(res!.status).toBe(200);
+    // The full chain completed BEFORE the response: flag -> case -> quarantine
+    // attach -> quarantined transition, in order, with no fire-and-forget gap.
+    const order = moderationCalls.map((c) => c.fn);
+    expect(order).toEqual([
+      "upsertModerationFlag",
+      "createPhotoModerationCase",
+      "attachPrivatePhotoObject",
+      "transitionPhotoModerationCase",
+    ]);
+    const created = moderationCalls.find((c) => c.fn === "createPhotoModerationCase")!;
+    expect(created.args[2]).toBe("automated_photo_scan");
+    const attach = moderationCalls.find((c) => c.fn === "attachPrivatePhotoObject")!;
+    // The quarantine object key is case-bound and the bytes really landed in the
+    // private review store (in-memory provider), not just the DB columns.
+    expect(attach.args[0]).toBe(`case-${created.args[0]}`);
+    expect(String(attach.args[1])).toBe(`quarantine/case-${created.args[0]}/${created.args[0]}`);
+    expect(await memProvider.get(String(attach.args[1]))).toBeDefined();
+    const transition = moderationCalls.find((c) => c.fn === "transitionPhotoModerationCase")!;
+    expect(transition.args[1]).toBe("quarantined");
+    // nsfw flags quarantine but never auto-suspend.
+    expect(moderationCalls.some((c) => c.fn === "createSuspension")).toBe(false);
+  });
+
+  test("a zero-tolerance scan quarantines AND suspends; the upload still succeeds", async () => {
+    seedPhotos(0);
+    scanClassification = { classification: "csam_or_underage", confidence: 0.99, providerRef: "test-scan" };
+    const res = await handleApiRoute(uploadRequest([makeImageFile(1024, "csam.jpg")]));
+    expect(res!.status).toBe(200);
+    expect(moderationCalls.map((c) => c.fn)).toEqual([
+      "upsertModerationFlag",
+      "createPhotoModerationCase",
+      "attachPrivatePhotoObject",
+      "transitionPhotoModerationCase",
+      "createSuspension",
+    ]);
+  });
+
+  test("a private-store quarantine failure keeps the durable pending case and still returns 200", async () => {
+    seedPhotos(0);
+    const throwingProvider: PrivateReviewProvider = {
+      put: async () => { throw new Error("store down"); },
+      get: async () => new Uint8Array(),
+      delete: async () => {},
+    };
+    configurePrivateReviewProvider(throwingProvider);
+    const res = await handleApiRoute(uploadRequest([makeImageFile(1024, "store-down.jpg")]));
+    expect(res!.status).toBe(200);
+    // The durable job row (flag + case) is written; quarantine attach/transition
+    // did not run, and the pending-without-key row is purge-eligible after the
+    // 30-day retention window (see retention-cleanup.ts).
+    expect(moderationCalls.map((c) => c.fn)).toEqual(["upsertModerationFlag", "createPhotoModerationCase"]);
+  });
+
+  test("clean scans create no moderation state and the upload is not slowed by quarantine", async () => {
+    seedPhotos(0);
+    scanClassification = { classification: "clean", confidence: 1, providerRef: null };
+    const res = await handleApiRoute(uploadRequest([makeImageFile(1024, "clean.jpg")]));
+    expect(res!.status).toBe(200);
+    expect(moderationCalls).toEqual([]);
   });
 });

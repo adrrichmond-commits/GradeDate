@@ -37,6 +37,16 @@ const cutoff = (now: Date, amount: number, unit: "months" | "days") => { const d
  *    they can never be reviewed, so keeping them would orphan the blob beyond
  *    policy. Legal-hold cases are NEVER purged early, and unresolved cases
  *    with a live user stay in the queue for the reviewer.
+ * 4. STUCK automated-scan jobs (`source = 'automated_photo_scan'`, status
+ *    pending/quarantined, `private_object_key IS NULL`, past `retention_until`):
+ *    these rows were created by the upload moderation chain but never got a
+ *    private object attached (a serverless freeze cut the scan short, or the
+ *    private store was unavailable). They can never be reviewed — the review
+ *    access routes require a private_object_key — so after the 30-day window
+ *    they are deleted outright (there is no blob to purge; the
+ *    `moderation_flags` row still records the flag). Other no-key rows
+ *    (user_report / underage_report sources) are deliberate manual-review
+ *    items and stay in the queue. Legal holds are never purged.
  *
  * The optional provider is injected by the cron runtime; when it is omitted
  * the photo sweep is skipped (fail-closed: without the private store there is
@@ -60,10 +70,13 @@ export async function runRetentionCleanup(db: RetentionDb, now = new Date(), pro
   if (provider) {
     const cases = await db.query(
       `SELECT id, private_object_key FROM photo_moderation_cases
-       WHERE private_object_key IS NOT NULL AND private_deleted_at IS NULL AND legal_hold = false
+       WHERE private_deleted_at IS NULL AND legal_hold = false
          AND (
-           (status IN ('approved','removed','restored') AND retention_until <= $1)
-           OR (status IN ('pending','quarantined') AND user_id IS NULL AND created_at <= $2)
+           (private_object_key IS NOT NULL AND (
+             (status IN ('approved','removed','restored') AND retention_until <= $1)
+             OR (status IN ('pending','quarantined') AND user_id IS NULL AND created_at <= $2)
+           ))
+           OR (private_object_key IS NULL AND status IN ('pending','quarantined') AND source = 'automated_photo_scan' AND retention_until <= $1)
          )`,
       [photoCutoff, staleUnresolvedCutoff],
     );
@@ -71,6 +84,20 @@ export async function runRetentionCleanup(db: RetentionDb, now = new Date(), pro
       ? cases as unknown as Array<{ id: string; private_object_key: string }>
       : ((cases as unknown as { rows?: Array<{ id: string; private_object_key: string }> }).rows ?? []);
     for (const row of rows) {
+      if (!row.private_object_key) {
+        // Stuck automated-scan job with no private object ever attached: there
+        // is no blob to delete, so the row itself is removed (the review queue
+        // must not show an unopenable stale case forever; the moderation_flags
+        // row still records the flag). Legal holds were excluded above.
+        try {
+          await db.query("DELETE FROM photo_moderation_cases WHERE id=$1 AND legal_hold=false", [row.id]);
+          photoCount++;
+        } catch (error) {
+          // Keep the row eligible for the next run; logging is intentionally key-free.
+          console.error("private_photo_retention_delete_failed", { caseId: row.id, error: error instanceof Error ? error.message : String(error) });
+        }
+        continue;
+      }
       try {
         await provider.delete(row.private_object_key);
         await db.query("UPDATE photo_moderation_cases SET private_deleted_at=NOW() WHERE id=$1 AND private_deleted_at IS NULL", [row.id]);
