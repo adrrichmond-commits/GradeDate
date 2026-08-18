@@ -196,6 +196,23 @@ describe("canonical pricing surface (smoke-test findings)", () => {
     expect(grade).toContain("AI-assisted grade");
   });
 
+  test("hero eyebrow lands the out-of-your-league pain first and keeps the swipe/dead-end hook (audit A4)", () => {
+    const index = read("routes/index.tsx");
+    // The ICP pain opens the hook — people out of your league / invisible.
+    expect(index).toMatch(/No more matching with people out of your league[\s\S]{0,120}invisible to everyone\./);
+    // …and the original swipe-fatigue / dead-end-chat language is kept.
+    expect(index).toMatch(/Burned out on swiping for one dead-end[\s\S]{0,40}chat\?/);
+    expect(index).toContain("Find out which photos actually work");
+    expect(index).toMatch(/match on your[\s\S]{0,40}level\./);
+  });
+
+  test("footer carries an honest 'not for' line (audit A6)", () => {
+    const root = read("routes/__root.tsx");
+    expect(root).toMatch(
+      /isn&apos;t for anonymous, photo-less hookups — profiles,[\s\S]{0,80}photos, and real conversations only\./
+    );
+  });
+
   test("photo count is 5 everywhere on the profile page", () => {
     const profile = read("routes/profile.index.tsx");
     expect(profile).toContain("const totalSlots = 5;");

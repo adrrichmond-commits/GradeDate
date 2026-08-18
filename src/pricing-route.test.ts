@@ -65,7 +65,8 @@ describe("pricing route", () => {
     expect(index).toContain('<section id="pricing" className="scroll-mt-24 px-4 py-24">');
     expect(index).toContain("<PricingSection />");
     expect(index).toContain("<FoundersClubSection />");
-    // The nav "Pricing" anchor stays a homepage fragment (D2.4) — untouched.
-    expect(read("nav-anchors.tsx")).toContain('{ label: "Pricing", sectionId: "pricing" }');
+    // The nav "Pricing" entry points at the real /pricing route (audit A1) —
+    // the homepage section still renders the same shared sections.
+    expect(read("nav-anchors.tsx")).toContain('{ label: "Pricing", sectionId: "pricing", href: "/pricing" }');
   });
 });

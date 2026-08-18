@@ -557,8 +557,12 @@ function AppShell() {
             {HOME_ANCHORS.map((a) => (
               <a
                 key={a.sectionId}
-                href={homeAnchorHref(a.sectionId)}
-                onClick={(e) => { e.preventDefault(); scrollToSection(a.sectionId); }}
+                href={homeAnchorHref(a)}
+                onClick={(e) => {
+                  if (a.href) { setMenuOpen(false); return; } // real route → let the browser navigate
+                  e.preventDefault();
+                  scrollToSection(a.sectionId);
+                }}
                 className="rounded-lg px-4 py-3 text-sm text-gray-300 transition hover:bg-gray-800 hover:text-white"
               >
                 {a.label}
@@ -694,6 +698,13 @@ function AppShell() {
             </a>
           </div>
         </div>
+        {/* Honest "not for" line (audit A6) — true to the real product:
+            verified profiles, photos, and conversations; no anonymous
+            photo-less hookups. */}
+        <p className="mx-auto mt-5 max-w-6xl text-center text-xs leading-relaxed text-gray-600">
+          GradeDate isn&apos;t for anonymous, photo-less hookups — profiles,
+          photos, and real conversations only.
+        </p>
       </footer>
 
       {/* Cookie Consent Banner */}

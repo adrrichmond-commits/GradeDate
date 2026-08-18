@@ -208,10 +208,12 @@ function Home() {
         />
 
         <div className="relative z-10 mx-auto max-w-3xl text-center">
-          {/* Pain-first hook — swipe fatigue & dead-end chats (D1.2/D1.6) */}
+          {/* Pain-first hook — out-of-your-league pain + swipe fatigue & dead-end chats (A4) */}
           <p className="mx-auto mb-6 max-w-2xl text-lg font-medium text-gray-300 sm:text-xl">
-            Burned out on swiping for one dead-end chat? Find out which photos
-            actually work — and match on your level.
+            No more matching with people out of your league — or being
+            invisible to everyone. Burned out on swiping for one dead-end
+            chat? Find out which photos actually work — and match on your
+            level.
           </p>
           {/* Austin-first badge */}
           <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-rose-500/25 bg-rose-500/10 px-4 py-1.5">
