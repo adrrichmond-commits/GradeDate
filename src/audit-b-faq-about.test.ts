@@ -18,6 +18,10 @@ const read = (rel: string) => readFileSync(path.join(SRC, rel), "utf8");
 
 describe("homepage FAQ block (audit B1)", () => {
   const home = read("routes/index.tsx");
+  // The Q&A strings live in src/structured-data.ts (single source of truth,
+  // audit B5): the visible FAQ block AND the FAQPage JSON-LD render from the
+  // same FAQ_ITEMS array, so guards pin the shared module.
+  const sd = read("structured-data.ts");
 
   test("sits between How It Works and the pricing section", () => {
     expect(home.indexOf('id="how-it-works"')).toBeGreaterThan(-1);
@@ -30,26 +34,34 @@ describe("homepage FAQ block (audit B1)", () => {
   });
 
   test("covers all five audit questions in the audience's words", () => {
-    expect(home).toContain("Does AI matching actually get me dates?");
-    expect(home).toContain("How does grade-level matching work?");
-    expect(home).toContain("Will there be people to match with in an Austin-only beta?");
-    expect(home).toContain("Is the grade private?");
-    expect(home).toContain("Who is this not for?");
+    expect(sd).toContain("Does AI matching actually get me dates?");
+    expect(sd).toContain("How does grade-level matching work?");
+    expect(sd).toContain("Will there be people to match with in an Austin-only beta?");
+    expect(sd).toContain("Is the grade private?");
+    expect(sd).toContain("Who is this not for?");
+  });
+
+  test("homepage FAQ renders from the shared FAQ_ITEMS source (no duplicated copy)", () => {
+    // index.tsx maps the shared array; the Q&A text itself lives only in
+    // structured-data.ts so visible copy and FAQPage schema can't drift.
+    expect(home).toContain("FAQ_ITEMS.map((item) =>");
+    expect(home).not.toContain("Does AI matching actually get me dates?");
+    expect(home).not.toContain("How does grade-level matching work?");
   });
 
   test("answers are honest — no guarantees, no invented features", () => {
     // Honesty markers required by the audit brief.
-    expect(home).toMatch(/No guarantees/);
-    expect(home).toContain("80% people in");
-    expect(home).toContain("20% outside it");
-    expect(home).toMatch(/capped cohort/);
+    expect(sd).toMatch(/No guarantees/);
+    expect(sd).toContain("80% people in");
+    expect(sd).toContain("20% outside it");
+    expect(sd).toMatch(/capped cohort/);
     // Privacy answer stays consistent with the real product/privacy page:
     // grade + percentile are "private, only you see it" (profile.index.tsx),
     // biometric data is not shared with other users (privacy.tsx §4).
-    expect(home).toMatch(/private, only you see it/);
-    expect(home).toMatch(/never your grade, and never your\s+biometric data/);
+    expect(sd).toMatch(/private, only you see it/);
+    expect(sd).toMatch(/never your grade, and never your\s+biometric data/);
     // Negation line mirrors the footer (audit A6 / D2.B).
-    expect(home).toMatch(/isn&apos;t for anonymous, photo-less hookups/);
+    expect(sd).toMatch(/isn'?t for anonymous, photo-less hookups/);
   });
 });
 
