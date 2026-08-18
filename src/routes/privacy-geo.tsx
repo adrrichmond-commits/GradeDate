@@ -1,7 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { staticPageHead } from "~/route-heads";
 
 export const Route = createFileRoute("/privacy-geo")({
   component: GeoPrivacy,
+  head: () => staticPageHead("GradeDate — Geolocation Privacy", "How GradeDate uses location data and what controls you have over it."),
 });
 
 function GeoPrivacy() {

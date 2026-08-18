@@ -1,7 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { staticPageHead } from "~/route-heads";
 
 export const Route = createFileRoute("/acceptable-use")({
   component: AcceptableUsePolicy,
+  head: () => staticPageHead("GradeDate — Acceptable Use Policy", "What's allowed on GradeDate: identity, photos, conduct, and the rules that keep the app safe."),
 });
 
 function AcceptableUsePolicy() {

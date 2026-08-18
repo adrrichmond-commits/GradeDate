@@ -1,7 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { staticPageHead } from "~/route-heads";
 
 export const Route = createFileRoute("/legal")({
   component: LegalPolicy,
+  head: () => staticPageHead("GradeDate — Law Enforcement Guidelines", "How law enforcement can request GradeDate user data, preservation, and emergency disclosure."),
 });
 
 /**

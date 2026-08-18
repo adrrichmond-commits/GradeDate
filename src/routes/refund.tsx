@@ -1,7 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { staticPageHead } from "~/route-heads";
 
 export const Route = createFileRoute("/refund")({
   component: RefundPolicy,
+  head: () => staticPageHead("GradeDate — Refund Policy", "GradeDate's refund terms for Premium subscriptions and one-time purchases."),
 });
 
 function RefundPolicy() {

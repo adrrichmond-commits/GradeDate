@@ -1,7 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { staticPageHead } from "~/route-heads";
 
 export const Route = createFileRoute("/accessibility")({
   component: Accessibility,
+  head: () => staticPageHead("GradeDate — Accessibility", "GradeDate's accessibility commitment and how we work toward WCAG 2.1 Level AA."),
 });
 
 function Accessibility() {

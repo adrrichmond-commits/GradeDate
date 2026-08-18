@@ -1,7 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { staticPageHead } from "~/route-heads";
 
 export const Route = createFileRoute("/privacy")({
   component: PrivacyPolicy,
+  head: () => staticPageHead("GradeDate — Privacy Policy", "How GradeDate collects, uses, and protects your data."),
 });
 
 function PrivacyPolicy() {

@@ -1,7 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { staticPageHead } from "~/route-heads";
 
 export const Route = createFileRoute("/rules")({
   component: ContentRules,
+  head: () => staticPageHead("GradeDate — Photo & Content Rules", "The photo and content standards for GradeDate profiles and conversations."),
 });
 
 function ContentRules() {

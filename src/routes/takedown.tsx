@@ -1,7 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { staticPageHead } from "~/route-heads";
 
 export const Route = createFileRoute("/takedown")({
   component: TakedownProcess,
+  head: () => staticPageHead("GradeDate — Takedown Process", "How GradeDate handles content takedown requests and the steps we follow."),
 });
 
 function TakedownProcess() {

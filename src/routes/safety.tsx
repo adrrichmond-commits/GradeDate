@@ -1,7 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { staticPageHead } from "~/route-heads";
 
 export const Route = createFileRoute("/safety")({
   component: SafetyTips,
+  head: () => staticPageHead("GradeDate — Safety Tips", "Safety guidelines for meeting people from GradeDate and how to report concerns."),
 });
 
 function SafetyTips() {

@@ -1,8 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { staticPageHead } from "~/route-heads";
 import { useState } from "react";
 import { getCsrfToken } from "../csrf-client";
 
-export const Route = createFileRoute("/contact")({ component: ContactPage });
+export const Route = createFileRoute("/contact")({
+  component: ContactPage,
+  head: () => staticPageHead("GradeDate — Contact Us", "How to reach GradeDate for support, safety, privacy, billing, and copyright questions."),
+});
 const topics = [["support", "Support"], ["safety", "Safety"], ["privacy", "Privacy/Data"], ["billing", "Billing & Refunds"], ["dmca", "DMCA/Copyright"], ["other", "Other"]] as const;
 function ContactPage() {
   const [form, setForm] = useState({ name: "", email: "", topic: "support", message: "" });

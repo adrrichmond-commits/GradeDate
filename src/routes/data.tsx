@@ -1,7 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { staticPageHead } from "~/route-heads";
 
 export const Route = createFileRoute("/data")({
   component: DataExport,
+  head: () => staticPageHead("GradeDate — Data Rights", "How to access, correct, export, or delete your GradeDate data."),
 });
 
 function DataExport() {
