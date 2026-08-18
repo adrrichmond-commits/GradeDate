@@ -64,6 +64,14 @@ describe("canonical pricing surface (smoke-test findings)", () => {
     expect(store).not.toContain("/api/founders/checkout");
     expect(store).not.toContain("handleFoundersCheckout");
   });
+  test("Founders footer states the price lock and founder spot are released on cancellation", () => {
+    // Cancellation releases the founder claim (number, badge, price lock) so the
+    // 1,000-spot cap stays honest (enforced server-side, PR #133). The shared
+    // footer must never imply the lock survives cancelling.
+    const sections = read("pricing-sections.tsx");
+    expect(sections).toContain("$5.99/month · Lifetime price lock while subscribed · Cancel anytime (founder spot released on cancellation)");
+    expect(sections).not.toContain("$5.99/month · Lifetime price lock · Cancel anytime");
+  });
 
   test("server accepts only monthly checkout and three canonical upsells", () => {
     const handler = read("api-handler.ts");

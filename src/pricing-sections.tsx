@@ -433,7 +433,7 @@ function FoundersClubSection({ initialStats }: { initialStats?: FounderClubStats
               </Link>
             )}
             <p className="text-xs text-gray-500">
-              $5.99/month · Lifetime price lock · Cancel anytime
+              $5.99/month · Lifetime price lock while subscribed · Cancel anytime (founder spot released on cancellation)
             </p>
           </div>
         )}
