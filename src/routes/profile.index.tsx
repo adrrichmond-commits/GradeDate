@@ -16,6 +16,7 @@ import { useModalAccessibility } from "~/modal-accessibility";
 import { startRegistration } from "@simplewebauthn/browser";
 import { apiFetch, safeApiError } from "~/client-api";
 import { AgeVerificationCard, VerifiedBadge } from "~/age-verification";
+import { ProfileReviewCard } from "~/profile-review-card";
 
 export const Route = createFileRoute("/profile/")({
   component: ProfilePage,
@@ -1088,6 +1089,14 @@ function ProfilePage() {
                 Boost Profile — {BOOST_PRICE_DISPLAY} · {BOOST_DURATION_DAYS} days of top placement
               </Link>
             </div>
+          </div>
+        )}
+
+        {/* Profile Review — coaching card (view mode only). Placed after the
+            grade hero and before the Get Graded CTA (scoping fa614001). */}
+        {!editing && (
+          <div className="mb-8">
+            <ProfileReviewCard isPremium={isPremiumUser(user)} />
           </div>
         )}
 
