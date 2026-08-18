@@ -655,6 +655,12 @@ function AppShell() {
             </span>
           </span>
           <div className="flex flex-wrap gap-x-6 gap-y-2">
+            <Link to="/about" className="transition hover:text-gray-300">
+              About
+            </Link>
+            <Link to="/customers" className="transition hover:text-gray-300">
+              Customers
+            </Link>
             <Link to="/terms" className="transition hover:text-gray-300">
               Terms of Service
             </Link>
