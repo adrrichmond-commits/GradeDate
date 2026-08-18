@@ -21,6 +21,7 @@ The closed beta is Austin, TX first with a capped, invite-only cohort; the waitl
 - [Pricing](https://gradedate.app/pricing): Free tier, Premium $5.99/month, and the Founders Club price lock.
 - [About](https://gradedate.app/about): the story behind GradeDate.
 - [Customer stories](https://gradedate.app/customers): real results from the beta, published as the Austin cohort rolls out.
+- [vs SciMatch](https://gradedate.app/vs/scimatch): an honest side-by-side comparison of GradeDate and SciMatch — matching, pricing, safety, and transparency, with nothing invented about either app.
 - [Safety](https://gradedate.app/safety): safety tips and how GradeDate protects users.
 - [Acceptable use](https://gradedate.app/acceptable-use): what is not allowed, including zero-tolerance content.
 - [Terms of service](https://gradedate.app/terms): the legal terms.
