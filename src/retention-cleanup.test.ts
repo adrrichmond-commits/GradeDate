@@ -112,6 +112,54 @@ describe("retention cleanup (real schema contract)", () => {
     expect(updates[0].values[0]).toBe("c1");
   });
 
+  test("deletes stuck pending-without-key automated-scan cases past the retention window (no blob to purge)", async () => {
+    const deletedKeys: string[] = [];
+    const provider: PrivateReviewProvider = {
+      put: async () => {},
+      get: async () => new Uint8Array(),
+      delete: async (key) => { deletedKeys.push(key); },
+    };
+    const { db, calls } = recordingDb([
+      { contains: "SELECT id, private_object_key", rows: [{ id: "c-stuck", private_object_key: null }, { id: "c-resolved", private_object_key: "blob-ok" }] },
+      { contains: "UPDATE photo_moderation_cases", rows: [], rowCount: 1 },
+    ]);
+    const result = await runRetentionCleanup(db, NOW, provider);
+    expect(result.quarantinedPhotoCases).toBe(2);
+    // The no-key stuck row has no blob: it is deleted outright (removing it from
+    // the review queue), while the keyed row is deleted via the provider and
+    // marked private_deleted_at (evidence row survives).
+    expect(deletedKeys).toEqual(["blob-ok"]);
+    const deletes = calls.filter((c) => c.sql.includes("DELETE FROM photo_moderation_cases"));
+    expect(deletes).toHaveLength(1);
+    expect(deletes[0].sql).toContain("legal_hold=false");
+    expect(deletes[0].values[0]).toBe("c-stuck");
+    const updates = calls.filter((c) => c.sql.includes("UPDATE photo_moderation_cases"));
+    expect(updates).toHaveLength(1);
+    expect(updates[0].values[0]).toBe("c-resolved");
+  });
+
+  test("the sweep only selects no-key automated-scan cases, never legal-hold or manual-review rows", async () => {
+    const provider: PrivateReviewProvider = {
+      put: async () => {},
+      get: async () => new Uint8Array(),
+      delete: async () => {},
+    };
+    const { db, calls } = recordingDb([{ contains: "SELECT id, private_object_key", rows: [] }]);
+    await runRetentionCleanup(db, NOW, provider);
+    const select = calls.find((c) => c.sql.includes("SELECT id, private_object_key"));
+    expect(select).toBeDefined();
+    // Stuck automated-scan jobs: pending/quarantined, no key ever attached, past
+    // the 30-day retention window, legal holds excluded.
+    expect(select!.sql).toContain("private_object_key IS NULL");
+    expect(select!.sql).toContain("source = 'automated_photo_scan'");
+    expect(select!.sql).toContain("status IN ('pending','quarantined') AND source = 'automated_photo_scan' AND retention_until <= $1");
+    expect(select!.sql).toContain("legal_hold = false");
+    // Manual-review rows (user_report / underage_report) have no key by design
+    // and must stay in the queue — the arm is scoped to automated scans only.
+    expect(select!.sql).not.toContain("source = 'user_report'");
+    expect(select!.sql).not.toContain("source = 'underage_report'");
+  });
+
   test("never selects legal-hold cases or unresolved cases with a live user", async () => {
     const provider: PrivateReviewProvider = {
       put: async () => {},
