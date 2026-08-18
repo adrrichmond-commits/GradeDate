@@ -1,8 +1,10 @@
 /**
- * Homepage nav anchors (owner ask, D2.4):
+ * Homepage nav anchors (owner ask, D2.4; audit A1):
  *   - The fixed top nav NEVER renders the pulsing loading skeleton; anonymous
  *     visitors on "/" get four labeled anchor links — How It Works, Pricing,
- *     Try the Demo, Join Waitlist — that scroll to their homepage sections.
+ *     Try the Demo, Join Waitlist. How It Works / Try the Demo / Join Waitlist
+ *     scroll to their homepage sections; Pricing navigates to the real
+ *     /pricing route via a per-entry href override.
  *   - The demo section has an id so "Try the Demo" has a scroll target.
  *   - All four scroll targets carry a scroll-margin-top offset (scroll-mt-24)
  *     so the fixed 64px header never covers the section heading, and smooth
@@ -19,11 +21,29 @@ describe("homepage nav anchors (D2.4)", () => {
   test("the four anchors are defined once with the right labels and hrefs", () => {
     const anchors = read("nav-anchors.tsx");
     expect(anchors).toContain('{ label: "How It Works", sectionId: "how-it-works" }');
-    expect(anchors).toContain('{ label: "Pricing", sectionId: "pricing" }');
+    expect(anchors).toContain('{ label: "Pricing", sectionId: "pricing", href: "/pricing" }');
     expect(anchors).toContain('{ label: "Try the Demo", sectionId: "demo" }');
     expect(anchors).toContain('{ label: "Join Waitlist", sectionId: "waitlist" }');
-    // Plain hash anchors from "/" — native fragment navigation, no reload.
-    expect(anchors).toContain("return `/#${sectionId}`;");
+    // Non-override entries stay plain hash anchors from "/" — native fragment
+    // navigation, no reload; an optional href overrides to a real route.
+    expect(anchors).toContain("return anchor.href ?? `/#${anchor.sectionId}`;");
+  });
+
+  test("the Pricing entry is the only route override; others stay fragments (audit A1)", () => {
+    const anchors = read("nav-anchors.tsx");
+    // Pricing points at the real /pricing route…
+    expect(anchors).toMatch(/\{ label: "Pricing", sectionId: "pricing", href: "\/pricing" \}/);
+    // …and no other entry has an href override.
+    expect(anchors.match(/"href":/g)).toBeNull();
+    expect((anchors.match(/href: "/g) ?? []).length).toBe(1);
+    // The resolved-href helper is what both desktop and mobile render.
+    expect(anchors).toContain("href={homeAnchorHref(a)}");
+    const root = read("routes/__root.tsx");
+    expect(root).toContain("href={homeAnchorHref(a)}");
+    // Mobile menu: route-override entries let the browser navigate (no
+    // preventDefault) while fragment entries keep the smooth scroll.
+    expect(root).toContain("if (a.href) { setMenuOpen(false); return; }");
+    expect(root).toContain("scrollToSection(a.sectionId)");
   });
 
   test("__root.tsx renders the anchors and never renders the skeleton", () => {
@@ -35,7 +55,7 @@ describe("homepage nav anchors (D2.4)", () => {
     expect(root).toContain("<HomeAnchorLinks");
     // The mobile menu maps the same anchor list.
     expect(root).toContain("HOME_ANCHORS.map((a) =>");
-    expect(root).toContain("homeAnchorHref(a.sectionId)");
+    expect(root).toContain("homeAnchorHref(a)");
     // The pulsing loading skeleton must NEVER render in the nav.
     expect(root).not.toContain("animate-pulse");
     // Login/Sign Up remain reachable for anonymous visitors on every route.
