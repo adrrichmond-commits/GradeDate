@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { XIcon, TikTokIcon } from "~/social-icons";
 import { PricingSection, FoundersClubSection } from "~/pricing-sections";
 import { WaitlistForm } from "~/waitlist-form";
+import { ExampleGradeCard } from "~/example-grade-card";
 
 export const Route = createFileRoute("/")({
   component: Home,
@@ -526,9 +527,97 @@ function Home() {
               </p>
             </div>
 
-            {/* Right column: DemoGrader widget */}
-            <div className="flex justify-center lg:justify-end">
+            {/* Right column: the interactive DemoGrader widget, plus a static
+                "Example result" card (audit B2) so visitors see what a graded
+                photo looks like without uploading anything. The example card
+                is clearly labeled and uses a synthetic illustration — never a
+                real member. */}
+            <div className="grid items-start gap-8 sm:grid-cols-2">
               <DemoGrader />
+              <ExampleGradeCard />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ─────────────────────────────────────────────────────────────
+          3b. FAQ — honest "does this work?" answers (audit B1 / D1.4).
+          Every answer is plain and true to the shipped product:
+          - grading: photos get a 1–10 AI grade (src/grade.tsx, api-handler)
+          - matching: city percentile + 80/20 feed (src/db.ts "80/20 Matching")
+          - beta: Austin-first, capped cohort (plan: 50-code cap, waitlist)
+          - privacy: grade/percentile are "private, only you see it" on the
+            profile (src/routes/profile.index.tsx); biometric data is not
+            shared with other users (src/routes/privacy.tsx §4)
+          - negation line mirrors the footer (audit A6 / D2.B)
+          ───────────────────────────────────────────────────────────── */}
+      <section className="border-y border-white/5 bg-white/[0.02] px-4 py-20">
+        <div className="mx-auto max-w-3xl">
+          <h2 className="mb-3 text-center text-3xl font-bold sm:text-4xl">
+            Questions, answered
+          </h2>
+          <p className="mb-10 text-center text-gray-400">
+            Straight answers — no hype, no fine print.
+          </p>
+
+          <div className="space-y-4">
+            <div className="card border-rose-500/20 p-5">
+              <h3 className="mb-1.5 font-semibold text-white">
+                Does AI matching actually get me dates?
+              </h3>
+              <p className="text-sm leading-relaxed text-gray-400">
+                No guarantees — we&apos;re honest about that. The AI grades your
+                photos and matches you with people in your appearance range,
+                but the photos and the conversation still do the work. What we
+                do is make sure you&apos;re not invisible to the people you&apos;d
+                actually match with.
+              </p>
+            </div>
+
+            <div className="card border-rose-500/20 p-5">
+              <h3 className="mb-1.5 font-semibold text-white">
+                How does grade-level matching work?
+              </h3>
+              <p className="text-sm leading-relaxed text-gray-400">
+                Every photo gets a 1–10 AI grade. Your city percentile is
+                calculated from those grades, and your feed is 80% people in
+                your range and 20% outside it — realistic, not a bubble and
+                not a fantasy.
+              </p>
+            </div>
+
+            <div className="card border-rose-500/20 p-5">
+              <h3 className="mb-1.5 font-semibold text-white">
+                Will there be people to match with in an Austin-only beta?
+              </h3>
+              <p className="text-sm leading-relaxed text-gray-400">
+                The beta starts in Austin with a capped cohort, so it&apos;s real
+                but deliberately small. If you&apos;re outside Austin, the
+                waitlist keeps your spot and emails you the moment your city
+                opens.
+              </p>
+            </div>
+
+            <div className="card border-rose-500/20 p-5">
+              <h3 className="mb-1.5 font-semibold text-white">
+                Is the grade private?
+              </h3>
+              <p className="text-sm leading-relaxed text-gray-400">
+                Yes. Your grade and city percentile show on your own profile
+                as &ldquo;private, only you see it.&rdquo; Other members see your
+                photos and profile — never your grade, and never your
+                biometric data.
+              </p>
+            </div>
+
+            <div className="card border-rose-500/20 p-5">
+              <h3 className="mb-1.5 font-semibold text-white">
+                Who is this not for?
+              </h3>
+              <p className="text-sm leading-relaxed text-gray-400">
+                GradeDate isn&apos;t for anonymous, photo-less hookups — profiles,
+                photos, and real conversations only.
+              </p>
             </div>
           </div>
         </div>

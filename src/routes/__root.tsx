@@ -18,6 +18,11 @@ import { XIcon, TikTokIcon } from "~/social-icons";
 import { Analytics } from "@vercel/analytics/react";
 import appCss from "~/styles/app.css?url";
 
+// TODO(owner): replace with the real founder name once the owner supplies it
+// (see /about — audit B4). Rendered in the footer as "Built by {name}",
+// linking to /about. Deliberately a placeholder, never an invented name.
+const FOUNDER_CREDIT_NAME = "the founder";
+
 export const Route = createRootRoute({
   head: () => ({
     meta: [
@@ -630,10 +635,24 @@ function AppShell() {
       {/* Footer */}
       <footer className="border-t border-white/5 px-4 py-8">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 text-sm text-gray-500 sm:flex-row">
-          <span>
-            © {new Date().getFullYear()}{" "}
-            <span className="font-semibold text-gray-400">GradeDate</span>.
-            All rights reserved.
+          <span className="flex flex-col items-center gap-1 sm:items-start">
+            <span>
+              © {new Date().getFullYear()}{" "}
+              <span className="font-semibold text-gray-400">GradeDate</span>.
+              All rights reserved.
+            </span>
+            {/* Founder credit (audit B4): "Built by [Name]" → /about. Name is
+                a flagged placeholder (FOUNDER_CREDIT_NAME above) until the
+                owner supplies the real founder name. */}
+            <span>
+              Built by{" "}
+              <Link
+                to="/about"
+                className="font-medium text-gray-400 underline-offset-4 transition hover:text-rose-300 hover:underline"
+              >
+                {FOUNDER_CREDIT_NAME}
+              </Link>
+            </span>
           </span>
           <div className="flex flex-wrap gap-x-6 gap-y-2">
             <Link to="/terms" className="transition hover:text-gray-300">

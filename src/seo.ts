@@ -2,7 +2,7 @@
 import { configuredPublicOrigin } from "./site-url";
 
 export const PUBLIC_INDEXABLE_PATHS = [
-  "/", "/legal", "/terms", "/privacy", "/privacy-geo", "/cookies", "/safety", "/rules", "/accessibility", "/dmca", "/refund", "/data", "/pricing",
+  "/", "/about", "/legal", "/terms", "/privacy", "/privacy-geo", "/cookies", "/safety", "/rules", "/accessibility", "/dmca", "/refund", "/data", "/pricing",
 ] as const;
 
 const PRIVATE_PREFIXES = [
