@@ -146,8 +146,12 @@ describe("canonical pricing surface (smoke-test findings)", () => {
     // Signed-in members keep the loud amber gradient Founders button (their
     // subscribe path is real revenue)…
     expect(sections).toMatch(/signedIn \? \([\s\S]{0,250}from-amber-500 via-amber-400 to-yellow-500/);
-    // …anonymous visitors get a muted, small, soft-border button.
-    expect(sections).toMatch(/text-gray-500 transition hover:border-gray-600 hover:text-gray-300/);
+    // …anonymous visitors get a TERTIARY TEXT LINK (muted gray, underline on
+    // hover) — the same quiet style as the pricing cards, no button fill or
+    // border, no btn-primary/btn-secondary weight anywhere near the label.
+    expect(sections).toMatch(/text-gray-500 underline-offset-4[\s\S]{0,140}Join the Founders Club/);
+    expect(sections).not.toMatch(/Join the Founders Club[\s\S]{0,200}btn-primary/);
+    expect(sections).not.toMatch(/Join the Founders Club[\s\S]{0,200}btn-secondary/);
     // The homepage's own Founders chip in the waitlist section is muted too.
     const index = read("routes/index.tsx");
     expect(index).toMatch(/text-gray-400[\s\S]{0,150}Join the Founders Club/);
