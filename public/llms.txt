@@ -1,0 +1,30 @@
+# GradeDate
+
+> Dating for 18–35s that works differently: upload up to 5 photos, get honest AI feedback and your best-pic pick, see your city percentile, then match with people who look similar, in your area.
+
+## About
+
+GradeDate helps people build and understand their dating profile — not judge it. The AI grades each photo on a 1–10 scale, recommends the strongest profile picture, and shows a city percentile so you know where you stand. Your feed is 80% people in your appearance range and 20% outside it, so matching stays realistic: appearance-based and location-aware. The grade and percentile are private to you — other members see your photos and profile, never your grade or biometric data.
+
+The closed beta is Austin, TX first with a capped, invite-only cohort; the waitlist emails you when your city opens. Beta signups include 14 days of Premium free, and every account is age-verified with a government ID (document + selfie). Photo and message moderation is enforced, and CSAM, underage content, and human trafficking are zero-tolerance: content is immediately hidden, accounts locked, and authorities notified.
+
+## Pricing
+
+- **Free tier** — $0/month: 3 likes per day, 1 free regrade per week, up to 5 profile photos, browsing, and messaging.
+- **Premium** — $5.99/month (USD): premium likes, regrades, booster, and see-who-liked-you.
+- **Founders Club** — the first 1,000 Premium subscribers lock in $5.99/month for life (numbered badge; cap and price lock enforced server-side).
+- **One-time upsells** — re-grade credit $0.99, 7-day Profile Boost $2.99, 5 Extra Likes $0.99.
+
+## Key pages
+
+- [Homepage](https://gradedate.app/): what GradeDate is, how it works, a free simulated demo grader, and the waitlist.
+- [Pricing](https://gradedate.app/pricing): Free tier, Premium $5.99/month, and the Founders Club price lock.
+- [About](https://gradedate.app/about): the story behind GradeDate.
+- [Customer stories](https://gradedate.app/customers): real results from the beta, published as the Austin cohort rolls out.
+- [Safety](https://gradedate.app/safety): safety tips and how GradeDate protects users.
+- [Acceptable use](https://gradedate.app/acceptable-use): what is not allowed, including zero-tolerance content.
+- [Terms of service](https://gradedate.app/terms): the legal terms.
+
+## Contact
+
+- Questions, feedback, or help: https://gradedate.app/contact

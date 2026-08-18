@@ -14,6 +14,10 @@ import { isPrivilegedRole } from "~/admin-ui";
 import { HOME_ANCHORS, HomeAnchorLinks, homeAnchorHref } from "~/nav-anchors";
 import { resolveCanonicalSiteUrl } from "~/site-url";
 import { XIcon, TikTokIcon } from "~/social-icons";
+import {
+  STRUCTURED_DATA_LD_JSON,
+  STRUCTURED_DATA_PATHS,
+} from "~/structured-data";
 
 import { Analytics } from "@vercel/analytics/react";
 import appCss from "~/styles/app.css?url";
@@ -777,12 +781,28 @@ function RootDocument({ children }: { children: ReactNode }) {
   // render, window.location on the client.
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const siteUrl = resolveCanonicalSiteUrl(pathname) ?? pathname;
+  const carriesStructuredData = (STRUCTURED_DATA_PATHS as readonly string[]).includes(pathname);
   return (
     <html lang="en" className="dark">
       <head>
         <HeadContent />
         <meta property="og:url" content={siteUrl} />
         <link rel="canonical" href={siteUrl} />
+        {/* JSON-LD structured data (audit B5 / D5.5): Organization + Product
+            + FAQPage on the homepage and /pricing only. Emitted here — the
+            same per-pathname pattern as canonical/og:url — so the homepage
+            (which deliberately has no head() of its own) and /pricing (which
+            does) both carry the schemas exactly once, and no other page does.
+            The FAQPage mirrors the visible homepage FAQ, which renders from
+            the same FAQ_ITEMS source (src/structured-data.ts). */}
+        {carriesStructuredData &&
+          STRUCTURED_DATA_LD_JSON.map((json) => (
+            <script
+              key={json["@type"]}
+              type="application/ld+json"
+              dangerouslySetInnerHTML={{ __html: JSON.stringify(json) }}
+            />
+          ))}
       </head>
       <body class="overflow-x-hidden w-full">
         {children}

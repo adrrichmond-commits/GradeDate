@@ -5,6 +5,7 @@ import { PricingSection, FoundersClubSection } from "~/pricing-sections";
 import { TestimonialsSection } from "~/testimonials-section";
 import { WaitlistForm } from "~/waitlist-form";
 import { ExampleGradeCard } from "~/example-grade-card";
+import { FAQ_ITEMS } from "~/structured-data";
 
 export const Route = createFileRoute("/")({
   component: Home,
@@ -543,7 +544,11 @@ function Home() {
 
       {/* ─────────────────────────────────────────────────────────────
           3b. FAQ — honest "does this work?" answers (audit B1 / D1.4).
-          Every answer is plain and true to the shipped product:
+          Every answer is plain and true to the shipped product (see the
+          per-item notes below). The Q&A strings live in ONE place —
+          src/structured-data.ts (FAQ_ITEMS) — which also feeds the FAQPage
+          JSON-LD schema (audit B5), so the visible copy and the structured
+          data can never drift apart.
           - grading: photos get a 1–10 AI grade (src/grade.tsx, api-handler)
           - matching: city percentile + 80/20 feed (src/db.ts "80/20 Matching")
           - beta: Austin-first, capped cohort (plan: 50-code cap, waitlist)
@@ -562,64 +567,14 @@ function Home() {
           </p>
 
           <div className="space-y-4">
-            <div className="card border-rose-500/20 p-5">
-              <h3 className="mb-1.5 font-semibold text-white">
-                Does AI matching actually get me dates?
-              </h3>
-              <p className="text-sm leading-relaxed text-gray-400">
-                No guarantees — we&apos;re honest about that. The AI grades your
-                photos and matches you with people in your appearance range,
-                but the photos and the conversation still do the work. What we
-                do is make sure you&apos;re not invisible to the people you&apos;d
-                actually match with.
-              </p>
-            </div>
-
-            <div className="card border-rose-500/20 p-5">
-              <h3 className="mb-1.5 font-semibold text-white">
-                How does grade-level matching work?
-              </h3>
-              <p className="text-sm leading-relaxed text-gray-400">
-                Every photo gets a 1–10 AI grade. Your city percentile is
-                calculated from those grades, and your feed is 80% people in
-                your range and 20% outside it — realistic, not a bubble and
-                not a fantasy.
-              </p>
-            </div>
-
-            <div className="card border-rose-500/20 p-5">
-              <h3 className="mb-1.5 font-semibold text-white">
-                Will there be people to match with in an Austin-only beta?
-              </h3>
-              <p className="text-sm leading-relaxed text-gray-400">
-                The beta starts in Austin with a capped cohort, so it&apos;s real
-                but deliberately small. If you&apos;re outside Austin, the
-                waitlist keeps your spot and emails you the moment your city
-                opens.
-              </p>
-            </div>
-
-            <div className="card border-rose-500/20 p-5">
-              <h3 className="mb-1.5 font-semibold text-white">
-                Is the grade private?
-              </h3>
-              <p className="text-sm leading-relaxed text-gray-400">
-                Yes. Your grade and city percentile show on your own profile
-                as &ldquo;private, only you see it.&rdquo; Other members see your
-                photos and profile — never your grade, and never your
-                biometric data.
-              </p>
-            </div>
-
-            <div className="card border-rose-500/20 p-5">
-              <h3 className="mb-1.5 font-semibold text-white">
-                Who is this not for?
-              </h3>
-              <p className="text-sm leading-relaxed text-gray-400">
-                GradeDate isn&apos;t for anonymous, photo-less hookups — profiles,
-                photos, and real conversations only.
-              </p>
-            </div>
+            {FAQ_ITEMS.map((item) => (
+              <div key={item.q} className="card border-rose-500/20 p-5">
+                <h3 className="mb-1.5 font-semibold text-white">{item.q}</h3>
+                <p className="text-sm leading-relaxed text-gray-400">
+                  {item.a}
+                </p>
+              </div>
+            ))}
           </div>
         </div>
       </section>
