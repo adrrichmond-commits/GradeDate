@@ -228,6 +228,8 @@ export interface AppealRow {
   status: "pending" | "granted" | "denied";
   created_at: string;
   reviewed_at?: string | null;
+  /** Truncated excerpt (~600 chars) — admin queue only, never the user-facing endpoint. */
+  text?: string | null;
 }
 
 export const SUSPENSION_REASONS = [
@@ -333,6 +335,40 @@ export function formatDate(iso: string | null | undefined): string {
 export function formatConfidence(value: number | null | undefined): string {
   if (typeof value !== "number" || !Number.isFinite(value)) return "—";
   return `${Math.round(value * 100)}%`;
+}
+
+/** Countdown as M:SS from a millisecond budget ("4:32"); 0 → "0:00". */
+export function formatCountdown(msLeft: number): string {
+  const totalSec = Math.max(0, Math.ceil(msLeft / 1000));
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+/** 24h+ threshold for the queue-age chip (factual, no urgency words). */
+export const QUEUE_STALE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Relative queue age: "5m", "2h", or "24h+" once a case has sat for a day —
+ * the amber threshold is intentionally blunt and factual.
+ */
+export function formatAge(iso: string | null | undefined, now = Date.now()): string {
+  if (!iso) return "—";
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return "—";
+  const ms = Math.max(0, now - t);
+  if (ms >= QUEUE_STALE_MS) return "24h+";
+  const mins = Math.floor(ms / 60000);
+  if (mins < 60) return `${Math.max(1, mins)}m`;
+  return `${Math.floor(mins / 60)}h`;
+}
+
+/** True when a queue item has waited 24h or more (amber chip). */
+export function isQueueStale(iso: string | null | undefined, now = Date.now()): boolean {
+  if (!iso) return false;
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return false;
+  return now - t >= QUEUE_STALE_MS;
 }
 
 /** Distinguish the two privileged-denial codes the admin APIs return. */

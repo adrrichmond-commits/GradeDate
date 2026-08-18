@@ -16,11 +16,14 @@ import {
   type WaitlistEntry,
   type WaitlistResponse,
   appealStatusLabel,
+  formatAge,
   formatConfidence,
+  formatCountdown,
   formatDate,
   isMfaRequiredError,
   isOwnerAdminRole,
   isPrivilegedRole,
+  isQueueStale,
   isRecentMfaError,
   messageFlagStatusLabel,
   quarantineActionsFor,
@@ -153,6 +156,113 @@ function SectionHeader({ title, subtitle }: { title: string; subtitle: string })
     <div className="mb-4">
       <h2 className="text-xl font-bold">{title}</h2>
       <p className="mt-1 text-sm text-gray-400">{subtitle}</p>
+    </div>
+  );
+}
+
+/* ── Small shared delta-polish components (design spec 2026-08-17) ── */
+
+/** Two-step destructive confirm: first click arms, second click fires. */
+function ConfirmButton({
+  label,
+  confirmLabel,
+  hint,
+  busy,
+  onConfirm,
+  tone = "secondary",
+  title,
+}: {
+  label: string;
+  confirmLabel: string;
+  hint?: string;
+  busy?: boolean;
+  onConfirm: () => void;
+  tone?: "primary" | "secondary" | "danger" | "ghost";
+  title?: string;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  if (!confirming) {
+    return <ActionButton onClick={() => setConfirming(true)} disabled={busy} tone={tone} title={title}>{label}</ActionButton>;
+  }
+  return (
+    <span className="inline-flex flex-wrap items-center gap-2">
+      {hint && <span className="text-xs text-gray-400">{hint}</span>}
+      <ActionButton onClick={() => { setConfirming(false); onConfirm(); }} disabled={busy} tone="danger">
+        {confirmLabel}
+      </ActionButton>
+      <ActionButton onClick={() => setConfirming(false)} disabled={busy} tone="ghost">Cancel</ActionButton>
+    </span>
+  );
+}
+
+/** Live countdown against a server `expires_at` (1 Hz, red under 60 s). */
+function ExpiryCountdown({ expiresAt }: { expiresAt: string }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const ms = new Date(expiresAt).getTime() - now;
+  if (Number.isNaN(ms)) return null;
+  const expired = ms <= 0;
+  return (
+    <p className={ms < 60_000 ? "mt-1 text-[11px] text-red-400" : "mt-1 text-[11px] text-gray-500"}>
+      {expired ? "Access expired — reload to refresh" : `Access expires in ${formatCountdown(ms)}`}
+    </p>
+  );
+}
+
+/** Factual queue-age chip; amber once a case has waited 24h+. */
+function QueueAge({ createdAt }: { createdAt?: string | null }) {
+  return (
+    <span className={isQueueStale(createdAt) ? "text-xs text-amber-400" : "text-xs text-gray-500"}>
+      queued {formatAge(createdAt)}
+    </span>
+  );
+}
+
+/** Visually-hidden polite live region announcing action results per tab. */
+function QueueLiveRegion({ message }: { message: string }) {
+  return <div aria-live="polite" role="status" className="sr-only">{message}</div>;
+}
+
+/** Cohort redemption progress bar (rose fill on gray track). */
+function CohortProgress({ redeemed, cap }: { redeemed: number; cap: number }) {
+  const pct = cap > 0 ? Math.min(100, Math.round((redeemed / cap) * 100)) : 0;
+  return (
+    <div className="card p-4">
+      <div className="flex items-center justify-between text-xs text-gray-400">
+        <span>Cohort progress</span>
+        <span>{redeemed} of {cap} codes redeemed</span>
+      </div>
+      <div className="mt-2 h-2 rounded-full bg-gray-800" role="img" aria-label={`${redeemed} of ${cap} codes redeemed`}>
+        <div className="h-2 rounded-full bg-rose-500" style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+/** Previous/Next pager with an honest "Showing X–Y of N" line. */
+function Pager({
+  offset,
+  limit,
+  total,
+  onPage,
+}: {
+  offset: number;
+  limit: number;
+  total: number;
+  onPage: (offset: number) => void;
+}) {
+  const end = Math.min(total, offset + limit);
+  const start = total === 0 ? 0 : offset + 1;
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/5 px-4 py-3">
+      <p className="text-xs text-gray-500">Showing {start}–{end} of {total}</p>
+      <div className="flex gap-2">
+        <ActionButton onClick={() => onPage(Math.max(0, offset - limit))} disabled={offset === 0} tone="secondary">Previous</ActionButton>
+        <ActionButton onClick={() => onPage(offset + limit)} disabled={end >= total} tone="secondary">Next</ActionButton>
+      </div>
     </div>
   );
 }
@@ -321,6 +431,7 @@ function PhotoCaseRow({
 
   const actions = quarantineActionsFor(status);
   const hideTone = status === "pending" || status === "quarantined" || status === "removed";
+  const underage = item.reason === "underage" || item.source === "underage_report";
 
   return (
     <li className="rounded-xl border border-white/5 bg-gray-900/40 p-4">
@@ -333,6 +444,11 @@ function PhotoCaseRow({
         <span className="ml-auto text-xs text-gray-500">{formatDate(item.created_at)}</span>
       </div>
       {item.reason && <p className="mt-2 text-xs text-gray-400">Reason: <span className="text-gray-300">{item.reason}</span></p>}
+      {underage && (
+        <p className="mt-2 rounded-lg border border-red-500/40 bg-red-500/10 p-3 text-xs text-red-300">
+          Zero-tolerance: account locked pending review. Photos quarantined. Evidence retained.
+        </p>
+      )}
       {item.legal_hold && <p className="mt-1 text-xs text-amber-400">Legal hold — evidence is preserved</p>}
       {relatedFlags.length > 0 && (
         <ul className="mt-2 space-y-1">
@@ -350,23 +466,30 @@ function PhotoCaseRow({
       {viewing && imageUrl ? (
         <div className="mt-3">
           <img src={imageUrl} alt={`Quarantined photo review for case ${String(item.id)}`} className="max-h-96 rounded-lg border border-white/10 object-contain" />
-          {expiresAt && <p className="mt-1 text-[11px] text-gray-500">Signed review access expires {formatDate(expiresAt)}</p>}
+          {expiresAt && <ExpiryCountdown expiresAt={expiresAt} />}
         </div>
       ) : null}
       <div className="mt-3 flex flex-wrap gap-2">
         <ActionButton onClick={loadPhoto} disabled={busy} tone="primary">
           {busy ? "Loading…" : viewing && imageUrl ? "Reload photo" : "View photo"}
         </ActionButton>
-        {actions.map((a) => (
-          <ActionButton
-            key={a.status}
-            onClick={() => transition(a.status)}
-            disabled={actionBusy}
-            tone={a.status === "removed" ? "danger" : "secondary"}
-          >
-            {a.label}
-          </ActionButton>
-        ))}
+        {actions.map((a) =>
+          a.status === "removed" ? (
+            <ConfirmButton
+              key={a.status}
+              label={a.label}
+              confirmLabel={`Confirm ${a.label.toLowerCase()}`}
+              hint="This hides the photo and marks it unsafe. Evidence is retained per policy."
+              busy={actionBusy}
+              tone="danger"
+              onConfirm={() => transition(a.status)}
+            />
+          ) : (
+            <ActionButton key={a.status} onClick={() => transition(a.status)} disabled={actionBusy} tone="secondary">
+              {a.label}
+            </ActionButton>
+          ),
+        )}
       </div>
     </li>
   );
@@ -402,6 +525,7 @@ function PhotosTab({ onMfaRequired, onRecentMfa }: { onMfaRequired: () => void; 
           <button
             key={s}
             type="button"
+            aria-pressed={statusFilter === s}
             onClick={() => setStatusFilter(s)}
             className={`rounded-full px-3 py-1 text-xs font-semibold transition ${statusFilter === s ? "bg-rose-600 text-white" : "border border-gray-700 text-gray-400 hover:text-white"}`}
           >
@@ -545,6 +669,7 @@ function MessagesTab({ onMfaRequired, onRecentMfa }: { onMfaRequired: () => void
           <button
             key={s}
             type="button"
+            aria-pressed={statusFilter === s}
             onClick={() => setStatusFilter(s)}
             className={`rounded-full px-3 py-1 text-xs font-semibold transition ${statusFilter === s ? "bg-rose-600 text-white" : "border border-gray-700 text-gray-400 hover:text-white"}`}
           >
@@ -619,7 +744,7 @@ function ReportRowItem({
         <StatusPill tone={priorityTone}>{reportPriorityLabel(report.priority)}</StatusPill>
         <span className="text-gray-300">{reportReasonLabel(report.reason)}</span>
         <span className="text-gray-400">report #{String(report.id)} · reported user #{report.reported_id}</span>
-        <span className="ml-auto text-xs text-gray-500">{formatDate(report.created_at)}</span>
+        <span className="ml-auto flex items-center gap-2"><QueueAge createdAt={report.created_at} /><span className="text-xs text-gray-600">{formatDate(report.created_at)}</span></span>
       </div>
       {report.target_photo_id != null && <p className="mt-1 text-xs text-gray-500">Target photo #{report.target_photo_id}</p>}
       {report.target_message_id != null && <p className="mt-1 text-xs text-gray-500">Target message #{report.target_message_id}</p>}
@@ -681,6 +806,7 @@ function ReportsTab({
           <button
             key={s}
             type="button"
+            aria-pressed={statusFilter === s}
             onClick={() => setStatusFilter(s)}
             className={`rounded-full px-3 py-1 text-xs font-semibold transition ${statusFilter === s ? "bg-rose-600 text-white" : "border border-gray-700 text-gray-400 hover:text-white"}`}
           >
@@ -710,6 +836,7 @@ function AppealsTab({
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState<string>("");
   const [reloadKey, setReloadKey] = useState(0);
+  const [announce, setAnnounce] = useState("");
   const ownerAdmin = isOwnerAdminRole(role);
   const load = async () => {
     setLoading(true);
@@ -732,6 +859,7 @@ function AppealsTab({
     setError("");
     try {
       await adminPost(`/api/admin/appeals/${String(appeal.id)}`, { status });
+      setAnnounce(status === "granted" ? `Appeal #${String(appeal.id)} granted — suspension lifted.` : `Appeal #${String(appeal.id)} denied.`);
       setReloadKey((k) => k + 1);
     } catch (err) {
       const e = err as AdminApiError;
@@ -747,6 +875,7 @@ function AppealsTab({
     setError("");
     try {
       await adminPost(`/api/admin/suspensions/${appeal.suspension_id}`, { action: "revoke" });
+      setAnnounce(`Suspension ${appeal.suspension_id} revoked.`);
       setReloadKey((k) => k + 1);
     } catch (err) {
       const e = err as AdminApiError;
@@ -760,6 +889,7 @@ function AppealsTab({
   return (
     <section>
       <SectionHeader title="Appeals queue" subtitle="Appeals submitted by suspended users. Granting lifts the suspension; denying keeps it in place." />
+      <QueueLiveRegion message={announce} />
       {error && <ErrorBanner onRetry={() => void load()}>{error}</ErrorBanner>}
       {loading ? <p role="status" className="py-8 text-center text-sm text-gray-400">Loading appeals…</p>
         : appeals.length === 0 ? <EmptyState>No appeals submitted.</EmptyState>
@@ -773,18 +903,34 @@ function AppealsTab({
               <span className="ml-auto text-xs text-gray-500">{formatDate(a.created_at)}</span>
             </div>
             {a.reviewed_at && <p className="mt-1 text-xs text-gray-500">Reviewed {formatDate(a.reviewed_at)}</p>}
+            {a.text && (
+              <blockquote className="mt-3 rounded-lg border border-white/10 bg-gray-950/60 p-3 text-sm text-gray-200">
+                {a.text}
+              </blockquote>
+            )}
             {a.status === "pending" && (
               <div className="mt-3 flex flex-wrap gap-2">
-                <ActionButton onClick={() => review(a, "granted")} disabled={busyId === String(a.id)} tone="primary" title="Grant the appeal and lift the suspension (owner/admin)">
-                  Grant appeal
-                </ActionButton>
-                <ActionButton onClick={() => review(a, "denied")} disabled={busyId === String(a.id)} tone="secondary">
-                  Deny appeal
-                </ActionButton>
                 {ownerAdmin && (
-                  <ActionButton onClick={() => revoke(a)} disabled={busyId === `revoke-${String(a.id)}`} tone="danger" title="Revoke the suspension outright without an appeal decision">
-                    Revoke suspension
+                  <ActionButton onClick={() => review(a, "granted")} disabled={busyId === String(a.id)} tone="primary" title="Grant the appeal and lift the suspension (owner/admin)">
+                    Grant appeal
                   </ActionButton>
+                )}
+                <ConfirmButton
+                  label="Deny appeal"
+                  confirmLabel="Confirm deny"
+                  hint="Deny the appeal. The suspension stays in place and the user cannot appeal again."
+                  busy={busyId === String(a.id)}
+                  onConfirm={() => review(a, "denied")}
+                />
+                {ownerAdmin && (
+                  <ConfirmButton
+                    label="Revoke suspension"
+                    confirmLabel="Confirm revoke"
+                    hint="Revoke the suspension outright without an appeal decision."
+                    busy={busyId === `revoke-${String(a.id)}`}
+                    tone="danger"
+                    onConfirm={() => revoke(a)}
+                  />
                 )}
               </div>
             )}
@@ -879,6 +1025,7 @@ function SuspensionForm({
 /* ── Beta ops tab (owner/admin) ── */
 
 function BetaTab({ onMfaRequired }: { onMfaRequired: () => void }) {
+  const WAITLIST_PAGE = 100;
   const [stats, setStats] = useState<BetaInviteStats | null>(null);
   const [waitlist, setWaitlist] = useState<WaitlistResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -891,6 +1038,8 @@ function BetaTab({ onMfaRequired }: { onMfaRequired: () => void }) {
   const [result, setResult] = useState("");
   const [issueError, setIssueError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
+  const [offset, setOffset] = useState(0);
+  const [announce, setAnnounce] = useState("");
 
   const load = async () => {
     setLoading(true);
@@ -898,7 +1047,7 @@ function BetaTab({ onMfaRequired }: { onMfaRequired: () => void }) {
     try {
       const [statsPayload, waitlistPayload] = (await Promise.all([
         adminGet("/api/admin/beta-invites"),
-        adminGet("/api/admin/waitlist?limit=100"),
+        adminGet(`/api/admin/waitlist?limit=${WAITLIST_PAGE}&offset=${offset}`),
       ])) as [BetaInviteStats, WaitlistResponse];
       setStats(statsPayload);
       setWaitlist(waitlistPayload);
@@ -914,7 +1063,7 @@ function BetaTab({ onMfaRequired }: { onMfaRequired: () => void }) {
       setLoading(false);
     }
   };
-  useEffect(() => { void load(); }, [reloadKey]);
+  useEffect(() => { void load(); }, [reloadKey, offset]);
 
   const toggle = (id: number) => {
     setSelected((prev) => {
@@ -925,8 +1074,9 @@ function BetaTab({ onMfaRequired }: { onMfaRequired: () => void }) {
   };
 
   const countNum = Math.max(1, Number(count) || 1);
+  const cohortFull = stats?.cohort.remaining === 0;
   const recipients = selected.size > 0 ? selected.size : Math.min(countNum, waitlist?.entries.length ?? 0);
-  const canIssue = (waitlist?.entries.length ?? 0) > 0;
+  const canIssue = (waitlist?.entries.length ?? 0) > 0 && !cohortFull;
 
   const issue = async () => {
     setBusy(true);
@@ -935,11 +1085,13 @@ function BetaTab({ onMfaRequired }: { onMfaRequired: () => void }) {
       const body: Record<string, unknown> = { count: countNum, notify };
       if (selected.size > 0) body.waitlist_ids = [...selected];
       const payload = (await adminPost("/api/admin/beta-invites", body)) as IssueInvitesResponse;
-      setResult(
+      const summary =
         `${payload.codes?.length ?? 0} invite code${(payload.codes?.length ?? 0) === 1 ? "" : "s"} issued.` +
         (notify ? ` ${payload.emailed ?? 0} invite email${(payload.emailed ?? 0) === 1 ? "" : "s"} sent.` : " Emails were not sent (notify off).") +
-        (payload.clamped ? " The count was clamped to the remaining cohort capacity or waitlist size." : ""),
-      );
+        (payload.clamped ? " The count was clamped to the remaining cohort capacity or waitlist size." : "");
+      setResult(summary);
+      setAnnounce(summary);
+      setOffset(0);
       setConfirming(false);
       setSelected(new Set());
       setReloadKey((k) => k + 1);
@@ -956,14 +1108,16 @@ function BetaTab({ onMfaRequired }: { onMfaRequired: () => void }) {
   return (
     <section>
       <SectionHeader title="Austin beta operations" subtitle="Waitlist, cohort capacity, and invite issuance for the closed beta. Owner/admin only." />
-      {stats && (
+      <QueueLiveRegion message={announce} />
+      {stats && (<>
         <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div className="card p-4"><p className="text-xs text-gray-400">Cohort cap</p><p className="mt-1 text-2xl font-bold">{stats.cohort.cap}</p></div>
           <div className="card p-4"><p className="text-xs text-gray-400">Redeemed</p><p className="mt-1 text-2xl font-bold">{stats.cohort.redeemed}</p></div>
           <div className="card p-4"><p className="text-xs text-gray-400">Spots remaining</p><p className="mt-1 text-2xl font-bold text-amber-300">{stats.cohort.remaining}</p></div>
           <div className="card p-4"><p className="text-xs text-gray-400">Waitlist total</p><p className="mt-1 text-2xl font-bold">{stats.waitlist.total}</p></div>
         </div>
-      )}
+        <div className="mb-5"><CohortProgress redeemed={stats.cohort.redeemed} cap={stats.cohort.cap} /></div>
+      </>)}
       {loading ? <p role="status" className="py-8 text-center text-sm text-gray-400">Loading beta operations…</p>
         : error ? <ErrorBanner onRetry={() => void load()}>{error}</ErrorBanner>
         : <>
@@ -1002,7 +1156,11 @@ function BetaTab({ onMfaRequired }: { onMfaRequired: () => void }) {
                 <ActionButton onClick={() => setConfirming(true)} disabled={!canIssue} tone="primary">Issue invites…</ActionButton>
               )}
             </div>
-            {!canIssue && <p className="mt-2 text-xs text-gray-500">The waitlist is empty — no one can be invited yet.</p>}
+            {!canIssue && (cohortFull ? (
+              <p className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">Cohort full — new signups automatically join the waitlist.</p>
+            ) : (
+              <p className="mt-2 text-xs text-gray-500">The waitlist is empty — no one can be invited yet.</p>
+            ))}
           </div>
           <div className="card mt-5 overflow-hidden">
             <div className="border-b border-white/5 p-4">
@@ -1026,6 +1184,9 @@ function BetaTab({ onMfaRequired }: { onMfaRequired: () => void }) {
                   </li>
                 ))}
               </ul>
+            )}
+            {entries.length > 0 && (
+              <Pager offset={offset} limit={WAITLIST_PAGE} total={waitlist?.total ?? 0} onPage={setOffset} />
             )}
           </div>
         </>}
