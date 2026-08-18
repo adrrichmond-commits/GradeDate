@@ -4,17 +4,19 @@ import { staticPageHead } from "~/route-heads";
 /**
  * /about — founder story page (audit B4 / D3.3).
  *
- * THIS IS A STUB. The founder block below is made of CLEAN PLACEHOLDERS —
- * nothing here is invented about the owner. Every slot the owner needs to
- * fill is marked TODO(owner) in this file:
+ * The founder block below is REAL content supplied by the owner: name
+ * ("Austin") and the "why I built GradeDate" story, in the owner's own
+ * first-person words. Nothing here is invented about the owner.
  *
- *   1. TODO(owner): FOUNDER_PHOTO_ALT  — alt text for the founder's photo.
- *   2. TODO(owner): founder photo asset — replace the placeholder block with
- *      a real photo (e.g. <img src="/founder.jpg" ... />).
- *   3. TODO(owner): FOUNDER_NAME       — the founder's real name.
- *   4. TODO(owner): FOUNDER_STORY      — the "why I built GradeDate" story,
- *      one paragraph, first person, real.
- *   5. TODO(owner): FOUNDER_LINKEDIN_URL / FOUNDER_X_URL — real profile URLs.
+ * Two slots are still pending the owner's input (marked TODO(owner)):
+ *
+ *   1. TODO(owner): founder photo — the page renders a monogram avatar (an
+ *      initial "A") in the photo slot, never a stock/generated person image.
+ *      Replace the avatar block with a real photo when provided, e.g.:
+ *      <img src="/founder.jpg" alt="Austin, founder of GradeDate" ... />.
+ *   2. TODO(owner): founder LinkedIn/X links — rendered as plain "coming
+ *      soon" text until real profile URLs exist, so the page never links to
+ *      a dead or fake profile.
  *
  * The product facts below (what GradeDate does, Austin-first beta, safety
  * stance) are true to the shipped product — see the business plan.
@@ -60,59 +62,46 @@ function AboutPage() {
         </div>
       </section>
 
-      {/* ── Founder block (STUB — placeholders, see TODO(owner) above) ── */}
+      {/* ── Founder block (real name + story; photo/socials pending owner) ── */}
       <section>
         <h2 className="mb-6 text-xl font-bold text-white">Meet the founder</h2>
         <div className="card border-rose-500/20 p-6">
           <div className="flex flex-col items-center gap-6 sm:flex-row sm:items-start">
-            {/* TODO(owner): founder photo — replace this placeholder block
-                with the real photo, e.g.:
+            {/* Monogram avatar — stands in for the founder photo until the
+                owner provides one. Never a stock/generated image of a person.
+                TODO(owner): founder photo + LinkedIn/X links — replace this
+                avatar block with the real photo when available, e.g.:
                 <img
                   src="/founder.jpg"
-                  alt={FOUNDER_PHOTO_ALT}
+                  alt="Austin, founder of GradeDate"
                   className="h-28 w-28 rounded-2xl object-cover ring-2 ring-rose-500/30"
                 /> */}
             <div
               role="img"
-              aria-label="TODO(owner): FOUNDER_PHOTO_ALT — placeholder slot for the founder's photo"
-              className="flex h-28 w-28 shrink-0 flex-col items-center justify-center gap-1 rounded-2xl border border-dashed border-gray-700 bg-gray-900 text-center"
+              aria-label="Austin, founder of GradeDate"
+              className="flex h-28 w-28 shrink-0 select-none flex-col items-center justify-center rounded-2xl bg-gradient-to-br from-rose-500/25 to-rose-600/10 ring-2 ring-rose-500/30"
             >
-              <svg
-                className="h-8 w-8 text-gray-600"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={1.5}
-                  d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"
-                />
-              </svg>
-              <span className="px-2 text-[10px] uppercase tracking-widest text-gray-600">
-                Photo coming soon
-              </span>
+              <span className="text-4xl font-bold text-rose-300">A</span>
             </div>
 
             <div className="flex-1 text-center sm:text-left">
-              {/* TODO(owner): FOUNDER_NAME — real founder name */}
-              <h3 className="text-lg font-semibold text-white">
-                Founder name — coming soon
-              </h3>
-              <p className="mt-1 text-sm text-gray-500">
-                Founder, GradeDate
-              </p>
+              <h3 className="text-lg font-semibold text-white">Austin</h3>
+              <p className="mt-1 text-sm text-gray-500">Founder, GradeDate</p>
 
-              {/* TODO(owner): FOUNDER_STORY — the real "why I built
-                  GradeDate" story (one paragraph, first person) */}
               <p className="mt-4 text-sm leading-relaxed text-gray-400">
-                Why I built GradeDate — the founder&apos;s story will live here.
-                This is a placeholder slot until the founder writes it.
+                GradeDate started as just an idea — dating apps just never
+                worked for me. I&apos;d only ever heard horror stories and bad
+                experiences, never a great experience, or how an app actually
+                helped improve your situation. So I decided to fix that: an app
+                that not only shows you your highest-quality matches but also
+                gives you the opportunity to become the best you. I want
+                GradeDate to become a place people come to be better and make
+                honest connections with others.
               </p>
 
-              {/* TODO(owner): FOUNDER_LINKEDIN_URL / FOUNDER_X_URL — real
-                  profile URLs. Rendered as plain text until they exist, so
+              {/* TODO(owner): founder LinkedIn/X links — replace the plain
+                  "coming soon" text below with real profile URLs when the
+                  owner supplies them. Rendered as text until they exist, so
                   the page never links to a dead or fake profile. */}
               <div className="mt-4 flex items-center justify-center gap-3 text-sm sm:justify-start">
                 <span className="text-gray-500" title="Placeholder — owner to supply LinkedIn URL">

@@ -6,8 +6,10 @@
  *
  * These are honest-copy guards: they pin the FAQ to the real product (no
  * invented features or guarantees), keep the demo mock clearly labeled and
- * synthetic, and keep the /about founder block as explicit placeholders until
- * the owner supplies real details (TODO(owner) slots).
+ * synthetic, and keep the /about founder block honest — the owner-supplied
+ * name and story are pinned as-is, the photo slot is a monogram avatar (never
+ * a fake/stock person image), and the pending owner slots (photo, LinkedIn/X)
+ * stay marked TODO(owner) with no dead or fake links.
  */
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
@@ -109,25 +111,40 @@ describe("/about stub + footer credit (audit B4)", () => {
     expect(about).toMatch(/head: \(\) =>\s*staticPageHead/);
   });
 
-  test("founder block is all clean TODO(owner) placeholders — nothing invented", () => {
-    for (const slot of [
-      "FOUNDER_PHOTO_ALT",
-      "FOUNDER_NAME",
-      "FOUNDER_STORY",
-      "FOUNDER_LINKEDIN_URL / FOUNDER_X_URL",
-    ]) {
-      expect(about).toContain(slot);
-    }
-    // Placeholder text on the page itself, so nobody mistakes it for a real
-    // founder bio.
-    expect(about).toContain("coming soon");
+  test("founder block carries the owner-supplied name + story, nothing invented", () => {
+    // Real founder name as supplied by the owner.
+    expect(about).toMatch(/<h3[^>]*>Austin<\/h3>/);
+    // The owner's first-person story (approved copy). Source wraps lines, so
+    // match with whitespace-tolerant regexes.
+    expect(about).toMatch(/GradeDate started as just an idea/);
+    expect(about).toMatch(/dating apps just never\s+worked for me/);
+    expect(about).toMatch(/make\s+honest connections with others/);
     // No invented name, link, or story claims.
     expect(about).not.toMatch(/founder of GradeDate[,.]? (is|was) [A-Z]/);
     expect(about).not.toContain('href="https://www.linkedin.com');
+    expect(about).not.toContain('href="https://x.com');
   });
 
-  test("footer credit 'Built by [Name]' links to /about", () => {
-    expect(root).toContain("FOUNDER_CREDIT_NAME");
+  test("photo slot is a monogram avatar — no fake/stock person image", () => {
+    // No <img> in the actual render output; the photo slot is an initial-based
+    // avatar with an honest aria-label. Strip JSX/block comments first so the
+    // instructive TODO(owner) example comments don't trip the guard.
+    const code = about.replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(code).not.toMatch(/<img\b/);
+    expect(about).toContain('aria-label="Austin, founder of GradeDate"');
+    expect(about).toContain("A</span>");
+  });
+
+  test("pending owner slots (photo, LinkedIn/X) stay TODO(owner) with no dead links", () => {
+    // Unobtrusive comment so the owner knows what to add later.
+    expect(about).toContain("TODO(owner): founder photo + LinkedIn/X links");
+    // Social links render as plain text ("coming soon") until real URLs exist.
+    expect(about).toContain("LinkedIn — coming soon");
+    expect(about).toContain("X — coming soon");
+  });
+
+  test("footer credit 'Built by [Name]' links to /about with the real founder name", () => {
+    expect(root).toContain('FOUNDER_CREDIT_NAME = "Austin"');
     expect(root).toContain("Built by");
     expect(root).toContain('to="/about"');
   });
