@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { XIcon, TikTokIcon } from "~/social-icons";
 import { PricingSection, FoundersClubSection } from "~/pricing-sections";
+import { TestimonialsSection } from "~/testimonials-section";
 import { WaitlistForm } from "~/waitlist-form";
 import { ExampleGradeCard } from "~/example-grade-card";
 
@@ -622,6 +623,16 @@ function Home() {
           </div>
         </div>
       </section>
+
+      {/* ─────────────────────────────────────────────────────────────
+          3c. CUSTOMER STORIES — honest wall (audit B3 / D3.2). Order per
+          the audit: How It Works → FAQ → testimonials → pricing. The wall
+          renders from the TESTIMONIALS array in src/testimonials-section.tsx
+          (currently EMPTY → honest "stories are on the way" state + slots;
+          real quotes appear here and on /customers once the owner supplies
+          them). Never fabricated content.
+          ───────────────────────────────────────────────────────────── */}
+      <TestimonialsSection />
 
       {/* ─────────────────────────────────────────────────────────────
           4. PRICING — "One Plan. Full Access."

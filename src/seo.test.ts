@@ -36,17 +36,19 @@ describe("crawlability policy", () => {
     expect(seoResponse(new Request("https://site.example/"))).toBeNull();
   });
 
-  test("sitemap covers the full public path set (14 URLs incl. /pricing and /about)", async () => {
+  test("sitemap covers the full public path set (15 URLs incl. /pricing, /about, /customers)", async () => {
     // Baseline was 12 public paths; /pricing made it 13, /about (audit B4)
-    // makes it 14. The count must stay in lockstep with the actual <url>
-    // entries the endpoint emits.
+    // makes it 14, /customers (audit B3) makes it 15. The count must stay in
+    // lockstep with the actual <url> entries the endpoint emits.
     expect(PUBLIC_INDEXABLE_PATHS).toContain("/pricing");
     expect(PUBLIC_INDEXABLE_PATHS).toContain("/about");
-    expect(PUBLIC_INDEXABLE_PATHS.length).toBe(14);
+    expect(PUBLIC_INDEXABLE_PATHS).toContain("/customers");
+    expect(PUBLIC_INDEXABLE_PATHS.length).toBe(15);
     const body = await sitemapResponse("https://preview.example").text();
     const urls = body.match(/<url>/g) ?? [];
     expect(urls.length).toBe(PUBLIC_INDEXABLE_PATHS.length);
     expect(body).toContain("https://preview.example/pricing");
     expect(body).toContain("https://preview.example/about");
+    expect(body).toContain("https://preview.example/customers");
   });
 });

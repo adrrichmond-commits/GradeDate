@@ -28,6 +28,7 @@ const LEGAL_PAGES: Record<string, string> = {
   accessibility: "GradeDate — Accessibility",
   cookies: "GradeDate — Cookie Policy",
   contact: "GradeDate — Contact Us",
+  customers: "GradeDate — Customer Stories",
   data: "GradeDate — Data Rights",
   dmca: "GradeDate — DMCA Policy",
   legal: "GradeDate — Law Enforcement Guidelines",
