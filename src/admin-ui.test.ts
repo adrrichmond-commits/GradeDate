@@ -1,11 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import {
   appealStatusLabel,
+  formatAge,
   formatConfidence,
+  formatCountdown,
   formatDate,
   isMfaRequiredError,
   isOwnerAdminRole,
   isPrivilegedRole,
+  isQueueStale,
   isRecentMfaError,
   messageFlagStatusLabel,
   quarantineActionsFor,
@@ -104,6 +107,29 @@ describe("admin-ui formatting", () => {
     expect(formatDate(undefined)).toBe("—");
     expect(formatDate("not-a-date")).toBe("—");
     expect(formatDate("2026-08-11T12:00:00Z")).toContain("2026");
+  });
+  test("formatCountdown renders M:SS and floors at zero", () => {
+    expect(formatCountdown(272_000)).toBe("4:32");
+    expect(formatCountdown(60_000)).toBe("1:00");
+    expect(formatCountdown(59_999)).toBe("1:00");
+    expect(formatCountdown(1_000)).toBe("0:01");
+    expect(formatCountdown(0)).toBe("0:00");
+    expect(formatCountdown(-5_000)).toBe("0:00");
+  });
+  test("formatAge renders relative time and 24h+ stale cap", () => {
+    const now = Date.parse("2026-08-17T12:00:00Z");
+    expect(formatAge("2026-08-17T11:55:00Z", now)).toBe("5m");
+    expect(formatAge("2026-08-17T10:00:00Z", now)).toBe("2h");
+    expect(formatAge("2026-08-16T11:00:00Z", now)).toBe("24h+");
+    expect(formatAge("2026-08-14T10:00:00Z", now)).toBe("24h+");
+    expect(formatAge(null, now)).toBe("—");
+    expect(formatAge("garbage", now)).toBe("—");
+  });
+  test("isQueueStale flags items queued 24h or more", () => {
+    const now = Date.parse("2026-08-17T12:00:00Z");
+    expect(isQueueStale("2026-08-17T11:00:00Z", now)).toBe(false);
+    expect(isQueueStale("2026-08-16T11:00:00Z", now)).toBe(true);
+    expect(isQueueStale(null, now)).toBe(false);
   });
 });
 

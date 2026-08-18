@@ -7,6 +7,8 @@ export type SuspensionStatus = typeof SUSPENSION_STATUSES[number];
 export const APPEAL_STATUSES = ["pending", "granted", "denied"] as const;
 export type AppealStatus = typeof APPEAL_STATUSES[number];
 export const APPEAL_TEXT_MAX = 2000;
+/** Admin queue preview length — the reviewer sees a truncated excerpt, never the raw field. */
+export const APPEAL_TEXT_ADMIN_MAX = 600;
 export const APPEAL_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 export function isSuspensionReason(v: unknown): v is SuspensionReason { return typeof v === "string" && (SUSPENSION_REASONS as readonly string[]).includes(v); }
 export function isSuspensionDuration(v: unknown): v is SuspensionDuration { return typeof v === "string" && (SUSPENSION_DURATIONS as readonly string[]).includes(v); }
@@ -16,3 +18,17 @@ export function canReviewAppeal(role: unknown): boolean { return role === "owner
 export function canOverrideSuspension(role: unknown): boolean { return role === "owner" || role === "admin"; }
 export function canTransitionAppeal(from: AppealStatus, to: AppealStatus): boolean { return from === "pending" && (to === "granted" || to === "denied"); }
 export function durationEnds(duration: SuspensionDuration, now = Date.now()): string | null { if (duration === "indefinite" || duration === "warning") return duration === "warning" ? new Date(now).toISOString() : null; const hours = duration === "24h" ? 24 : duration === "7d" ? 168 : 720; return new Date(now + hours * 3600000).toISOString(); }
+
+/**
+ * Truncate appeal text for the ADMIN review queue only (~600 chars).
+ * Returns null for empty/missing text so the UI can skip the blockquote.
+ * The user-facing status endpoint never calls this — it never selects the
+ * raw text at all.
+ */
+export function truncateAppealText(text: unknown, max = APPEAL_TEXT_ADMIN_MAX): string | null {
+  if (typeof text !== "string" || !text.trim()) return null;
+  const trimmed = text.trim();
+  if (trimmed.length <= max) return trimmed;
+  const cut = trimmed.slice(0, max).trimEnd();
+  return cut.length === trimmed.length ? cut : `${cut}…`;
+}
