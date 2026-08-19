@@ -99,14 +99,18 @@ function AboutPage() {
                 honest connections with others.
               </p>
 
-              {/* TODO(owner): founder LinkedIn/X links — replace the plain
-                  "coming soon" text below with real profile URLs when the
-                  owner supplies them. Rendered as text until they exist, so
-                  the page never links to a dead or fake profile. */}
+              {/* Founder social links — LinkedIn supplied by owner (2026-08-19);
+                  X still pending. Only link real, owner-provided profiles so the
+                  page never points to a dead or fake account. */}
               <div className="mt-4 flex items-center justify-center gap-3 text-sm sm:justify-start">
-                <span className="text-gray-500" title="Placeholder — owner to supply LinkedIn URL">
-                  LinkedIn — coming soon
-                </span>
+                <a
+                  href="https://www.linkedin.com/in/austin-richmond-3723b7226"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-rose-400 underline-offset-4 hover:underline"
+                >
+                  LinkedIn
+                </a>
                 <span className="text-gray-700">·</span>
                 <span className="text-gray-500" title="Placeholder — owner to supply X URL">
                   X — coming soon
