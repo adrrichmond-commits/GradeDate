@@ -139,31 +139,31 @@ export function faqLdJson() {
 }
 
 /**
- * The /vs/scimatch comparison-page FAQ (site-audit C1 / D5.3). Rendered by
- * both the visible FAQ block on that page and the FAQPage schema, so the copy
- * and the structured data can never drift apart (same pattern as FAQ_ITEMS).
+ * The /how-we-compare page FAQ (owner decision 2026-08-19). Rendered by both
+ * the visible FAQ block on that page and the FAQPage schema, so the copy and
+ * the structured data can never drift apart (same pattern as FAQ_ITEMS).
  *
  * Honesty rule: every answer is true to the shipped product and the business
- * plan. The SciMatch column of the comparison page uses "not published / not
- * stated" everywhere the competitive-research file has no verified fact, and
- * the FAQ below says so openly rather than guessing about a competitor.
+ * plan. This page is framed entirely around GradeDate's own approach — we do
+ * NOT name or make claims about any other dating app, and we encourage readers
+ * to check each app's own published materials.
  */
-export const VS_SCIMATCH_FAQ_ITEMS: readonly FaqItem[] = [
+export const HOW_WE_COMPARE_FAQ_ITEMS: readonly FaqItem[] = [
   {
-    q: "What does GradeDate do that's different?",
-    a: "GradeDate is a coaching interface for dating, not a judge: it grades each of your photos on a 1–10 scale, recommends the strongest profile picture, shows your city percentile, and matches you on grade, common interests, and geography. Your feed is 80% people in your appearance range and 20% outside it.",
+    q: "How is GradeDate different from other dating apps?",
+    a: "GradeDate is a coaching interface for dating, not a judge: it grades each of your photos on a 1–10 scale, recommends the strongest profile picture, shows your city percentile, and matches you on grade, common interests, and geography. Your feed is 80% people in your appearance range and 20% outside it. We focus on being a tool that helps you build and understand your profile.",
+  },
+  {
+    q: "Do you compare yourself to specific apps?",
+    a: "No. We only make claims about what GradeDate actually ships, so we don't describe or judge other apps. Instead, we explain what we do and encourage you to check each app's own published materials and weigh them for yourself.",
+  },
+  {
+    q: "How do I know what I'm getting?",
+    a: "Start free: 3 likes per day, 1 free regrade per week, up to 5 photos, browsing, and messaging. Premium is $5.99/month for premium likes, regrades, a booster, and see-who-liked-you. The first 1,000 Premium subscribers lock in that $5.99/month price while subscribed (Founders Club). Even the free demo grader is honestly labeled as a simulated preview.",
   },
   {
     q: "Is my grade public?",
     a: "No. Your grade and city percentile are private to you — other members see your photos and profile, never your grade and never your biometric data.",
-  },
-  {
-    q: "How much does GradeDate cost?",
-    a: "Start free: 3 likes per day, 1 free regrade per week, up to 5 photos, browsing, and messaging. Premium is $5.99/month for premium likes, regrades, a booster, and see-who-liked-you. The first 1,000 Premium subscribers lock in that $5.99/month price while subscribed (Founders Club).",
-  },
-  {
-    q: "Why does the SciMatch column say 'not stated'?",
-    a: "We only claim what we can verify from published sources. Where SciMatch hasn't published a detail, we say 'not stated' instead of guessing — a comparison you can trust tells you what it doesn't know.",
   },
   {
     q: "When is GradeDate available near me?",
@@ -171,12 +171,12 @@ export const VS_SCIMATCH_FAQ_ITEMS: readonly FaqItem[] = [
   },
 ];
 
-/** FAQPage schema for the /vs/scimatch comparison page. */
-export function vsSciMatchFaqLdJson() {
+/** FAQPage schema for the /how-we-compare page. */
+export function howWeCompareFaqLdJson() {
   return {
     "@context": "https://schema.org",
     "@type": "FAQPage",
-    mainEntity: VS_SCIMATCH_FAQ_ITEMS.map(({ q, a }) => ({
+    mainEntity: HOW_WE_COMPARE_FAQ_ITEMS.map(({ q, a }) => ({
       "@type": "Question",
       name: q,
       acceptedAnswer: { "@type": "Answer", text: a },
@@ -184,22 +184,22 @@ export function vsSciMatchFaqLdJson() {
   } as const;
 }
 
-/** WebPage schema for the /vs/scimatch comparison page. */
-export function vsSciMatchWebPageLdJson() {
+/** WebPage schema for the /how-we-compare page. */
+export function howWeCompareWebPageLdJson() {
   return {
     "@context": "https://schema.org",
     "@type": "WebPage",
-    name: "GradeDate vs SciMatch — An Honest Comparison",
-    url: `${SITE_URL}/vs/scimatch`,
+    name: "How GradeDate compares — what we do, and how to weigh us against any app",
+    url: `${SITE_URL}/how-we-compare`,
     description:
-      "A side-by-side comparison of GradeDate and SciMatch: matching philosophy, price, age verification and moderation, transparency, and geography — with nothing invented about either app.",
+      "What GradeDate ships: AI photo grading and coaching, a best-pic pick, a city percentile, and grade + interest + geography matching — and how to weigh us against any app, with nothing invented.",
   } as const;
 }
 
-/** The two JSON-LD graphs emitted on "/vs/scimatch" only. */
-export const VS_SCIMATCH_LD_JSON = [
-  vsSciMatchFaqLdJson(),
-  vsSciMatchWebPageLdJson(),
+/** The two JSON-LD graphs emitted on "/how-we-compare" only. */
+export const HOW_WE_COMPARE_LD_JSON = [
+  howWeCompareFaqLdJson(),
+  howWeCompareWebPageLdJson(),
 ] as const;
 
 /** The three JSON-LD graphs emitted on "/" and "/pricing". */
