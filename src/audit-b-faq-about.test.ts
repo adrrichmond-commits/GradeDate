@@ -119,10 +119,11 @@ describe("/about stub + footer credit (audit B4)", () => {
     expect(about).toMatch(/GradeDate started as just an idea/);
     expect(about).toMatch(/dating apps just never\s+worked for me/);
     expect(about).toMatch(/make\s+honest connections with others/);
-    // No invented name, link, or story claims.
+    // No invented name, link, or story claims. X is still pending (no x.com
+    // link), but LinkedIn is a real owner-supplied profile and IS linked.
     expect(about).not.toMatch(/founder of GradeDate[,.]? (is|was) [A-Z]/);
-    expect(about).not.toContain('href="https://www.linkedin.com');
     expect(about).not.toContain('href="https://x.com');
+    expect(about).toContain('href="https://www.linkedin.com/in/austin-richmond-3723b7226"');
   });
 
   test("photo slot is a monogram avatar — no fake/stock person image", () => {
@@ -135,12 +136,18 @@ describe("/about stub + footer credit (audit B4)", () => {
     expect(about).toContain("A</span>");
   });
 
-  test("pending owner slots (photo, LinkedIn/X) stay TODO(owner) with no dead links", () => {
+  test("pending owner slots (photo) and X stay TODO(owner) with no dead links; LinkedIn is wired", () => {
     // Unobtrusive comment so the owner knows what to add later.
     expect(about).toContain("TODO(owner): founder photo + LinkedIn/X links");
-    // Social links render as plain text ("coming soon") until real URLs exist.
-    expect(about).toContain("LinkedIn — coming soon");
+    // X is still pending → renders as plain text ("coming soon"), never a link.
     expect(about).toContain("X — coming soon");
+    expect(about).not.toContain('href="https://x.com');
+    // LinkedIn is now a real owner-supplied link, opening safely in a new tab.
+    expect(about).toContain("LinkedIn");
+    expect(about).toContain('href="https://www.linkedin.com/in/austin-richmond-3723b7226"');
+    expect(about).toContain('target="_blank"');
+    expect(about).toContain('rel="noopener noreferrer"');
+    expect(about).not.toContain("LinkedIn — coming soon");
   });
 
   test("footer credit 'Built by [Name]' links to /about with the real founder name", () => {
