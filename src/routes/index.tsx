@@ -135,8 +135,9 @@ function DemoGrader() {
                 {grade}
               </div>
               <div className="mt-1 text-sm font-medium text-gray-300">/ 10</div>
-              <p className="mt-1 text-[10px] uppercase tracking-widest text-gray-400">
-                Demo grade — simulated preview of real AI grading
+              <p className="mt-1 text-xs text-gray-400">
+                Simulated random preview — your real grade comes with the full
+                app.
               </p>
             </div>
             <p className="text-center text-sm text-gray-400">
@@ -158,17 +159,24 @@ function DemoGrader() {
             </button>
 
             {/* Waitlist ladder (owner D2.2): after the demo, the natural next
-                step is the waitlist — the primary CTA of the pre-launch page. */}
+                step is the waitlist — the primary CTA of the pre-launch page.
+                Convert in place (P1-3b): an inline email form, not a jump to
+                the bottom of the page. */}
             <div className="mt-5 w-full border-t border-white/10 pt-5 text-center">
               <p className="mb-3 text-sm text-gray-400">
                 Want real AI grades on all your photos?
               </p>
-              <a
-                href="/#waitlist"
-                className="btn-primary justify-center whitespace-nowrap px-7 py-3 text-sm"
-              >
-                Join the Waitlist
-              </a>
+              <WaitlistForm idPrefix="demo" />
+              <div className="mt-3 flex flex-col items-center gap-1.5 text-xs text-gray-500">
+                <p>
+                  No spam. Unsubscribe anytime. We&apos;ll only email you about
+                  your city&apos;s launch.
+                </p>
+                <p>
+                  Your grade and city percentile stay private — only you see
+                  them.
+                </p>
+              </div>
             </div>
           </div>
         )}
@@ -211,60 +219,76 @@ function Home() {
         />
 
         <div className="relative z-10 mx-auto max-w-3xl text-center">
-          {/* Pain-first hook — out-of-your-league pain + swipe fatigue & dead-end chats (A4) */}
-          <p className="mx-auto mb-6 max-w-2xl text-lg font-medium text-gray-300 sm:text-xl">
-            No more matching with people out of your league — or being
-            invisible to everyone. Burned out on swiping for one dead-end
-            chat? Find out which photos actually work — and match on your
-            level.
-          </p>
           {/* Austin-first badge */}
-          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-rose-500/25 bg-rose-500/10 px-4 py-1.5">
+          <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-rose-500/25 bg-rose-500/10 px-4 py-1.5">
             <span className="text-sm">📍</span>
             <span className="text-xs font-semibold uppercase tracking-widest text-rose-300">
               Austin, TX — Launching First
             </span>
           </div>
 
-          {/* Headline */}
+          {/* Headline — benefit-led outcome (P1-2). The grade stays as the
+              mechanism in the subhead below — never the lead judgement. */}
           <h1 className="text-center text-4xl font-extrabold leading-[1.1] tracking-tight sm:text-6xl md:text-7xl">
             <span className="block text-white">
-              Your profile, graded by AI.
+              Start matching on your level.
             </span>
             <span
               className="block bg-gradient-to-r from-rose-400 via-rose-200 to-rose-400 bg-clip-text text-transparent animate-[shimmer_4s_ease-in-out_infinite]"
               style={{ backgroundSize: "200% auto" }}
             >
-              Match on your level.
+              Honest about who&apos;s nearby.
             </span>
           </h1>
 
-          {/* Subhead — what it is, who it's for */}
-          <p className="mx-auto mt-6 max-w-xl text-center text-lg leading-relaxed text-gray-400 sm:text-xl">
-            Dating for 18–35s that works differently: upload up to 5 photos,
-            get honest AI feedback and your best-pic pick, see your city
-            percentile — then match with people who look similar, in your area.
+          {/* Subhead — one short line: what it is, grade as the mechanism */}
+          <p className="mx-auto mt-5 max-w-xl text-center text-lg leading-relaxed text-gray-400 sm:text-xl">
+            Dating for 18–35s that works differently: AI grades your photos
+            1–10, picks your best pic, and shows your private city percentile —
+            then matches you with similar people nearby.
           </p>
 
-          {/* ONE primary CTA — the waitlist form */}
-          <div className="mt-10">
+          {/* ONE primary CTA — the waitlist form, high on the page so it
+              stays above the fold on mobile (P0-1) */}
+          <div className="mt-8">
             <WaitlistForm idPrefix="hero" />
           </div>
 
-          {/* Microcopy — Austin-first, free to join */}
+          {/* Micro-block directly under the hero form — the only place the
+              waitlist form previously lacked these (P0-2 privacy, P0-3 grade
+              privacy, P1-1 truthful 14-day incentive). */}
           <div className="mt-4 flex flex-col items-center gap-1.5 text-sm text-gray-500">
+            <p>
+              No spam. Unsubscribe anytime. We&apos;ll only email you about your
+              city&apos;s launch.
+            </p>
+            <p>
+              Your grade and city percentile stay private — only you see them.
+            </p>
+            <p>
+              When your Austin invite arrives, you get 14 days of Premium free.
+            </p>
             {isAustinMetro ? (
-              <p>
+              <p className="text-xs text-gray-500">
                 You&apos;re in our launch city — join the waitlist and we&apos;ll
                 email you your invite. Free to join.
               </p>
             ) : (
-              <p>
+              <p className="text-xs text-gray-500">
                 Free to join. Austin, TX goes first — we&apos;ll email you when
                 your city opens.
               </p>
             )}
           </div>
+
+          {/* Pain hook — kept in the hero but BELOW the CTA so it can&apos;t
+              push the form below the fold on mobile (P0-1) */}
+          <p className="mx-auto mt-8 max-w-2xl text-base text-gray-400 sm:text-lg">
+            No more matching with people out of your league — or being
+            invisible to everyone. Burned out on swiping for one dead-end
+            chat? Find out which photos actually work — and match on your
+            level.
+          </p>
 
           {/* Trust markers — real, live features, matched to the live
               /acceptable-use and /safety zero-tolerance facts */}

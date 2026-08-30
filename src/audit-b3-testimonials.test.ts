@@ -41,17 +41,15 @@ describe("homepage testimonial wall (audit B3)", () => {
     expect(module).not.toMatch(/photoAlt: "(?!…")/);
     expect(module).not.toMatch(/role: "(?!…")/);
   });
-  test("renders the honest empty-state message + reserved card slots (5-8)", () => {
+  test("renders an honest one-liner and suppresses placeholder slot cards (P0-4)", () => {
     expect(module).toContain(
       "Beta testers&apos; stories are on the way — we&apos;ll publish real results as the Austin beta rolls out."
     );
-    expect(module).toContain("Real quote coming soon");
-    const slotMatch = module.match(/export const SLOT_COUNT = (\d+);/);
-    expect(slotMatch).not.toBeNull();
-    const slotCount = Number(slotMatch![1]);
-    expect(slotCount).toBeGreaterThanOrEqual(5);
-    expect(slotCount).toBeLessThanOrEqual(8);
-    expect(module).toContain("Array.from({ length: SLOT_COUNT }");
+    // Empty-state must NOT render "Real quote coming soon" placeholder slots
+    // or fake review counts — they kill conversion and read as fabricated.
+    expect(module).not.toContain("Real quote coming soon");
+    expect(module).not.toContain("Array.from");
+    expect(module).not.toContain("SLOT_COUNT");
   });
   test("slot template matches the audit: first name + role + photo + specific outcome", () => {
     // The type documents the exact per-quote slots.

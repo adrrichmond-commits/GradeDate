@@ -142,11 +142,12 @@ describe("canonical pricing surface (smoke-test findings)", () => {
     expect(index).toContain('className="btn-secondary inline-flex text-base hover:border-rose-400 hover:text-rose-200"');
     expect(index).toMatch(/to="\/grade"[\s\S]{0,120}className="btn-secondary/);
     expect(index).not.toMatch(/Try the Demo — Free[\s\S]{0,80}btn-primary/);
-    // The demo experience ladders into the waitlist via the #waitlist anchor
-    // (both the done-state follow-up CTA and the demo-section microcopy).
+    // The demo experience ladders into the waitlist — the done-state now
+    // converts IN PLACE with an inline email form (P1-3b), while the
+    // demo-section microcopy still points at the #waitlist anchor.
     expect(index).toContain('href="/#waitlist"');
-    expect(index).toMatch(/Want real AI grades on all your photos\?[\s\S]{0,200}href="\/#waitlist"/);
     expect(index).toMatch(/Like what you see\?[\s\S]{0,200}href="\/#waitlist"/);
+    expect(index).toMatch(/Want real AI grades on all your photos\?[\s\S]{0,200}<WaitlistForm idPrefix="demo" \/>/);
   });
 
   test("Founders CTAs are tertiary for anonymous and keep primary weight when signed in (D2.2)", () => {
@@ -218,6 +219,47 @@ describe("canonical pricing surface (smoke-test findings)", () => {
     expect(index).toMatch(/match on your[\s\S]{0,40}level\./);
   });
 
+  test("hero reorders the waitlist form above the pain hook and trust badges (P0-1)", () => {
+    const index = read("routes/index.tsx");
+    const form = index.indexOf('<WaitlistForm idPrefix="hero"');
+    expect(form).toBeGreaterThan(-1);
+    // The CTA now sits high in the hero (above the fold on mobile), BEFORE
+    // both the long pain paragraph and the trust-badge list.
+    expect(index.indexOf("No more matching with people out of your league")).toBeGreaterThan(form);
+    expect(index.indexOf("Government-ID age verification")).toBeGreaterThan(form);
+  });
+  test("hero form carries the privacy + grade-privacy + 14-day micro-block (P0-2/P0-3/P1-1)", () => {
+    const index = read("routes/index.tsx");
+    const form = index.indexOf('<WaitlistForm idPrefix="hero"');
+    expect(index).toMatch(/No spam\. Unsubscribe anytime\. We&apos;ll only email you about your[\s\S]{0,40}city&apos;s launch\./);
+    expect(index).toMatch(/Your grade and city percentile stay private — only you see them\./);
+    expect(index).toMatch(/When your Austin invite arrives, you get 14 days of Premium free\./);
+    // The 14-day incentive line is unique to the hero micro-block and sits
+    // directly under the hero form (guards P0-1 ordering too).
+    expect(index.indexOf("When your Austin invite arrives")).toBeGreaterThan(form);
+  });
+  test("hero headline is benefit-led, grade stays as the subhead mechanism (P1-2)", () => {
+    const index = read("routes/index.tsx");
+    expect(index).toMatch(/<h1[\s\S]{0,220}Start matching on your level\./);
+    // The mechanism (grade) remains prominent — in the subhead, not the lead.
+    expect(index).toMatch(/AI grades your photos[\s\S]{0,60}1–10/);
+    // The headline no longer leads with the "graded by AI" judgement.
+    expect(index).not.toMatch(/<h1[\s\S]{0,80}grade/i);
+  });
+  test("demo grade is labeled as a simulated random preview (P1-3a)", () => {
+    const index = read("routes/index.tsx");
+    expect(index).toContain("Simulated random preview — your real grade comes with the full");
+  });
+  test("demo done-state ladders into an inline waitlist form, not a page jump (P1-3b)", () => {
+    const index = read("routes/index.tsx");
+    expect(index).toMatch(/Want real AI grades on all your photos\?[\s\S]{0,80}<WaitlistForm idPrefix="demo" \/>/);
+    // The demo ladder no longer jumps the user to the bottom via #waitlist.
+    expect(index).not.toContain('<a\n                href="/#waitlist"\n                className="btn-primary justify-center whitespace-nowrap px-7 py-3 text-sm"');
+  });
+  test("anonymous nav Sign Up is visually de-emphasized (P0-5)", () => {
+    const root = read("routes/__root.tsx");
+    expect(root).toMatch(/to="\/signup"[\s\S]{0,140}border border-white\/15/);
+  });
   test("footer carries an honest 'not for' line (audit A6)", () => {
     const root = read("routes/__root.tsx");
     expect(root).toMatch(

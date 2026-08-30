@@ -412,9 +412,12 @@ function AppShell() {
                   >
                     Login
                   </Link>
+                  {/* Anonymous Sign Up — visually de-emphasized (P0-5) so the
+                      waitlist email form stays the single dominant CTA for
+                      pre-launch visitors; still functional for invite holders. */}
                   <Link
                     to="/signup"
-                    className="rounded-full bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-500 hover:scale-105 active:scale-95"
+                    className="rounded-full border border-white/15 px-4 py-2 text-sm font-semibold text-gray-300 transition hover:border-white/30 hover:text-white"
                   >
                     Sign Up
                   </Link>
@@ -588,7 +591,7 @@ function AppShell() {
             <Link
               to="/signup"
               onClick={() => setMenuOpen(false)}
-              className="rounded-lg bg-rose-600 px-4 py-3 text-center text-sm font-semibold text-white transition hover:bg-rose-500"
+              className="rounded-lg border border-white/15 px-4 py-3 text-center text-sm font-semibold text-gray-300 transition hover:border-white/30 hover:text-white"
             >
               Sign Up
             </Link>
