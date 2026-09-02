@@ -13,6 +13,8 @@ export const Route = createFileRoute("/legal")({
  * Source of truth: /home/team/shared/law-enforcement-guidelines-draft.md
  * (sanitized final: law-enforcement-guidelines-stripe-copy.md PART 2).
  * Do not add commitments beyond the ratified draft.
+ * Data/provider descriptions updated 2026-08-30 to reflect actual operating
+ * systems (Stripe review); all ratified commitments/timelines unchanged.
  */
 function LegalPolicy() {
   const mailto = (subject?: string) =>
@@ -23,7 +25,7 @@ function LegalPolicy() {
   return (
     <div className="mx-auto max-w-3xl px-4 py-16">
       <h1 className="mb-2 text-3xl font-bold text-white">Law Enforcement & Legal Requests</h1>
-      <p className="mb-10 text-sm text-gray-400">Last updated: August 17, 2026</p>
+      <p className="mb-10 text-sm text-gray-400">Last updated: August 30, 2026</p>
 
       <div className="space-y-10 text-gray-300">
         <section>
@@ -75,7 +77,21 @@ function LegalPolicy() {
                     Email address used to register, display name, age, gender, preferences, bio,
                     profile photos (up to 5), expanded profile fields (lifestyle, communication
                     style, dating goals, occupation, hobbies, height, pronouns, etc.), registration
-                    timestamp.
+                    timestamp. GradeDate performs AI-based analysis of uploaded photos (profile
+                    grading, best-photo recommendation, city percentile); the resulting grade and
+                    percentile are private to the user and are not disclosed to other users.
+                  </td>
+                </tr>
+                <tr>
+                  <td className="px-4 py-3 font-medium text-gray-200">Moderation and automated analysis records</td>
+                  <td className="px-4 py-3">
+                    Photo and message content may be processed by third-party AI moderation
+                    providers for safety review (photo content via AWS Rekognition; text content
+                    via OpenAI), including the resulting moderation results, flags, and review
+                    case records. Profile text may be transmitted to an AI provider (OpenAI) for
+                    the optional profile-review feature. Original copies of flagged photos are held
+                    in a separate private quarantine store with short-lived, case-bound review
+                    access.
                   </td>
                 </tr>
                 <tr>
@@ -156,6 +172,67 @@ function LegalPolicy() {
               (see section 7).
             </li>
           </ul>
+
+          <h3 className="mb-2 mt-6 text-lg font-semibold text-white">2.3 Third-Party Providers</h3>
+          <p className="mt-2 leading-relaxed">
+            GradeDate uses the following third-party providers. GradeDate does not store payment
+            card data, government-ID images or verification selfies, or plaintext passwords.
+          </p>
+          <div className="mt-3 overflow-hidden rounded-xl border border-white/5 bg-gray-900/40">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-white/5">
+                  <th className="px-4 py-3 font-semibold text-white">Provider</th>
+                  <th className="px-4 py-3 font-semibold text-white">What it processes</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                <tr>
+                  <td className="px-4 py-3 font-medium text-gray-200">AWS Rekognition</td>
+                  <td className="px-4 py-3">
+                    AI photo/content moderation for safety review of uploaded photos. Flagged
+                    photos enter a quarantine flow held in a separate private store.
+                  </td>
+                </tr>
+                <tr>
+                  <td className="px-4 py-3 font-medium text-gray-200">OpenAI</td>
+                  <td className="px-4 py-3">
+                    AI message moderation for safety review, and AI analysis of profile text for
+                    the optional profile-review feature.
+                  </td>
+                </tr>
+                <tr>
+                  <td className="px-4 py-3 font-medium text-gray-200">Stripe</td>
+                  <td className="px-4 py-3">
+                    Payments and subscription billing. Payment card numbers and full payment
+                    details are processed and stored by Stripe — GradeDate does not store card
+                    data.
+                  </td>
+                </tr>
+                <tr>
+                  <td className="px-4 py-3 font-medium text-gray-200">Stripe Identity</td>
+                  <td className="px-4 py-3">
+                    Age verification (government ID + selfie). GradeDate does not store the ID
+                    images or selfies — they are held by the provider.
+                  </td>
+                </tr>
+                <tr>
+                  <td className="px-4 py-3 font-medium text-gray-200">Resend</td>
+                  <td className="px-4 py-3">
+                    Transactional email delivery (account, waitlist, and review notifications).
+                  </td>
+                </tr>
+                <tr>
+                  <td className="px-4 py-3 font-medium text-gray-200">Vercel</td>
+                  <td className="px-4 py-3">
+                    Application hosting. Vercel Blob hosts the private quarantine store for flagged
+                    photos (short-lived signed review access); Vercel Analytics collects anonymous
+                    page-view statistics.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </section>
 
         <section>
@@ -355,7 +432,11 @@ function LegalPolicy() {
             <li>
               Safety reports are retained for 12 months after resolution; privileged administrative
               audit records are retained for a minimum of 24 months; quarantined photo review cases
-              are retained per our moderation retention schedule (default 30 days).
+              are retained per our moderation retention schedule (default 30 days). The 30-day
+              quarantine default and the automated retention sweep also apply to flagged and
+              automated photo cases: photo uploads await their content scan before completing, a
+              failed quarantine keeps the case as a durable pending row, and the sweep purges
+              stuck automated cases after the retention window.
             </li>
             <li>
               If an account is subject to a pending legal request, GradeDate may retain data beyond
